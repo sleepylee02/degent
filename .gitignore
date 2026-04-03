@@ -1,0 +1,31 @@
+# Local AI assistant files
+.codex
+.codex/
+.claude/
+CLAUDE.md
+.cursor/
+.cursorignore
+.aider*
+.roo/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Python cache / notebook artifacts
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local env / logs
+.env
+.env.*
+*.log
+
+# Local dataset payloads
+data/**/raw/**
+
+# Keep lightweight dataset docs at the dataset root
+!data/**/readme.md
