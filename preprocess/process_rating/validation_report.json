@@ -1,0 +1,17 @@
+{
+  "generated_at_utc": "2026-04-05T07:42:42.957484+00:00",
+  "summary": {
+    "ratings_input": 31916363,
+    "users_output": 200948,
+    "rating_count_sum": 31916363,
+    "invalid_rows": 0,
+    "min_rating_count_per_user": 17,
+    "max_rating_count_per_user": 31234,
+    "first_user_id": 1,
+    "last_user_id": 200948
+  },
+  "checks": {
+    "rating_count_sum_matches_input_minus_invalid": true,
+    "users_output_positive": true
+  }
+}

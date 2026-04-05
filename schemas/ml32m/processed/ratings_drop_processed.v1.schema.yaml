@@ -1,0 +1,48 @@
+name: ratings_drop_processed
+version: v1
+stage: processed
+primary_key:
+  - userId
+columns:
+  - name: userId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    description: User identifier
+    source_columns:
+      - ratings_drop.userId
+
+  - name: ratings
+    logical_type: list[struct]
+    physical_type: json
+    nullable: false
+    description: Chronologically ordered user rating history with ratedAt, movieId, and rating
+    source_columns:
+      - ratings_drop.movieId
+      - ratings_drop.rating
+      - ratings_drop.ratedAt
+
+  - name: ratingCount
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    description: Count of rating events in the user's history
+    source_columns:
+      - ratings_drop.userId
+
+  - name: firstRatedAt
+    logical_type: string
+    physical_type: string
+    nullable: false
+    description: Earliest UTC ISO 8601 rating timestamp in the user's history
+    source_columns:
+      - ratings_drop.ratedAt
+
+  - name: lastRatedAt
+    logical_type: string
+    physical_type: string
+    nullable: false
+    description: Latest UTC ISO 8601 rating timestamp in the user's history
+    source_columns:
+      - ratings_drop.ratedAt
+constraints: []

@@ -1,0 +1,107 @@
+name: movies_processed
+version: v1
+stage: processed
+primary_key:
+  - movieId
+columns:
+  - name: movieId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    description: Movie identifier carried from movies.csv
+    source_columns:
+      - movies.movieId
+
+  - name: title
+    logical_type: string
+    physical_type: string
+    nullable: false
+    description: Movie title with the trailing year suffix removed when parsable
+    source_columns:
+      - movies.title
+
+  - name: timestamp
+    logical_type: int64
+    physical_type: int64
+    nullable: true
+    description: Release year extracted from the raw title field
+    source_columns:
+      - movies.title
+
+  - name: genres
+    logical_type: list[string]
+    physical_type: json_string
+    nullable: false
+    default: "[]"
+    description: JSON-encoded list of genres
+    source_columns:
+      - movies.genres
+
+  - name: tag
+    logical_type: list[string]
+    physical_type: json_string
+    nullable: false
+    default: "[]"
+    description: JSON-encoded unique tag list for the movie
+    source_columns:
+      - tags.tag
+
+  - name: tagCount
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    default: 0
+    description: Count of unique tags attached to the movie
+    source_columns:
+      - tags.tag
+
+  - name: ratingAvg
+    logical_type: float64
+    physical_type: float64
+    nullable: true
+    description: Average rating aggregated by movieId
+    source_columns:
+      - ratings.rating
+
+  - name: ratingCount
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    default: 0
+    description: Count of ratings aggregated by movieId
+    source_columns:
+      - ratings.rating
+
+  - name: imdbId
+    logical_type: int64
+    physical_type: int64
+    nullable: true
+    description: Parsed IMDb identifier
+    source_columns:
+      - links.imdbId
+
+  - name: tmdbId
+    logical_type: int64
+    physical_type: int64
+    nullable: true
+    description: Parsed TMDb identifier
+    source_columns:
+      - links.tmdbId
+constraints:
+  - type: unique
+    columns:
+      - movieId
+    description: One processed row per movie
+
+  - type: non_negative
+    columns:
+      - tagCount
+      - ratingCount
+    description: Aggregate counts must be zero or positive
+
+  - type: range
+    columns:
+      - ratingAvg
+    min_value: 0.0
+    max_value: 5.0
+    description: Average ratings must remain inside the MovieLens rating scale

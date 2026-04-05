@@ -1,0 +1,36 @@
+name: ratings_drop
+version: v1
+stage: processed
+columns:
+  - name: userId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    description: User identifier for the rating event
+    source_columns:
+      - ratings.userId
+
+  - name: movieId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    description: Movie identifier for the rating event after movie drop filtering
+    source_columns:
+      - ratings.movieId
+
+  - name: rating
+    logical_type: float64
+    physical_type: float64
+    nullable: false
+    description: Explicit MovieLens rating value
+    source_columns:
+      - ratings.rating
+
+  - name: ratedAt
+    logical_type: string
+    physical_type: string
+    nullable: false
+    description: UTC ISO 8601 datetime string of the rating event
+    source_columns:
+      - ratings.timestamp
+constraints: []

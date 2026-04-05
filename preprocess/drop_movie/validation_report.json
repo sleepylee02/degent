@@ -1,0 +1,144 @@
+{
+  "generated_at_utc": "2026-04-05T07:41:02.068209+00:00",
+  "summary": {
+    "movies_input": 87584,
+    "movies_output": 77647,
+    "movies_dropped": 9937,
+    "drop_ratio": 0.113457,
+    "drop_ratio_percent": 11.3457,
+    "total_issue_records": 10849
+  },
+  "counts": {
+    "missing_ratings": 3153,
+    "missing_genres": 7080,
+    "title_without_year": 616,
+    "movies_dropped_union": 9937,
+    "movies_kept": 77647
+  },
+  "issues": {
+    "missing_ratings": {
+      "count": 3153,
+      "sample_movie_ids": [
+        52696,
+        58209,
+        69864,
+        70312,
+        71355,
+        78719,
+        78871,
+        79363,
+        79899,
+        80052,
+        80226,
+        85140,
+        85207,
+        86673,
+        87175,
+        87466,
+        87888,
+        88185,
+        88855,
+        88897
+      ]
+    },
+    "missing_genres": {
+      "count": 7080,
+      "sample_movie_ids": [
+        83773,
+        84768,
+        86493,
+        87061,
+        91246,
+        92435,
+        92641,
+        94431,
+        95750,
+        96479,
+        96651,
+        113545,
+        114335,
+        114725,
+        115004,
+        115006,
+        115893,
+        116046,
+        116054,
+        116096
+      ]
+    },
+    "title_without_year": {
+      "count": 616,
+      "sample_movie_ids": [
+        79607,
+        123619,
+        125571,
+        125632,
+        125958,
+        126438,
+        127005,
+        128612,
+        128734,
+        129651,
+        129697,
+        129705,
+        129887,
+        130322,
+        130454,
+        130542,
+        131198,
+        131225,
+        131280,
+        131303
+      ]
+    }
+  },
+  "issue_combinations": [
+    {
+      "issues": [
+        "missing_genres"
+      ],
+      "count": 6206
+    },
+    {
+      "issues": [
+        "missing_ratings"
+      ],
+      "count": 2614
+    },
+    {
+      "issues": [
+        "title_without_year"
+      ],
+      "count": 229
+    },
+    {
+      "issues": [
+        "missing_genres",
+        "title_without_year"
+      ],
+      "count": 349
+    },
+    {
+      "issues": [
+        "missing_ratings",
+        "missing_genres"
+      ],
+      "count": 501
+    },
+    {
+      "issues": [
+        "missing_ratings",
+        "title_without_year"
+      ],
+      "count": 14
+    },
+    {
+      "issues": [
+        "missing_ratings",
+        "missing_genres",
+        "title_without_year"
+      ],
+      "count": 24
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+name: ml32m_movies_raw
+version: v1
+stage: raw
+primary_key:
+  - movieId
+columns:
+  - name: movieId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: true
+    description: MovieLens movie identifier
+
+  - name: title
+    logical_type: string
+    physical_type: string
+    nullable: false
+    ingest: true
+    description: Raw movie title, usually including a year suffix in parentheses
+
+  - name: genres
+    logical_type: string
+    physical_type: string
+    nullable: false
+    ingest: true
+    description: Pipe-delimited MovieLens genres string
+constraints:
+  - type: unique
+    columns:
+      - movieId
+    description: movies.csv should contain a single row per movieId

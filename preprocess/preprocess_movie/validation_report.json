@@ -1,0 +1,171 @@
+{
+  "generated_at_utc": "2026-04-05T07:39:09.664741+00:00",
+  "summary": {
+    "movies_processed": 87584,
+    "unique_movies_in_movies_csv": 87585,
+    "unique_movies_with_tags": 51323,
+    "unique_movies_with_links": 87585,
+    "unique_movies_with_ratings": 84432,
+    "total_issue_records": 47237
+  },
+  "schema_validation": {
+    "processed_schema_file": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+    "processed_schema_name": "movies_processed",
+    "processed_schema_version": "v2",
+    "issue_count": 0
+  },
+  "counts": {
+    "movies": 87584,
+    "movies_dropped_blank_title": 1,
+    "titles_without_year": 616,
+    "titles_parsed_with_relaxed_year": 1,
+    "movies_without_tags": 36262,
+    "movies_without_links_row": 0,
+    "movies_without_imdb_id": 0,
+    "movies_without_tmdb_id": 124,
+    "movies_without_genres": 7080,
+    "movies_without_ratings": 3153,
+    "orphan_tag_movie_ids": 0,
+    "orphan_link_movie_ids": 0,
+    "orphan_rating_movie_ids": 0
+  },
+  "issues": {
+    "blank_title_after_parse": {
+      "count": 1,
+      "sample_movie_ids": [
+        210479
+      ]
+    },
+    "missing_genres": {
+      "count": 7080,
+      "sample_movie_ids": [
+        83773,
+        84768,
+        86493,
+        87061,
+        91246,
+        92435,
+        92641,
+        94431,
+        95750,
+        96479,
+        96651,
+        113545,
+        114335,
+        114725,
+        115004,
+        115006,
+        115893,
+        116046,
+        116054,
+        116096
+      ]
+    },
+    "missing_ratings": {
+      "count": 3153,
+      "sample_movie_ids": [
+        52696,
+        58209,
+        69864,
+        70312,
+        71355,
+        78719,
+        78871,
+        79363,
+        79899,
+        80052,
+        80226,
+        85140,
+        85207,
+        86673,
+        87175,
+        87466,
+        87888,
+        88185,
+        88855,
+        88897
+      ]
+    },
+    "missing_tags": {
+      "count": 36262,
+      "sample_movie_ids": [
+        51,
+        56,
+        84,
+        90,
+        108,
+        124,
+        139,
+        142,
+        192,
+        200,
+        211,
+        278,
+        284,
+        287,
+        310,
+        401,
+        406,
+        447,
+        452,
+        463
+      ]
+    },
+    "missing_tmdb_id": {
+      "count": 124,
+      "sample_movie_ids": [
+        721,
+        730,
+        770,
+        791,
+        1107,
+        1142,
+        1316,
+        1421,
+        1434,
+        1630,
+        1738,
+        1774,
+        1789,
+        2230,
+        2258,
+        2270,
+        2588,
+        2851,
+        4051,
+        5565
+      ]
+    },
+    "relaxed_title_year_match": {
+      "count": 1,
+      "sample_movie_ids": [
+        98063
+      ]
+    },
+    "title_without_year": {
+      "count": 616,
+      "sample_movie_ids": [
+        79607,
+        123619,
+        125571,
+        125632,
+        125958,
+        126438,
+        127005,
+        128612,
+        128734,
+        129651,
+        129697,
+        129705,
+        129887,
+        130322,
+        130454,
+        130542,
+        131198,
+        131225,
+        131280,
+        131303
+      ]
+    }
+  }
+}

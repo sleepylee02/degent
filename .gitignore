@@ -2,7 +2,6 @@
 .codex
 .codex/
 .claude/
-CLAUDE.md
 .cursor/
 .cursorignore
 .aider*
@@ -22,6 +21,7 @@ __pycache__/
 # Local env / logs
 .env
 .env.*
+.venv/
 *.log
 
 # Local dataset payloads
@@ -29,3 +29,9 @@ data/**/raw/**
 
 # Keep lightweight dataset docs at the dataset root
 !data/**/readme.md
+
+# Generated preprocessing outputs
+data/movies_processed.csv
+data/movies_processed_drop.csv
+data/ratings_drop.csv
+data/ratings_drop_processed.jsonl

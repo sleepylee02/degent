@@ -1,0 +1,31 @@
+name: ml32m_links_raw
+version: v1
+stage: raw
+primary_key:
+  - movieId
+columns:
+  - name: movieId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: true
+    description: Movie identifier
+
+  - name: imdbId
+    logical_type: string
+    physical_type: string
+    nullable: true
+    ingest: true
+    description: IMDb identifier as provided by links.csv
+
+  - name: tmdbId
+    logical_type: string
+    physical_type: string
+    nullable: true
+    ingest: true
+    description: TMDb identifier as provided by links.csv
+constraints:
+  - type: unique
+    columns:
+      - movieId
+    description: links.csv should contain at most one row per movieId

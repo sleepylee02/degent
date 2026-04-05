@@ -1,0 +1,54 @@
+{
+  "generated_at_utc": "2026-04-05T07:41:17.602253+00:00",
+  "summary": {
+    "ratings_input": 32000204,
+    "ratings_output": 31916363,
+    "ratings_dropped": 83841,
+    "drop_ratio": 0.00262,
+    "drop_ratio_percent": 0.262,
+    "unique_movies_in_ratings": 84432,
+    "unique_movies_kept": 77647,
+    "unique_movies_dropped": 6785,
+    "unique_users_in_ratings": 200948,
+    "unique_users_kept": 200948,
+    "affected_users": 21698,
+    "total_bad_rows": 83841
+  },
+  "counts": {
+    "rating_rows_with_missing_ratings_movie": 0,
+    "rating_rows_with_missing_genres_movie": 55498,
+    "rating_rows_with_title_without_year_movie": 35163,
+    "ratings_dropped_union": 83841
+  },
+  "issue_combinations": [
+    {
+      "issues": [
+        "missing_genres"
+      ],
+      "ratings_dropped": 48643,
+      "movies": 6206
+    },
+    {
+      "issues": [
+        "title_without_year"
+      ],
+      "ratings_dropped": 28308,
+      "movies": 229
+    },
+    {
+      "issues": [
+        "missing_genres",
+        "title_without_year"
+      ],
+      "ratings_dropped": 6855,
+      "movies": 349
+    },
+    {
+      "issues": [
+        "blank_title_after_parse"
+      ],
+      "ratings_dropped": 35,
+      "movies": 1
+    }
+  ]
+}

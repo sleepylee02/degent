@@ -1,0 +1,31 @@
+name: ml32m_tags_raw
+version: v1
+stage: raw
+columns:
+  - name: userId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: false
+    description: User identifier for the tagging event
+
+  - name: movieId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: true
+    description: Movie identifier for the tagging event
+
+  - name: tag
+    logical_type: string
+    physical_type: string
+    nullable: true
+    ingest: true
+    description: Free-form user tag
+
+  - name: timestamp
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: false
+    description: Unix timestamp of the tagging event

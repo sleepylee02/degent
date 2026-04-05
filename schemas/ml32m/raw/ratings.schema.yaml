@@ -1,0 +1,31 @@
+name: ml32m_ratings_raw
+version: v1
+stage: raw
+columns:
+  - name: userId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: false
+    description: User identifier for the rating event
+
+  - name: movieId
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: true
+    description: Movie identifier for the rating event
+
+  - name: rating
+    logical_type: float64
+    physical_type: float64
+    nullable: false
+    ingest: true
+    description: Explicit MovieLens rating value
+
+  - name: timestamp
+    logical_type: int64
+    physical_type: int64
+    nullable: false
+    ingest: false
+    description: Unix timestamp of the rating event
