@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import argparse
 
-from eda.combined import run as run_combined
-from eda.genome2021 import run as run_genome2021
-from eda.ml32m import run as run_ml32m
+from eda.raw.combined import run as run_combined
+from eda.raw.genome2021 import run as run_genome2021
+from eda.raw.ml32m import run as run_ml32m
 
 
 def main() -> None:
