@@ -30,11 +30,19 @@ degent/
 │   ├── drop_movie/          #   전처리 결과에 drop 규칙을 적용하는 후처리
 │   ├── drop_rating/         #   movie drop 결과를 rating에 전파하는 후처리
 │   └── process_rating/      #   rating row를 user sequence JSONL로 재구성
+├── model/                   # SASRec + Contrastive Loss 추천 모델
+│   ├── dataset.py           #   데이터 로드/전처리/Dataset
+│   ├── model.py             #   SASRecCL 모델, Contrastive Loss
+│   ├── train.py             #   학습 실행 → sasrec_cl.pt
+│   ├── extract.py           #   히든스테이트 추출 → embeddings.npy
+│   ├── cluster.py           #   UMAP + HDBSCAN → cluster_labels.npy
+│   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
 │   ├── processed/           #   processed 데이터 EDA
 │   │   ├── eda_processed.py #     정제 후 데이터 EDA 스크립트
 │   │   └── outputs/         #     분석 결과물 (리포트, 차트)
 │   └── raw/                 #   raw 데이터 EDA (보존용)
+├── outputs/                 # 모델 산출물 (가중치/임베딩/플롯, git 추적 제외)
 ├── plan/                    # 작업 계획서
 ├── todo.md                  # 할 일 목록
 └── requirements.txt         # Python 의존성

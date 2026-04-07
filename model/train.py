@@ -1,12 +1,16 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from dataset import build_genre_map, build_user_sequences, temporal_split, MovieLensDataset
 from model import SASRecCL, augment_sequence, contrastive_loss
+from runtime import log_torch_runtime, resolve_torch_device, setup_run_logging
 
 
 # =====================
@@ -24,7 +28,8 @@ class Trainer:
         self.model.train()
         total_loss = 0
 
-        for batch in dataloader:
+        pbar = tqdm(dataloader, desc="train", leave=False)
+        for batch in pbar:
             item_id_seq = batch["item_id_seq"].to(self.device)
             genre_seq   = batch["genre_seq"].to(self.device)
             label_seq   = batch["label_seq"].to(self.device)
@@ -55,6 +60,7 @@ class Trainer:
             self.optimizer.step()
 
             total_loss += loss.item()
+            pbar.set_postfix(loss=f"{loss.item():.4f}")
 
         return total_loss / len(dataloader)
 
@@ -64,7 +70,7 @@ class Trainer:
         self.model.eval()
         recalls, ndcgs = [], []
 
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc="eval", leave=False):
             item_id_seq = batch["item_id_seq"].to(self.device)
             genre_seq   = batch["genre_seq"].to(self.device)
             label_seq   = batch["label_seq"].to(self.device)
@@ -98,16 +104,38 @@ class Trainer:
 # =====================
 
 if __name__ == "__main__":
+    ROOT        = Path(__file__).resolve().parent.parent
+    DATA_DIR    = ROOT / 'data'
+    OUTPUTS_DIR = ROOT / 'outputs'
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    logger, _   = setup_run_logging("train", OUTPUTS_DIR)
+
+    movies_path = DATA_DIR / 'movies_processed_drop.csv'
+    ratings_path = DATA_DIR / 'ratings_drop_processed.jsonl'
+    num_epochs = 20
+    batch_size = 256
+    num_workers = 4
+    eval_every = 5
+
+    logger.info("Outputs directory: %s", OUTPUTS_DIR)
+    logger.info("Movies input: %s", movies_path)
+    logger.info("Ratings input: %s", ratings_path)
+
+    device, device_label = resolve_torch_device()
+    log_torch_runtime(logger, device, device_label)
+
     # 데이터 로드
-    movies = pd.read_csv('data/movies_processed_drop.csv')
+    movies = pd.read_csv(movies_path)
     genre_map, all_genres = build_genre_map(movies)
     num_genres            = len(all_genres)
+    logger.info("Loaded movies: %d | unique genres: %d", len(movies), num_genres)
 
     user_sequences = build_user_sequences(
-        'data/ratings_drop_processed.jsonl',
+        ratings_path,
         min_interactions=200,
         min_activity_days=30
     )
+    logger.info("Filtered user sequences: %d", len(user_sequences))
 
     # item id 재매핑 (0: padding)
     all_items = sorted(set(i for seq in user_sequences.values() for i, _ in seq))
@@ -118,6 +146,12 @@ if __name__ == "__main__":
 
     # 시간 기준 global split
     train_seq, val_seq, test_seq = temporal_split(user_sequences)
+    logger.info(
+        "Temporal split users | train=%d val=%d test=%d",
+        len(train_seq),
+        len(val_seq),
+        len(test_seq),
+    )
 
     def remap(sequences):
         return {
@@ -131,11 +165,18 @@ if __name__ == "__main__":
     # Dataset / DataLoader
     train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=100, stride=50)
     val_dataset   = MovieLensDataset(val_seq_idx,   genre_map_idx, num_genres, seq_len=100, stride=50)
-    train_loader  = DataLoader(train_dataset, batch_size=256, shuffle=True,  num_workers=4)
-    val_loader    = DataLoader(val_dataset,   batch_size=256, shuffle=False, num_workers=4)
+    train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,  num_workers=num_workers)
+    val_loader    = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    logger.info(
+        "Dataset summary | items=%d train_samples=%d val_samples=%d train_batches=%d val_batches=%d",
+        num_items,
+        len(train_dataset),
+        len(val_dataset),
+        len(train_loader),
+        len(val_loader),
+    )
 
     # 모델 초기화
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model  = SASRecCL(
         num_items  = num_items,
         num_genres = num_genres,
@@ -147,16 +188,30 @@ if __name__ == "__main__":
     )
 
     trainer = Trainer(model, lr=1e-3, cl_lambda=0.1, device=device)
+    logger.info(
+        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f",
+        num_epochs,
+        batch_size,
+        100,
+        50,
+        0.1,
+    )
 
     # 학습
-    for epoch in range(20):
+    for epoch in range(num_epochs):
         loss = trainer.train_epoch(train_loader)
-        print(f"Epoch {epoch+1:02d} | Loss: {loss:.4f}")
+        logger.info("Epoch %02d/%02d | loss=%.4f", epoch + 1, num_epochs, loss)
 
-        if (epoch + 1) % 5 == 0:
+        if (epoch + 1) % eval_every == 0:
             metrics = trainer.evaluate(val_loader, k=10)
-            print(f"  Val → {metrics}")
+            logger.info(
+                "Validation | epoch=%02d Recall@10=%.4f NDCG@10=%.4f",
+                epoch + 1,
+                metrics["Recall@10"],
+                metrics["NDCG@10"],
+            )
 
     # 모델 저장
-    torch.save(model.state_dict(), 'model/sasrec_cl.pt')
-    print("모델 저장 완료: model/sasrec_cl.pt")
+    out_path = OUTPUTS_DIR / 'sasrec_cl.pt'
+    torch.save(model.state_dict(), out_path)
+    logger.info("Saved model checkpoint: %s", out_path)

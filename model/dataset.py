@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 from collections import defaultdict
 from torch.utils.data import Dataset
+from tqdm import tqdm
 import torch
 
 
@@ -52,7 +53,7 @@ def build_user_sequences(jsonl_path, min_interactions=200, min_activity_days=30)
     user_sequences = {}
 
     with open(jsonl_path) as f:
-        for line in f:
+        for line in tqdm(f, desc="load users"):
             entry   = json.loads(line)
             user_id = entry['userId']
             ratings = entry['ratings']

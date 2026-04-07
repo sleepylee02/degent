@@ -41,6 +41,15 @@ python model/cluster.py
 
 ---
 
+## 실행 환경과 로그
+
+- `train.py`, `extract.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
+- 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
+- `cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
+- 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
+
+---
+
 ## 주요 하이퍼파라미터
 
 | 파라미터 | 값 | 설명 |
@@ -58,12 +67,15 @@ python model/cluster.py
 
 ## 산출물
 
+모든 산출물은 프로젝트 루트의 `outputs/`에 저장된다 (git 추적 제외).
+
 | 파일 | 설명 |
 |---|---|
-| `model/sasrec_cl.pt` | 학습된 모델 가중치 |
-| `model/embeddings.npy` | 시점별 히든스테이트 `(전체 시점 수, 128)` |
-| `model/cluster_labels.npy` | HDBSCAN 클러스터 레이블 `(전체 시점 수,)` |
-| `model/clusters_3d.png` | 3D 시각화 (데모용) |
+| `outputs/sasrec_cl.pt` | 학습된 모델 가중치 |
+| `outputs/embeddings.npy` | 시점별 히든스테이트 `(전체 시점 수, 128)` |
+| `outputs/cluster_labels.npy` | HDBSCAN 클러스터 레이블 `(전체 시점 수,)` |
+| `outputs/clusters_3d.png` | 3D 시각화 (데모용) |
+| `outputs/logs/*.log` | 스크립트별 실행 로그 |
 
 ---
 
