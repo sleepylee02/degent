@@ -123,6 +123,13 @@ if __name__ == "__main__":
     embeddings = np.load(OUTPUTS_DIR / 'embeddings.npy')  # (N, 128)
     logger.info("Loaded embeddings: %s", embeddings.shape)
 
+    # NaN 행 제거
+    nan_mask = np.isnan(embeddings).any(axis=1)
+    if nan_mask.any():
+        logger.warning("Dropping %d NaN rows out of %d", nan_mask.sum(), len(embeddings))
+        embeddings = embeddings[~nan_mask]
+        logger.info("Embeddings after NaN drop: %s", embeddings.shape)
+
     # ── Step 1: n_components 실험 ──
     logger.info("Starting n_components search")
     results = search_n_components(
