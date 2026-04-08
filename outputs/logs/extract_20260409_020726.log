@@ -1,0 +1,16 @@
+2026-04-09 02:07:26 | INFO | Log file: /home/yoon/capstone/degent/outputs/logs/extract_20260409_020726.log
+2026-04-09 02:07:26 | INFO | Outputs directory: /home/yoon/capstone/degent/outputs
+2026-04-09 02:07:26 | INFO | Movies input: /home/yoon/capstone/degent/data/movies_processed_drop.csv
+2026-04-09 02:07:26 | INFO | Ratings input: /home/yoon/capstone/degent/data/ratings_drop_processed.jsonl
+2026-04-09 02:07:26 | INFO | Checkpoint input: /home/yoon/capstone/degent/outputs/sasrec_cl.pt
+2026-04-09 02:07:26 | INFO | item2idx input: /home/yoon/capstone/degent/outputs/item2idx.json
+2026-04-09 02:07:26 | INFO | Selected torch device: cpu
+2026-04-09 02:07:26 | INFO | PyTorch version: 2.5.1+cpu
+2026-04-09 02:07:34 | INFO | Loaded movies: 77647 | unique genres: 19
+2026-04-09 02:07:34 | INFO | Loaded item2idx: 55726 items
+2026-04-09 02:08:56 | INFO | Filtered user sequences (>=1000): 693
+2026-04-09 02:09:00 | INFO | Extraction dataset | train_users=622 samples=76378 batches=299 items=55726
+2026-04-09 02:09:01 | INFO | Loaded checkpoint onto cpu
+2026-04-09 02:11:04 | INFO | Embeddings shape: (763772, 128)
+2026-04-09 02:11:04 | INFO | Unique users in embeddings: 622
+2026-04-09 02:11:05 | INFO | Saved embeddings: /home/yoon/capstone/degent/outputs/embeddings.npz

@@ -34,9 +34,10 @@ degent/
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
 │   ├── dataset.py           #   데이터 로드/전처리/Dataset
 │   ├── model.py             #   SASRecCL 모델, Contrastive Loss
-│   ├── train.py             #   학습 실행 → sasrec_cl.pt
-│   ├── extract.py           #   히든스테이트 추출 → embeddings.npy
-│   ├── cluster.py           #   UMAP + HDBSCAN → cluster_labels.npy
+│   ├── train.py             #   학습 실행 → sasrec_cl.pt + item2idx.json
+│   ├── extract.py           #   히든스테이트 추출 → embeddings.npz
+│   ├── cluster.py           #   유저별 UMAP + HDBSCAN → user_interests.npz
+│   ├── visualize_clusters.py #  클러스터 변화 시각화 → outputs/viz/
 │   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
 │   ├── processed/           #   processed 데이터 EDA
