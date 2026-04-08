@@ -37,5 +37,7 @@ data/ratings_drop.csv
 data/ratings_drop_processed.jsonl
 
 # Model outputs
-outputs/**
+outputs/*
 !outputs/readme.md
+!outputs/logs/
+!outputs/logs/**
