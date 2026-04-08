@@ -1,4 +1,5 @@
 from pathlib import Path
+import time
 
 import numpy as np
 import umap
@@ -13,21 +14,27 @@ from runtime import setup_run_logging
 # UMAP 차원 축소
 # =====================
 
-def reduce_dimensions(embeddings, n_components, random_state=42):
+def reduce_dimensions(embeddings, n_components, random_state=42, logger=None):
     """
     embeddings: (N, d_model) numpy array
     n_components: 축소할 차원 수
     returns: (N, n_components) numpy array
     """
-    reducer = umap.UMAP(n_components=n_components, random_state=random_state)
-    return reducer.fit_transform(embeddings)
+    if logger:
+        logger.info("  UMAP start | n_components=%d  shape=%s", n_components, embeddings.shape)
+    t0 = time.time()
+    reducer = umap.UMAP(n_components=n_components, random_state=random_state, verbose=True)
+    result = reducer.fit_transform(embeddings)
+    if logger:
+        logger.info("  UMAP done  | elapsed=%.1fs", time.time() - t0)
+    return result
 
 
 # =====================
 # HDBSCAN 클러스터링
 # =====================
 
-def cluster(z, min_cluster_size=10):
+def cluster(z, min_cluster_size=10, logger=None):
     """
     z: (N, n_components) numpy array
     returns:
@@ -35,8 +42,13 @@ def cluster(z, min_cluster_size=10):
         n_clusters: 유효 클러스터 수
         noise_ratio: 노이즈 비율
     """
+    if logger:
+        logger.info("  HDBSCAN start | shape=%s", z.shape)
+    t0 = time.time()
     clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
     labels    = clusterer.fit_predict(z)
+    if logger:
+        logger.info("  HDBSCAN done  | elapsed=%.1fs", time.time() - t0)
 
     n_clusters  = len(set(labels)) - (1 if -1 in labels else 0)
     noise_ratio = (labels == -1).sum() / len(labels)
@@ -54,9 +66,11 @@ def search_n_components(embeddings, candidates=[5, 10, 15, 20], min_cluster_size
     최적 n_components 선택용
     """
     results = []
-    for n in candidates:
-        z = reduce_dimensions(embeddings, n_components=n)
-        labels, n_clusters, noise_ratio = cluster(z, min_cluster_size=min_cluster_size)
+    for idx, n in enumerate(candidates, 1):
+        if logger:
+            logger.info("[%d/%d] n_components=%d", idx, len(candidates), n)
+        z = reduce_dimensions(embeddings, n_components=n, logger=logger)
+        labels, n_clusters, noise_ratio = cluster(z, min_cluster_size=min_cluster_size, logger=logger)
         results.append({
             'n_components': n,
             'n_clusters':   n_clusters,
@@ -82,7 +96,7 @@ def visualize_3d(embeddings, labels, output_path, logger=None):
     3D 시각화 (데모용)
     실제 클러스터링은 10~20차원에서 수행
     """
-    z3d = reduce_dimensions(embeddings, n_components=3)
+    z3d = reduce_dimensions(embeddings, n_components=3, logger=logger)
 
     fig = plt.figure(figsize=(10, 8))
     ax  = fig.add_subplot(111, projection='3d')
@@ -146,8 +160,8 @@ if __name__ == "__main__":
 
     # ── Step 2: 실제 클러스터링 ──
     logger.info("Running final clustering")
-    z      = reduce_dimensions(embeddings, n_components=best_n)
-    labels, n_clusters, noise_ratio = cluster(z, min_cluster_size=10)
+    z      = reduce_dimensions(embeddings, n_components=best_n, logger=logger)
+    labels, n_clusters, noise_ratio = cluster(z, min_cluster_size=10, logger=logger)
     logger.info("Clustering result | clusters=%d noise_ratio=%.3f", n_clusters, noise_ratio)
 
     # 저장
