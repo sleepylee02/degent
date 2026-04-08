@@ -13,23 +13,36 @@ from runtime import setup_run_logging
 # 유저별 UMAP + HDBSCAN
 # =====================
 
-def cluster_user(h, min_cluster_size=10, random_state=42):
+def cluster_user(h, min_cluster_size=10, random_state=42,
+                 cluster_n_components=10, viz_n_components=3):
     """
     단일 유저의 시점별 임베딩에 UMAP + HDBSCAN 수행
 
     h: (T, 128) — 이 유저의 시점별 hidden state (시간 순 정렬된 상태)
+
+    두 개의 UMAP을 목적에 따라 분리:
+        cluster_n_components: 실제 클러스터링용 (기본 10D)
+        viz_n_components:     시각화용 (기본 3D)
+
     returns:
         labels:           (T,) 클러스터 레이블 (-1 = 노이즈)
+        z_viz:            (T, 3) 시각화용 3D 좌표
         interest_vectors: (K, 128) 클러스터별 관심사 벡터 u_k (원본 128d 평균)
         n_clusters:       유효 클러스터 수 K
     """
-    # Step 2: UMAP h_t ∈ R^128 → z_t ∈ R^3
-    reducer = umap.UMAP(n_components=3, random_state=random_state, verbose=False)
-    z = reducer.fit_transform(h)
+    # Step 2a: 클러스터링용 UMAP — 10D (정보 손실 최소화)
+    reducer_cluster = umap.UMAP(n_components=cluster_n_components,
+                                random_state=random_state, verbose=False)
+    z_cluster = reducer_cluster.fit_transform(h)
 
-    # Step 3: HDBSCAN → adaptive K
+    # Step 2b: 시각화용 UMAP — 3D (별도 실행, 클러스터링 결과에 영향 없음)
+    reducer_viz = umap.UMAP(n_components=viz_n_components,
+                            random_state=random_state, verbose=False)
+    z_viz = reducer_viz.fit_transform(h)
+
+    # Step 3: HDBSCAN — 10D 공간에서 밀도 추정
     clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
-    labels    = clusterer.fit_predict(z)
+    labels    = clusterer.fit_predict(z_cluster)
 
     # Step 4: u_k = mean(h_t for t ∈ C_k) — 원본 128d 공간에서 계산
     unique_clusters = sorted(set(labels) - {-1})
@@ -38,7 +51,7 @@ def cluster_user(h, min_cluster_size=10, random_state=42):
     else:
         interest_vectors = np.zeros((0, h.shape[1]))
 
-    return labels, z, interest_vectors, len(unique_clusters)
+    return labels, z_viz, interest_vectors, len(unique_clusters)
 
 
 def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
@@ -191,7 +204,7 @@ if __name__ == "__main__":
         logger.info("Test mode: user_id=%d | timepoints=%d", args.user_id, mask.sum())
 
     # 유저별 UMAP(R^3) + HDBSCAN
-    logger.info("Starting per-user clustering (n_components=3, min_cluster_size=10)")
+    logger.info("Starting per-user clustering (cluster_n_components=10, viz_n_components=3, min_cluster_size=10)")
     t0      = time.time()
     results = run_per_user_clustering(
         embeddings, user_ids, timepoint_idx,
