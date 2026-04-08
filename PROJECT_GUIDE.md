@@ -30,6 +30,7 @@ degent/
 │   ├── drop_movie/          #   전처리 결과에 drop 규칙을 적용하는 후처리
 │   ├── drop_rating/         #   movie drop 결과를 rating에 전파하는 후처리
 │   └── process_rating/      #   rating row를 user sequence JSONL로 재구성
+├── dashboard/               # 클러스터링 결과 시각화 대시보드
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
 │   ├── dataset.py           #   데이터 로드/전처리/Dataset
 │   ├── model.py             #   SASRecCL 모델, Contrastive Loss
@@ -72,6 +73,11 @@ degent/
 ### 계획
 - 새로운 작업을 시작하기 전에 `plan/` 폴더에 계획서를 작성하거나 확인한다.
 - 기존 계획이 있으면 그것을 따르고, 변경이 필요하면 계획서를 먼저 수정한다.
+
+### 대시보드
+- 대시보드 코드는 `dashboard/` 아래에 둔다.
+- 시각화용 입력 산출물은 스크립트로 재생성 가능해야 하며, 원본 데이터처럼 수동 편집하지 않는다.
+- 인터랙티브 시각화를 위한 새 패키지를 추가하면 반드시 `requirements.txt`에 반영한다.
 
 ## 환경 설정
 
