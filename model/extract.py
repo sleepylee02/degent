@@ -12,17 +12,22 @@ from runtime import log_torch_runtime, resolve_torch_device, setup_run_logging
 
 
 @torch.no_grad()
-def extract_embeddings(model, dataloader, device, interval=50):
+def extract_embeddings(model, dataloader, device, user_ids_per_sample, interval=50):
     """
     50개 간격으로 히든스테이트 추출
-    padding 제외하고 실제 시점만 추출
+    유저별, 시점별 정보 함께 저장
 
     returns:
-        all_embeddings: list of (num_timepoints, d_model)
-        각 유저의 시점별 히든스테이트
+        all_h:          (전체 시점 수, d_model)
+        all_user_ids:   (전체 시점 수,)  각 시점의 유저 id
+        all_timepoints: (전체 시점 수,)  유저 내 시점 순서 (0, 1, 2, ...)
     """
     model.eval()
     all_embeddings = []
+    all_user_ids   = []
+    all_timepoints = []
+
+    sample_idx = 0
 
     for batch in tqdm(dataloader, desc="extract"):
         item_id_seq = batch["item_id_seq"].to(device)
@@ -31,20 +36,29 @@ def extract_embeddings(model, dataloader, device, interval=50):
         h = model.encode(item_id_seq, genre_seq)  # (B, L, d_model)
 
         for i in range(h.size(0)):
-            length = (item_id_seq[i] != 0).sum().item()
+            length  = (item_id_seq[i] != 0).sum().item()
+            user_id = user_ids_per_sample[sample_idx]
+            sample_idx += 1
 
-            # 실제 시점 인덱스 (padding 제외)
             valid_h = h[i, -length:, :]  # (length, d_model)
 
             # 50개 간격으로 히든스테이트 추출
             indices = list(range(interval - 1, length, interval))
             if not indices:
-                indices = [length - 1]  # 시퀀스가 interval보다 짧으면 마지막만
+                indices = [length - 1]  # interval보다 짧으면 마지막만
 
-            selected = valid_h[indices, :]  # (num_timepoints, d_model)
+            selected       = valid_h[indices, :]  # (num_timepoints, d_model)
+            num_timepoints = len(indices)
+
             all_embeddings.append(selected.cpu().numpy())
+            all_user_ids.extend([user_id] * num_timepoints)
+            all_timepoints.extend(list(range(num_timepoints)))
 
-    return all_embeddings  # list of (num_timepoints, d_model)
+    return (
+        np.concatenate(all_embeddings, axis=0),  # (전체 시점 수, d_model)
+        np.array(all_user_ids),                  # (전체 시점 수,)
+        np.array(all_timepoints),                # (전체 시점 수,)
+    )
 
 
 if __name__ == "__main__":
@@ -52,14 +66,14 @@ if __name__ == "__main__":
     DATA_DIR    = ROOT / 'data'
     OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    logger, _   = setup_run_logging("extract", OUTPUTS_DIR)
+    logger, _ = setup_run_logging("extract", OUTPUTS_DIR)
 
-    movies_path = DATA_DIR / 'movies_processed_drop.csv'
-    ratings_path = DATA_DIR / 'ratings_drop_processed.jsonl'
+    movies_path     = DATA_DIR / 'movies_processed_drop.csv'
+    ratings_path    = DATA_DIR / 'ratings_drop_processed.jsonl'
     checkpoint_path = OUTPUTS_DIR / 'sasrec_cl.pt'
-    batch_size = 256
+    batch_size  = 256
     num_workers = 4
-    interval = 50
+    interval    = 50
 
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
     logger.info("Movies input: %s", movies_path)
@@ -95,18 +109,22 @@ if __name__ == "__main__":
         for u, seq in train_seq.items()
     }
 
+    # shuffle=False 필수 (sample_idx 순서 보장)
     train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=100, stride=50)
     train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     logger.info(
         "Extraction dataset | train_users=%d samples=%d batches=%d items=%d",
-        len(train_seq_idx),
-        len(train_dataset),
-        len(train_loader),
-        num_items,
+        len(train_seq_idx), len(train_dataset), len(train_loader), num_items,
     )
 
+    # 샘플 순서대로 user_id 리스트 생성
+    # MovieLensDataset.data에 (user_id, items) 형태로 저장돼 있어야 함
+    # dataset.py의 self.data를 [(user_id, items), ...] 로 변경 필요
+    user_ids_per_sample = [user_id for user_id, _ in train_dataset.data]
+    logger.info("User IDs per sample prepared: %d", len(user_ids_per_sample))
+
     # 학습된 모델 로드
-    model  = SASRecCL(
+    model = SASRecCL(
         num_items  = num_items,
         num_genres = num_genres,
         d_model    = 128,
@@ -119,15 +137,19 @@ if __name__ == "__main__":
     model.to(device)
     logger.info("Loaded checkpoint onto %s", device_label)
 
-    # 50개 간격 히든스테이트 추출
-    embeddings = extract_embeddings(model, train_loader, device, interval=interval)
-    logger.info("Extracted embedding blocks: %d", len(embeddings))
-
-    # HDBSCAN에 넣을 형태로 concatenate
-    all_h = np.concatenate(embeddings, axis=0)  # (전체 시점 수, 128)
+    # 유저별, 시점별 히든스테이트 추출
+    all_h, all_user_ids, all_timepoints = extract_embeddings(
+        model, train_loader, device, user_ids_per_sample, interval=interval
+    )
     logger.info("Embeddings shape: %s", all_h.shape)
+    logger.info("Unique users in embeddings: %d", len(np.unique(all_user_ids)))
 
-    # 저장
-    out_path = OUTPUTS_DIR / 'embeddings.npy'
-    np.save(out_path, all_h)
+    # npz로 저장 (유저별, 시점별 정보 포함)
+    out_path = OUTPUTS_DIR / 'embeddings.npz'
+    np.savez(
+        out_path,
+        embeddings    = all_h,          # (전체 시점 수, 128)
+        user_ids      = all_user_ids,   # (전체 시점 수,)
+        timepoint_idx = all_timepoints  # (전체 시점 수,)
+    )
     logger.info("Saved embeddings: %s", out_path)

@@ -137,6 +137,7 @@ class MovieLensDataset(Dataset):
         seq_len:        시퀀스 길이 (default: 100)
         stride:         슬라이딩 윈도우 간격 (default: 50)
         """
+        # [(user_id, items), ...]
         self.data       = []
         self.genre_map  = genre_map
         self.num_genres = num_genres
@@ -146,11 +147,11 @@ class MovieLensDataset(Dataset):
             if len(items) < 3:
                 continue
             if len(items) <= seq_len + 1:
-                self.data.append(items)
+                self.data.append((user_id, items))
             else:
                 # 슬라이딩 윈도우로 여러 샘플 생성
                 for start in range(0, len(items) - seq_len, stride):
-                    self.data.append(items[start:start + seq_len + 1])
+                    self.data.append((user_id, items[start:start + seq_len + 1]))
 
     def __len__(self):
         return len(self.data)
@@ -162,7 +163,7 @@ class MovieLensDataset(Dataset):
         return vec
 
     def __getitem__(self, idx):
-        items = self.data[idx]
+        _, items = self.data[idx]
 
         if len(items) > self.seq_len + 1:
             items = items[-(self.seq_len + 1):]
