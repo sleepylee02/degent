@@ -30,6 +30,7 @@ degent/
 │   └── ratings_drop_processed.jsonl  # user sequence JSONL
 ├── schemas/                          # 데이터 계약 정본
 ├── preprocess/                       # 전처리 및 후처리 스크립트
+├── dashboard/                        # 클러스터링 결과 시각화 대시보드
 ├── eda/                              # raw / processed EDA
 ├── plan/                             # 작업 계획서
 ├── requirements.txt
@@ -69,7 +70,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-주요 의존성은 `polars`, `matplotlib`, `numpy`, `PyYAML`이다.
+주요 의존성은 `polars`, `matplotlib`, `numpy`, `PyYAML`, `streamlit`, `plotly`, `pandas`다.
 
 ## 전처리 파이프라인
 
@@ -199,6 +200,35 @@ python3 eda/processed/eda_processed.py
 
 - `eda/processed/outputs/eda_report.md`
 - `eda/processed/outputs/*.png`
+
+## 클러스터링 대시보드
+
+사용자 상태 임베딩을 차원 축소하고 밀도 기반 클러스터링한 결과를 인터랙티브하게 탐색할 수 있다.
+
+```bash
+streamlit run dashboard/cluster_dashboard.py
+```
+
+기본적으로 아래 결과 파일을 기대한다.
+
+- `data/clustering/user_clusters.parquet`
+
+필수 컬럼:
+
+- `userId`
+- `clusterLabel`
+- `x`
+- `y`
+
+선택 컬럼:
+
+- `z`
+- `clusterProbability`
+- `outlierScore`
+- `sequenceLength`
+- `embeddingNorm`
+
+실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
 
 ## 스키마 정책
 
