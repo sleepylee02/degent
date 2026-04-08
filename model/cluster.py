@@ -1,192 +1,243 @@
 from pathlib import Path
- 
+import time
+import warnings
+
 import numpy as np
 import umap
 import hdbscan
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
- 
+from tqdm import tqdm
+
 from runtime import setup_run_logging
- 
- 
+
+
 # =====================
-# UMAP 차원 축소
+# 유저별 UMAP + HDBSCAN
 # =====================
- 
-def reduce_dimensions(embeddings, n_components, random_state=42):
+
+def cluster_user(h, min_cluster_size=10, random_state=42,
+                 cluster_n_components=10, viz_n_components=3):
     """
-    embeddings: (N, d_model) numpy array
-    n_components: 축소할 차원 수
-    returns: (N, n_components) numpy array
-    """
-    reducer = umap.UMAP(n_components=n_components, random_state=random_state)
-    return reducer.fit_transform(embeddings)
- 
- 
-# =====================
-# HDBSCAN 클러스터링
-# =====================
- 
-def cluster(z, min_cluster_size=10):
-    """
-    z: (N, n_components) numpy array
+    단일 유저의 시점별 임베딩에 UMAP + HDBSCAN 수행
+
+    h: (T, 128) — 이 유저의 시점별 hidden state (시간 순 정렬된 상태)
+
+    두 개의 UMAP을 목적에 따라 분리:
+        cluster_n_components: 실제 클러스터링용 (기본 10D)
+        viz_n_components:     시각화용 (기본 3D)
+
     returns:
-        labels:      (N,) 클러스터 레이블 (-1 = 노이즈)
-        n_clusters:  유효 클러스터 수
-        noise_ratio: 노이즈 비율
+        labels:           (T,) 클러스터 레이블 (-1 = 노이즈)
+        z_viz:            (T, 3) 시각화용 3D 좌표
+        interest_vectors: (K, 128) 클러스터별 관심사 벡터 u_k (원본 128d 평균)
+        n_clusters:       유효 클러스터 수 K
     """
-    clusterer  = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
-    labels     = clusterer.fit_predict(z)
-    n_clusters  = len(set(labels)) - (1 if -1 in labels else 0)
-    noise_ratio = (labels == -1).sum() / len(labels)
-    return labels, n_clusters, noise_ratio
- 
- 
-# =====================
-# n_components 실험
-# =====================
- 
-def search_n_components(embeddings, candidates=[5, 10, 15, 20], min_cluster_size=10, logger=None):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="n_jobs value 1 overridden", category=UserWarning)
+
+        # Step 2a: 클러스터링용 UMAP — 10D (정보 손실 최소화)
+        reducer_cluster = umap.UMAP(n_components=cluster_n_components,
+                                    random_state=random_state, verbose=False)
+        z_cluster = reducer_cluster.fit_transform(h)
+
+        # Step 2b: 시각화용 UMAP — 3D (별도 실행, 클러스터링 결과에 영향 없음)
+        reducer_viz = umap.UMAP(n_components=viz_n_components,
+                                random_state=random_state, verbose=False)
+        z_viz = reducer_viz.fit_transform(h)
+
+    # Step 3: HDBSCAN — 10D 공간에서 밀도 추정
+    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
+    labels    = clusterer.fit_predict(z_cluster)
+
+    # Step 4: u_k = mean(h_t for t ∈ C_k) — 원본 128d 공간에서 계산
+    unique_clusters = sorted(set(labels) - {-1})
+    if unique_clusters:
+        interest_vectors = np.stack([h[labels == k].mean(axis=0) for k in unique_clusters])
+    else:
+        interest_vectors = np.zeros((0, h.shape[1]))
+
+    return labels, z_viz, interest_vectors, len(unique_clusters)
+
+
+def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
+                            min_cluster_size=10, logger=None):
     """
-    여러 n_components 후보로 실험해서 클러스터 수, 노이즈 비율 비교
-    """
-    results = []
-    for n in candidates:
-        z = reduce_dimensions(embeddings, n_components=n)
-        labels, n_clusters, noise_ratio = cluster(z, min_cluster_size=min_cluster_size)
-        results.append({
-            'n_components': n,
-            'n_clusters':   n_clusters,
-            'noise_ratio':  noise_ratio
-        })
-        if logger:
-            logger.info(
-                "n_components=%2d | clusters=%3d | noise_ratio=%.3f",
-                n, n_clusters, noise_ratio,
-            )
-    return results
- 
- 
-# =====================
-# 시각화 (데모용 3D)
-# =====================
- 
-def visualize_3d(embeddings, labels, output_path, logger=None):
-    """3D 시각화 (데모용) - 실제 클러스터링은 10~20차원에서 수행"""
-    z3d = reduce_dimensions(embeddings, n_components=3)
- 
-    fig = plt.figure(figsize=(10, 8))
-    ax  = fig.add_subplot(111, projection='3d')
- 
-    unique_labels = set(labels)
-    colors = plt.cm.tab20(np.linspace(0, 1, len(unique_labels)))
- 
-    for label, color in zip(unique_labels, colors):
-        mask = labels == label
-        if label == -1:
-            ax.scatter(z3d[mask, 0], z3d[mask, 1], z3d[mask, 2],
-                      c='gray', s=5, alpha=0.3, label='noise')
-        else:
-            ax.scatter(z3d[mask, 0], z3d[mask, 1], z3d[mask, 2],
-                      c=[color], s=10, alpha=0.6, label=f'cluster {label}')
- 
-    ax.set_title('User Interest Clusters (3D visualization)')
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150)
-    plt.show()
-    if logger:
-        logger.info("Saved 3D cluster plot: %s", output_path)
- 
- 
-# =====================
-# 유저별, 시점별 분석
-# =====================
- 
-def analyze_user_clusters(labels, user_ids, timepoint_idx, logger=None):
-    """
-    유저별로 시점에 따른 클러스터 변화 분석
- 
-    예시 출력:
-        user_id=1 | timepoint=0 → cluster=2
-        user_id=1 | timepoint=1 → cluster=5  ← 관심사 변화
+    모든 유저에 대해 개별 UMAP + HDBSCAN 수행
+
+    returns: {user_id: {
+        'timepoints':       (T,)    시점 index (시간 순)
+        'labels':           (T,)    시점별 클러스터 레이블
+        'interest_vectors': (K, 128) 관심사 벡터 u_k
+        'n_clusters':       int     adaptive K
+    }}
     """
     unique_users = np.unique(user_ids)
-    user_cluster_map = {}
- 
-    for uid in unique_users:
-        mask      = user_ids == uid
-        tp_labels = labels[mask]
-        tp_idx    = timepoint_idx[mask]
- 
-        # 시점 순서대로 정렬
-        order     = np.argsort(tp_idx)
-        tp_labels = tp_labels[order]
-        tp_idx    = tp_idx[order]
- 
-        user_cluster_map[uid] = list(zip(tp_idx.tolist(), tp_labels.tolist()))
- 
+    results  = {}
+    skipped  = 0
+
+    for uid in tqdm(unique_users, desc="per-user clustering"):
+        mask = user_ids == uid
+        h    = embeddings[mask]       # (T, 128)
+        tp   = timepoint_idx[mask]    # (T,)
+
+        # 시간 순 정렬
+        order = np.argsort(tp)
+        h  = h[order]
+        tp = tp[order]
+
+        # 최소 포인트 수 미달 시 스킵 (UMAP 최소 요건)
+        if len(h) < min_cluster_size * 2:
+            skipped += 1
+            continue
+
+        labels, z, interest_vectors, n_clusters = cluster_user(
+            h, min_cluster_size=min_cluster_size
+        )
+
+        results[uid] = {
+            'timepoints':       tp,
+            'labels':           labels,
+            'z':                z,
+            'interest_vectors': interest_vectors,
+            'n_clusters':       n_clusters,
+        }
+
     if logger:
-        # 예시로 상위 3명 출력
-        for uid in list(unique_users[:3]):
-            for tp, cl in user_cluster_map[uid]:
-                logger.info("user_id=%d | timepoint=%d → cluster=%d", uid, tp, cl)
- 
-    return user_cluster_map  # {user_id: [(timepoint, cluster_label), ...]}
- 
- 
+        logger.info("Clustering done | users=%d skipped=%d", len(results), skipped)
+
+    return results
+
+
+# =====================
+# 저장
+# =====================
+
+def save_results(results, output_path, logger=None):
+    """
+    per-user 결과를 flat arrays로 저장
+
+    저장 키:
+        labels_user_ids:    (N,)      각 시점의 user_id
+        labels_timepoints:  (N,)      각 시점의 timepoint index
+        labels:             (N,)      각 시점의 클러스터 레이블 (-1=노이즈)
+        iv_user_ids:        (M,)      각 관심사 벡터의 user_id
+        iv_cluster_ids:     (M,)      각 관심사 벡터의 클러스터 id
+        interest_vectors:   (M, 128)  관심사 벡터 u_k
+        user_ids_list:      (U,)      유저 id 목록
+        n_clusters:         (U,)      유저별 클러스터 수 K
+    """
+    lbl_users, lbl_tps, lbl_labels, lbl_z = [], [], [], []
+    iv_users, iv_clusters, ivs             = [], [], []
+    uid_list, n_clusters_list              = [], []
+
+    for uid, res in results.items():
+        T = len(res['timepoints'])
+        lbl_users.extend([uid] * T)
+        lbl_tps.extend(res['timepoints'].tolist())
+        lbl_labels.extend(res['labels'].tolist())
+        lbl_z.append(res['z'])  # (T, 3)
+
+        for k, vec in enumerate(res['interest_vectors']):
+            iv_users.append(uid)
+            iv_clusters.append(k)
+            ivs.append(vec)
+
+        uid_list.append(uid)
+        n_clusters_list.append(res['n_clusters'])
+
+    d = ivs[0].shape[0] if ivs else 128  # d_model
+    np.savez(
+        output_path,
+        labels_user_ids   = np.array(lbl_users),
+        labels_timepoints = np.array(lbl_tps),
+        labels            = np.array(lbl_labels),
+        umap_z            = np.concatenate(lbl_z, axis=0) if lbl_z else np.zeros((0, 3)),
+        iv_user_ids       = np.array(iv_users),
+        iv_cluster_ids    = np.array(iv_clusters),
+        interest_vectors  = np.array(ivs) if ivs else np.zeros((0, d)),
+        user_ids_list     = np.array(uid_list),
+        n_clusters        = np.array(n_clusters_list),
+    )
+    if logger:
+        logger.info("Saved: %s", output_path)
+
+
 # =====================
 # 실행
 # =====================
- 
+
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--user-id", type=int, default=None,
+                        help="테스트용: 특정 유저 한 명만 실행")
+    parser.add_argument("--top-n", type=int, default=None,
+                        help="시퀀스가 긴 상위 N명만 실행 (기본: 전체)")
+    args = parser.parse_args()
+
     OUTPUTS_DIR = Path(__file__).resolve().parent.parent / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     logger, _ = setup_run_logging("cluster", OUTPUTS_DIR)
- 
+
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
- 
-    # npz 로드 (유저별, 시점별 정보 포함)
+
+    # embeddings.npz 로드 (extract.py 출력)
     data          = np.load(OUTPUTS_DIR / 'embeddings.npz')
     embeddings    = data['embeddings']     # (N, 128)
     user_ids      = data['user_ids']       # (N,)
     timepoint_idx = data['timepoint_idx']  # (N,)
-    logger.info("Loaded embeddings: %s | unique users: %d", embeddings.shape, len(np.unique(user_ids)))
- 
-    # ── Step 1: n_components 실험 ──
-    logger.info("Starting n_components search")
-    results = search_n_components(
-        embeddings,
-        candidates=[5, 10, 15, 20],
+    logger.info("Loaded embeddings: %s | unique users: %d",
+                embeddings.shape, len(np.unique(user_ids)))
+
+    # NaN 행 제거
+    nan_mask = np.isnan(embeddings).any(axis=1)
+    if nan_mask.any():
+        logger.warning("Dropping %d NaN rows", nan_mask.sum())
+        embeddings    = embeddings[~nan_mask]
+        user_ids      = user_ids[~nan_mask]
+        timepoint_idx = timepoint_idx[~nan_mask]
+
+    # top-n 모드: 시퀀스가 긴 상위 N명만 필터링
+    if args.top_n is not None:
+        counts = {uid: (user_ids == uid).sum() for uid in np.unique(user_ids)}
+        top_users = set(sorted(counts, key=counts.get, reverse=True)[:args.top_n])
+        mask = np.isin(user_ids, list(top_users))
+        embeddings    = embeddings[mask]
+        user_ids      = user_ids[mask]
+        timepoint_idx = timepoint_idx[mask]
+        logger.info("Top-%d users | min_timepoints=%d max_timepoints=%d",
+                    args.top_n,
+                    min(counts[u] for u in top_users),
+                    max(counts[u] for u in top_users))
+
+    # 테스트 모드: 특정 유저만 필터링
+    if args.user_id is not None:
+        mask = user_ids == args.user_id
+        if not mask.any():
+            available = np.unique(user_ids)[:10].tolist()
+            logger.error("user_id=%d not found. available (first 10): %s",
+                         args.user_id, available)
+            raise SystemExit(1)
+        embeddings    = embeddings[mask]
+        user_ids      = user_ids[mask]
+        timepoint_idx = timepoint_idx[mask]
+        logger.info("Test mode: user_id=%d | timepoints=%d", args.user_id, mask.sum())
+
+    # 유저별 UMAP(R^3) + HDBSCAN
+    logger.info("Starting per-user clustering (cluster_n_components=10, viz_n_components=3, min_cluster_size=10)")
+    t0      = time.time()
+    results = run_per_user_clustering(
+        embeddings, user_ids, timepoint_idx,
         min_cluster_size=10,
         logger=logger,
     )
- 
-    best   = min(results, key=lambda x: x['noise_ratio'])
-    best_n = best['n_components']
-    logger.info("Selected n_components: %d", best_n)
- 
-    # ── Step 2: 실제 클러스터링 ──
-    logger.info("Running final clustering with n_components=%d", best_n)
-    z      = reduce_dimensions(embeddings, n_components=best_n)
-    labels, n_clusters, noise_ratio = cluster(z, min_cluster_size=10)
-    logger.info("Clustering result | clusters=%d noise_ratio=%.3f", n_clusters, noise_ratio)
- 
-    # 저장 (유저별, 시점별 정보 포함)
-    out_path = OUTPUTS_DIR / 'cluster_results.npz'
-    np.savez(
-        out_path,
-        labels        = labels,        # (N,)
-        user_ids      = user_ids,      # (N,)
-        timepoint_idx = timepoint_idx  # (N,)
-    )
-    logger.info("Saved cluster results: %s", out_path)
- 
-    # ── Step 3: 유저별, 시점별 클러스터 분석 ──
-    logger.info("Analyzing user-level cluster transitions")
-    user_cluster_map = analyze_user_clusters(labels, user_ids, timepoint_idx, logger=logger)
-    logger.info("User cluster map built | total users=%d", len(user_cluster_map))
- 
-    # ── Step 4: 3D 시각화 (데모용) ──
-    plot_path = OUTPUTS_DIR / 'clusters_3d.png'
-    logger.info("Rendering 3D visualization")
-    visualize_3d(embeddings, labels, plot_path, logger=logger)
+    logger.info("Total elapsed: %.1fs", time.time() - t0)
+
+    # K 분포 요약
+    k_values = [r['n_clusters'] for r in results.values()]
+    logger.info("K distribution | min=%d  max=%d  mean=%.1f  median=%.1f",
+                min(k_values), max(k_values),
+                np.mean(k_values), np.median(k_values))
+
+    # 저장
+    out_path = OUTPUTS_DIR / 'user_interests.npz'
+    save_results(results, out_path, logger=logger)

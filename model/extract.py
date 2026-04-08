@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import numpy as np
 import pandas as pd
@@ -72,14 +73,17 @@ if __name__ == "__main__":
     movies_path     = DATA_DIR / 'movies_processed_drop.csv'
     ratings_path    = DATA_DIR / 'ratings_drop_processed.jsonl'
     checkpoint_path = OUTPUTS_DIR / 'sasrec_cl.pt'
+    item2idx_path   = OUTPUTS_DIR / 'item2idx.json'
     batch_size  = 256
     num_workers = 4
-    interval    = 50
+    interval    = 10
+    stride      = 10
 
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
     logger.info("Movies input: %s", movies_path)
     logger.info("Ratings input: %s", ratings_path)
     logger.info("Checkpoint input: %s", checkpoint_path)
+    logger.info("item2idx input: %s", item2idx_path)
 
     device, device_label = resolve_torch_device()
     log_torch_runtime(logger, device, device_label)
@@ -90,19 +94,21 @@ if __name__ == "__main__":
     num_genres            = len(all_genres)
     logger.info("Loaded movies: %d | unique genres: %d", len(movies), num_genres)
 
-    user_sequences = build_user_sequences(
-        ratings_path,
-        min_interactions=200,
-        min_activity_days=30
-    )
-    logger.info("Filtered user sequences: %d", len(user_sequences))
-
-    # item id 재매핑
-    all_items = sorted(set(i for seq in user_sequences.values() for i, _ in seq))
-    item2idx  = {item: idx + 1 for idx, item in enumerate(all_items)}
+    # item2idx: 학습 때와 동일한 vocabulary 재사용
+    with open(item2idx_path) as f:
+        item2idx = {int(k): v for k, v in json.load(f).items()}
     num_items = len(item2idx)
+    logger.info("Loaded item2idx: %d items", num_items)
 
     genre_map_idx = {item2idx[k]: v for k, v in genre_map.items() if k in item2idx}
+
+    # 클러스터링 대상 유저만 로드 (1000 이상 긍정 상호작용)
+    user_sequences = build_user_sequences(
+        ratings_path,
+        min_interactions=1000,
+        min_activity_days=30
+    )
+    logger.info("Filtered user sequences (>=1000): %d", len(user_sequences))
 
     train_seq, _, _ = temporal_split(user_sequences)
     train_seq_idx   = {
@@ -111,7 +117,7 @@ if __name__ == "__main__":
     }
 
     # shuffle=False 필수 (sample_idx 순서 보장)
-    train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=100, stride=50)
+    train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=100, stride=stride)
     train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     logger.info(
         "Extraction dataset | train_users=%d samples=%d batches=%d items=%d",

@@ -215,3 +215,10 @@ if __name__ == "__main__":
     out_path = OUTPUTS_DIR / 'sasrec_cl.pt'
     torch.save(model.state_dict(), out_path)
     logger.info("Saved model checkpoint: %s", out_path)
+
+    # item2idx 저장 (extract.py에서 동일 vocabulary 재사용)
+    import json
+    item2idx_path = OUTPUTS_DIR / 'item2idx.json'
+    with open(item2idx_path, 'w') as f:
+        json.dump({str(k): v for k, v in item2idx.items()}, f)
+    logger.info("Saved item2idx: %s (%d items)", item2idx_path, len(item2idx))

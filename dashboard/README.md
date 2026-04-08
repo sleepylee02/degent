@@ -29,6 +29,7 @@ streamlit run dashboard/cluster_dashboard.py
 선택 컬럼:
 
 - `z`: 3차원 시각화용 3축
+- `timepoint`: 유저 시청 이력 내 글로벌 시점 인덱스
 - `clusterProbability`: HDBSCAN soft membership 등 신뢰도
 - `outlierScore`: 이상치 점수
 - `sequenceLength`: 사용자 시퀀스 길이
@@ -38,10 +39,10 @@ streamlit run dashboard/cluster_dashboard.py
 예시 CSV:
 
 ```csv
-userId,clusterLabel,x,y,z,clusterProbability,outlierScore,sequenceLength,embeddingNorm
-10,3,-4.12,2.07,0.53,0.94,0.03,87,11.8
-11,-1,8.51,-6.24,-1.22,0.18,0.91,6,9.4
-12,1,-1.92,4.65,1.03,0.88,0.10,42,10.7
+userId,clusterLabel,x,y,z,timepoint,clusterProbability,outlierScore,sequenceLength,embeddingNorm
+10,3,-4.12,2.07,0.53,120,0.94,0.03,87,11.8
+11,-1,8.51,-6.24,-1.22,340,0.18,0.91,6,9.4
+12,1,-1.92,4.65,1.03,80,0.88,0.10,42,10.7
 ```
 
 ## 기본 경로
