@@ -1,5 +1,6 @@
 from pathlib import Path
 import time
+import warnings
 
 import numpy as np
 import umap
@@ -30,15 +31,18 @@ def cluster_user(h, min_cluster_size=10, random_state=42,
         interest_vectors: (K, 128) 클러스터별 관심사 벡터 u_k (원본 128d 평균)
         n_clusters:       유효 클러스터 수 K
     """
-    # Step 2a: 클러스터링용 UMAP — 10D (정보 손실 최소화)
-    reducer_cluster = umap.UMAP(n_components=cluster_n_components,
-                                random_state=random_state, verbose=False)
-    z_cluster = reducer_cluster.fit_transform(h)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="n_jobs value 1 overridden", category=UserWarning)
 
-    # Step 2b: 시각화용 UMAP — 3D (별도 실행, 클러스터링 결과에 영향 없음)
-    reducer_viz = umap.UMAP(n_components=viz_n_components,
-                            random_state=random_state, verbose=False)
-    z_viz = reducer_viz.fit_transform(h)
+        # Step 2a: 클러스터링용 UMAP — 10D (정보 손실 최소화)
+        reducer_cluster = umap.UMAP(n_components=cluster_n_components,
+                                    random_state=random_state, verbose=False)
+        z_cluster = reducer_cluster.fit_transform(h)
+
+        # Step 2b: 시각화용 UMAP — 3D (별도 실행, 클러스터링 결과에 영향 없음)
+        reducer_viz = umap.UMAP(n_components=viz_n_components,
+                                random_state=random_state, verbose=False)
+        z_viz = reducer_viz.fit_transform(h)
 
     # Step 3: HDBSCAN — 10D 공간에서 밀도 추정
     clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
@@ -166,6 +170,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-id", type=int, default=None,
                         help="테스트용: 특정 유저 한 명만 실행")
+    parser.add_argument("--top-n", type=int, default=None,
+                        help="시퀀스가 긴 상위 N명만 실행 (기본: 전체)")
     args = parser.parse_args()
 
     OUTPUTS_DIR = Path(__file__).resolve().parent.parent / 'outputs'
@@ -189,6 +195,19 @@ if __name__ == "__main__":
         embeddings    = embeddings[~nan_mask]
         user_ids      = user_ids[~nan_mask]
         timepoint_idx = timepoint_idx[~nan_mask]
+
+    # top-n 모드: 시퀀스가 긴 상위 N명만 필터링
+    if args.top_n is not None:
+        counts = {uid: (user_ids == uid).sum() for uid in np.unique(user_ids)}
+        top_users = set(sorted(counts, key=counts.get, reverse=True)[:args.top_n])
+        mask = np.isin(user_ids, list(top_users))
+        embeddings    = embeddings[mask]
+        user_ids      = user_ids[mask]
+        timepoint_idx = timepoint_idx[mask]
+        logger.info("Top-%d users | min_timepoints=%d max_timepoints=%d",
+                    args.top_n,
+                    min(counts[u] for u in top_users),
+                    max(counts[u] for u in top_users))
 
     # 테스트 모드: 특정 유저만 필터링
     if args.user_id is not None:

@@ -2,7 +2,8 @@
 유저별 클러스터 변화 시각화
 
 사용:
-    python visualize_clusters.py --user-id 28
+    python visualize_clusters.py                     # 전체 유저 생성
+    python visualize_clusters.py --user-id 28        # 특정 유저만
     python visualize_clusters.py --user-id 28 --window 50
     python visualize_clusters.py --user-id 28 --output my_plot.png
 """
@@ -48,7 +49,7 @@ def plot_user(user_id, tps, labels, z, window, out_path):
     K = len(unique_clusters)
     noise_ratio = (labels == -1).mean()
 
-    cmap = cm.get_cmap("tab20", max(K, 1))
+    cmap = matplotlib.colormaps["tab20"].resampled(max(K, 1))
     color_map = {k: cmap(i) for i, k in enumerate(unique_clusters)}
     colors = [color_map.get(l, (0.7, 0.7, 0.7, 0.4)) for l in labels]
 
@@ -96,18 +97,33 @@ def plot_user(user_id, tps, labels, z, window, out_path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--user-id", type=int, required=True)
+    parser.add_argument("--user-id", type=int, default=None,
+                        help="특정 유저만 생성 (생략 시 전체 유저)")
     parser.add_argument("--window",  type=int, default=30,
                         help="슬라이딩 윈도우 크기 (default: 30)")
     parser.add_argument("--output",  type=str, default=None,
-                        help="저장 경로 (default: outputs/viz_user<id>.png)")
+                        help="저장 경로 (--user-id 지정 시에만 유효)")
     args = parser.parse_args()
 
     OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
+    VIZ_DIR     = OUTPUTS_DIR / "viz"
+    VIZ_DIR.mkdir(parents=True, exist_ok=True)
     data_path   = OUTPUTS_DIR / "user_interests.npz"
 
-    data = np.load(data_path)
-    tps, labels, z = load_user(data, args.user_id)
+    data       = np.load(data_path)
+    all_users  = np.unique(data["labels_user_ids"])
 
-    out_path = args.output or str(OUTPUTS_DIR / f"viz_user{args.user_id}.png")
-    plot_user(args.user_id, tps, labels, z, window=args.window, out_path=out_path)
+    if args.user_id is not None:
+        target_users = [args.user_id]
+    else:
+        target_users = all_users.tolist()
+        print(f"Generating plots for {len(target_users)} users → {VIZ_DIR}")
+
+    for uid in target_users:
+        try:
+            tps, labels, z = load_user(data, uid)
+        except ValueError as e:
+            print(f"[skip] {e}")
+            continue
+        out_path = args.output if (args.user_id is not None and args.output) else str(VIZ_DIR / f"user{uid}.png")
+        plot_user(uid, tps, labels, z, window=args.window, out_path=out_path)
