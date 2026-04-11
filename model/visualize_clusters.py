@@ -2,9 +2,8 @@
 유저별 클러스터 변화 시각화
 
 사용:
-    python visualize_clusters.py                     # 전체 유저 생성
-    python visualize_clusters.py --user-id 28        # 특정 유저만
-    python visualize_clusters.py --user-id 28 --window 50
+    python visualize_clusters.py                      # 전체 유저 생성
+    python visualize_clusters.py --user-id 28         # 특정 유저만
     python visualize_clusters.py --user-id 28 --output my_plot.png
 """
 from pathlib import Path
@@ -25,26 +24,24 @@ def load_user(data, user_id):
 
     tps    = data["labels_timepoints"][mask]
     labels = data["labels"][mask]
-    z      = data["umap_z"][mask]          # (T, 3)
+    z      = data["umap_z"][mask]
     order  = np.argsort(tps)
-    return tps[order], labels[order], z[order]
+
+    # 슬라이딩 윈도우 K 데이터 (없으면 None)
+    if "win_user_ids" in data:
+        win_mask    = data["win_user_ids"] == user_id
+        win_centers = data["win_centers"][win_mask]
+        win_k       = data["win_k"][win_mask]
+        win_order   = np.argsort(win_centers)
+        win_centers = win_centers[win_order]
+        win_k       = win_k[win_order]
+    else:
+        win_centers = win_k = None
+
+    return tps[order], labels[order], z[order], win_centers, win_k
 
 
-def rolling_k(tps, labels, window):
-    """슬라이딩 윈도우로 구간별 유효 클러스터 수 계산"""
-    T = len(tps)
-    k_vals = []
-    centers = []
-    for i in range(T):
-        lo = max(0, i - window // 2)
-        hi = min(T, i + window // 2 + 1)
-        k = len(set(labels[lo:hi]) - {-1})
-        k_vals.append(k)
-        centers.append(tps[i])
-    return np.array(centers), np.array(k_vals)
-
-
-def plot_user(user_id, tps, labels, z, window, out_path):
+def plot_user(user_id, tps, labels, z, win_centers, win_k, out_path):
     unique_clusters = sorted(set(labels) - {-1})
     K = len(unique_clusters)
     noise_ratio = (labels == -1).mean()
@@ -52,8 +49,6 @@ def plot_user(user_id, tps, labels, z, window, out_path):
     cmap = matplotlib.colormaps["tab20"].resampled(max(K, 1))
     color_map = {k: cmap(i) for i, k in enumerate(unique_clusters)}
     colors = [color_map.get(l, (0.7, 0.7, 0.7, 0.4)) for l in labels]
-
-    roll_x, roll_k = rolling_k(tps, labels, window)
 
     fig = plt.figure(figsize=(16, 12))
     fig.suptitle(f"User {user_id}  |  K={K}  |  T={len(tps)}  |  noise={noise_ratio:.1%}",
@@ -67,13 +62,18 @@ def plot_user(user_id, tps, labels, z, window, out_path):
     ax1.set_ylabel("Cluster label")
     ax1.set_title("Cluster assignment over time")
 
-    # ── 2. 롤링 K (슬라이딩 윈도우) ──
+    # ── 2. 슬라이딩 윈도우 K(t) ──
     ax2 = fig.add_subplot(3, 2, (3, 4))
-    ax2.plot(roll_x, roll_k, linewidth=1.2, color="steelblue")
-    ax2.fill_between(roll_x, roll_k, alpha=0.2, color="steelblue")
+    if win_centers is not None and len(win_centers) > 0:
+        ax2.plot(win_centers, win_k, linewidth=1.2, color="steelblue")
+        ax2.fill_between(win_centers, win_k, alpha=0.2, color="steelblue")
+        ax2.set_title("Sliding window K(t)  [HDBSCAN per window]")
+    else:
+        ax2.text(0.5, 0.5, "window data unavailable\n(T < window_size)",
+                 ha="center", va="center", transform=ax2.transAxes, color="gray")
+        ax2.set_title("Sliding window K(t)")
     ax2.set_xlabel("Timepoint")
     ax2.set_ylabel("Active clusters K")
-    ax2.set_title(f"Rolling K  (window={window})")
 
     # ── 3. UMAP 3D 산점도 (처음 2축) ──
     ax3 = fig.add_subplot(3, 2, 5)
@@ -99,8 +99,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-id", type=int, default=None,
                         help="특정 유저만 생성 (생략 시 전체 유저)")
-    parser.add_argument("--window",  type=int, default=30,
-                        help="슬라이딩 윈도우 크기 (default: 30)")
     parser.add_argument("--output",  type=str, default=None,
                         help="저장 경로 (--user-id 지정 시에만 유효)")
     args = parser.parse_args()
@@ -121,9 +119,9 @@ if __name__ == "__main__":
 
     for uid in target_users:
         try:
-            tps, labels, z = load_user(data, uid)
+            tps, labels, z, win_centers, win_k = load_user(data, uid)
         except ValueError as e:
             print(f"[skip] {e}")
             continue
         out_path = args.output if (args.user_id is not None and args.output) else str(VIZ_DIR / f"user{uid}.png")
-        plot_user(uid, tps, labels, z, window=args.window, out_path=out_path)
+        plot_user(uid, tps, labels, z, win_centers, win_k, out_path=out_path)

@@ -15,59 +15,81 @@ from runtime import setup_run_logging
 # =====================
 
 def cluster_user(h, min_cluster_size=10, random_state=42,
-                 cluster_n_components=10, viz_n_components=3):
+                 cluster_n_components=10, viz_n_components=3,
+                 window_size=100, window_step=10):
     """
     단일 유저의 시점별 임베딩에 UMAP + HDBSCAN 수행
 
     h: (T, 128) — 이 유저의 시점별 hidden state (시간 순 정렬된 상태)
 
-    두 개의 UMAP을 목적에 따라 분리:
-        cluster_n_components: 실제 클러스터링용 (기본 10D)
-        viz_n_components:     시각화용 (기본 3D)
+    UMAP은 전체 시점에 한 번만 실행 (안정적인 좌표 확보).
+    HDBSCAN은 두 가지 목적으로 분리:
+        global HDBSCAN : 전체 시점 대상 → 관심사 벡터 u_k 계산 (추천용)
+        sliding window : 윈도우 단위 반복 → K(t) 시계열 추출 (시간 변화 추적용)
 
     returns:
-        labels:           (T,) 클러스터 레이블 (-1 = 노이즈)
-        z_viz:            (T, 3) 시각화용 3D 좌표
-        interest_vectors: (K, 128) 클러스터별 관심사 벡터 u_k (원본 128d 평균)
-        n_clusters:       유효 클러스터 수 K
+        global_labels:    (T,)    전체 클러스터 레이블 (-1=노이즈)
+        z_viz:            (T, 3)  시각화용 3D 좌표
+        interest_vectors: (K, 128) 관심사 벡터 u_k
+        n_clusters:       int     전체 유효 클러스터 수 K
+        win_centers:      (M,)    각 윈도우의 중심 시점 인덱스
+        win_k:            (M,)    각 윈도우의 유효 클러스터 수
     """
+    T = len(h)
+
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="n_jobs value 1 overridden", category=UserWarning)
 
-        # Step 2a: 클러스터링용 UMAP — 10D (정보 손실 최소화)
+        # Step 1a: 클러스터링용 UMAP — 10D (정보 손실 최소화)
         reducer_cluster = umap.UMAP(n_components=cluster_n_components,
                                     random_state=random_state, verbose=False)
         z_cluster = reducer_cluster.fit_transform(h)
 
-        # Step 2b: 시각화용 UMAP — 3D (별도 실행, 클러스터링 결과에 영향 없음)
+        # Step 1b: 시각화용 UMAP — 3D (별도 실행, 클러스터링 결과에 영향 없음)
         reducer_viz = umap.UMAP(n_components=viz_n_components,
                                 random_state=random_state, verbose=False)
         z_viz = reducer_viz.fit_transform(h)
 
-    # Step 3: HDBSCAN — 10D 공간에서 밀도 추정
-    clusterer = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size)
-    labels    = clusterer.fit_predict(z_cluster)
-
-    # Step 4: u_k = mean(h_t for t ∈ C_k) — 원본 128d 공간에서 계산
-    unique_clusters = sorted(set(labels) - {-1})
+    # Step 2: Global HDBSCAN — u_k 계산용
+    global_labels = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster)
+    unique_clusters = sorted(set(global_labels) - {-1})
     if unique_clusters:
-        interest_vectors = np.stack([h[labels == k].mean(axis=0) for k in unique_clusters])
+        interest_vectors = np.stack([h[global_labels == k].mean(axis=0) for k in unique_clusters])
     else:
         interest_vectors = np.zeros((0, h.shape[1]))
 
-    return labels, z_viz, interest_vectors, len(unique_clusters)
+    # Step 3: Sliding window HDBSCAN — K(t) 시계열
+    win_centers, win_k = [], []
+    if T >= window_size:
+        for start in range(0, T - window_size + 1, window_step):
+            end     = start + window_size
+            z_win   = z_cluster[start:end]
+            labels_win = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_win)
+            win_centers.append((start + end) // 2)
+            win_k.append(len(set(labels_win) - {-1}))
+
+    return (global_labels, z_viz, interest_vectors, len(unique_clusters),
+            np.array(win_centers), np.array(win_k))
 
 
 def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
-                            min_cluster_size=10, logger=None):
+                            min_cluster_size=10, stride=1,
+                            window_size=100, window_step=10, logger=None):
     """
     모든 유저에 대해 개별 UMAP + HDBSCAN 수행
 
+    stride:      시간 순 정렬 후 매 N번째 시점만 사용 (기본 1 = 전체)
+    window_size: 슬라이딩 윈도우 크기 (기본 100)
+    window_step: 윈도우 이동 간격 (기본 10)
+
     returns: {user_id: {
-        'timepoints':       (T,)    시점 index (시간 순)
-        'labels':           (T,)    시점별 클러스터 레이블
+        'timepoints':    (T,)    시점 index (시간 순)
+        'labels':        (T,)    전체 클러스터 레이블
+        'z':             (T, 3)  시각화용 UMAP 좌표
         'interest_vectors': (K, 128) 관심사 벡터 u_k
-        'n_clusters':       int     adaptive K
+        'n_clusters':    int     전체 유효 K
+        'win_centers':   (M,)    윈도우 중심 timepoint
+        'win_k':         (M,)    윈도우별 K
     }}
     """
     unique_users = np.unique(user_ids)
@@ -76,29 +98,40 @@ def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
 
     for uid in tqdm(unique_users, desc="per-user clustering"):
         mask = user_ids == uid
-        h    = embeddings[mask]       # (T, 128)
-        tp   = timepoint_idx[mask]    # (T,)
+        h    = embeddings[mask]
+        tp   = timepoint_idx[mask]
 
         # 시간 순 정렬
         order = np.argsort(tp)
         h  = h[order]
         tp = tp[order]
 
+        # stride 적용 — 매 N번째 시점만 사용
+        if stride > 1:
+            h  = h[::stride]
+            tp = tp[::stride]
+
         # 최소 포인트 수 미달 시 스킵 (UMAP 최소 요건)
         if len(h) < min_cluster_size * 2:
             skipped += 1
             continue
 
-        labels, z, interest_vectors, n_clusters = cluster_user(
-            h, min_cluster_size=min_cluster_size
+        global_labels, z, interest_vectors, n_clusters, win_centers, win_k = cluster_user(
+            h, min_cluster_size=min_cluster_size,
+            window_size=window_size, window_step=window_step,
         )
+
+        # win_centers는 h 내 인덱스 → 실제 timepoint로 변환
+        win_tp_centers = tp[win_centers] if len(win_centers) > 0 else np.array([], dtype=int)
 
         results[uid] = {
             'timepoints':       tp,
-            'labels':           labels,
+            'labels':           global_labels,
             'z':                z,
             'interest_vectors': interest_vectors,
             'n_clusters':       n_clusters,
+            'win_centers':      win_tp_centers,
+            'win_k':            win_k,
         }
 
     if logger:
@@ -127,6 +160,7 @@ def save_results(results, output_path, logger=None):
     """
     lbl_users, lbl_tps, lbl_labels, lbl_z = [], [], [], []
     iv_users, iv_clusters, ivs             = [], [], []
+    win_users, win_centers_all, win_k_all  = [], [], []
     uid_list, n_clusters_list              = [], []
 
     for uid, res in results.items():
@@ -134,17 +168,22 @@ def save_results(results, output_path, logger=None):
         lbl_users.extend([uid] * T)
         lbl_tps.extend(res['timepoints'].tolist())
         lbl_labels.extend(res['labels'].tolist())
-        lbl_z.append(res['z'])  # (T, 3)
+        lbl_z.append(res['z'])
 
         for k, vec in enumerate(res['interest_vectors']):
             iv_users.append(uid)
             iv_clusters.append(k)
             ivs.append(vec)
 
+        M = len(res['win_centers'])
+        win_users.extend([uid] * M)
+        win_centers_all.extend(res['win_centers'].tolist())
+        win_k_all.extend(res['win_k'].tolist())
+
         uid_list.append(uid)
         n_clusters_list.append(res['n_clusters'])
 
-    d = ivs[0].shape[0] if ivs else 128  # d_model
+    d = ivs[0].shape[0] if ivs else 128
     np.savez(
         output_path,
         labels_user_ids   = np.array(lbl_users),
@@ -154,6 +193,9 @@ def save_results(results, output_path, logger=None):
         iv_user_ids       = np.array(iv_users),
         iv_cluster_ids    = np.array(iv_clusters),
         interest_vectors  = np.array(ivs) if ivs else np.zeros((0, d)),
+        win_user_ids      = np.array(win_users),
+        win_centers       = np.array(win_centers_all),
+        win_k             = np.array(win_k_all),
         user_ids_list     = np.array(uid_list),
         n_clusters        = np.array(n_clusters_list),
     )
@@ -170,8 +212,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--user-id", type=int, default=None,
                         help="테스트용: 특정 유저 한 명만 실행")
-    parser.add_argument("--top-n", type=int, default=None,
+    parser.add_argument("--top-n",       type=int, default=None,
                         help="시퀀스가 긴 상위 N명만 실행 (기본: 전체)")
+    parser.add_argument("--stride",      type=int, default=1,
+                        help="시점 샘플링 간격 (기본: 1 = 전체, 2이면 절반)")
+    parser.add_argument("--window-size", type=int, default=100,
+                        help="슬라이딩 윈도우 크기 (기본: 100)")
+    parser.add_argument("--window-step", type=int, default=10,
+                        help="윈도우 이동 간격 (기본: 10)")
     args = parser.parse_args()
 
     OUTPUTS_DIR = Path(__file__).resolve().parent.parent / 'outputs'
@@ -223,11 +271,18 @@ if __name__ == "__main__":
         logger.info("Test mode: user_id=%d | timepoints=%d", args.user_id, mask.sum())
 
     # 유저별 UMAP(R^3) + HDBSCAN
-    logger.info("Starting per-user clustering (cluster_n_components=10, viz_n_components=3, min_cluster_size=10)")
+    logger.info(
+        "Starting per-user clustering | cluster_dim=10 viz_dim=3 "
+        "min_cluster_size=10 stride=%d window_size=%d window_step=%d",
+        args.stride, args.window_size, args.window_step,
+    )
     t0      = time.time()
     results = run_per_user_clustering(
         embeddings, user_ids, timepoint_idx,
         min_cluster_size=10,
+        stride=args.stride,
+        window_size=args.window_size,
+        window_step=args.window_step,
         logger=logger,
     )
     logger.info("Total elapsed: %.1fs", time.time() - t0)
