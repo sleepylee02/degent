@@ -1,0 +1,10 @@
+2026-04-10 15:47:28 | INFO | Log file: /home/yoon/capstone/degent/outputs/logs/cluster_20260410_154728.log
+2026-04-10 15:47:28 | INFO | Outputs directory: /home/yoon/capstone/degent/outputs
+2026-04-10 15:47:30 | INFO | Loaded embeddings: (763772, 128) | unique users: 622
+2026-04-10 15:47:30 | WARNING | Dropping 12 NaN rows
+2026-04-10 15:47:31 | INFO | Test mode: user_id=10202 | timepoints=3860
+2026-04-10 15:47:31 | INFO | Starting per-user clustering | cluster_dim=10 viz_dim=3 min_cluster_size=10 stride=1 window_size=100 window_step=10
+2026-04-10 15:49:23 | INFO | Clustering done | users=1 skipped=0
+2026-04-10 15:49:23 | INFO | Total elapsed: 112.0s
+2026-04-10 15:49:23 | INFO | K distribution | min=103  max=103  mean=103.0  median=103.0
+2026-04-10 15:49:23 | INFO | Saved: /home/yoon/capstone/degent/outputs/user_interests.npz
