@@ -1,4 +1,4 @@
-# Local AI assistant files
+# Local AI assistant scratch/config
 .codex
 .codex/
 .claude/
@@ -41,6 +41,3 @@ outputs/*
 !outputs/readme.md
 !outputs/logs/
 !outputs/logs/**
-
-# Temporal Module
-build_item2idx.py

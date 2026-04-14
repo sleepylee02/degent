@@ -2,7 +2,7 @@
 
 영화 추천 시스템 연구 프로젝트다. MovieLens 32M을 주 상호작용 로그로 사용하고, Genome 2021과 ML-32M 확장 데이터를 보조 신호로 활용해 전처리, 품질 필터링, user-sequence 생성, EDA를 수행한다.
 
-이 프로젝트의 운영 규칙과 디렉터리 정책은 `PROJECT_GUIDE.md`가 정본이다. 작업을 시작하기 전에 먼저 읽는 것을 전제로 한다.
+이 프로젝트의 운영 규칙, 디렉터리 정책, LLM 작업 절차는 `PROJECT_GUIDE.md`가 정본이다. 이 README는 빠른 실행과 사용 안내를 위한 문서다.
 
 ## 프로젝트 범위
 
@@ -14,6 +14,8 @@
   - `data/movies_processed_drop.csv`
   - `data/ratings_drop.csv`
   - `data/ratings_drop_processed.jsonl`
+- 보조 산출물:
+  - `data/ml-32m/genre.csv`
 
 ## 저장소 구조
 
@@ -22,6 +24,9 @@ degent/
 ├── data/
 │   ├── docs/                         # 연구 제안서 등 참고 문서
 │   ├── ml-32m/                       # MovieLens 32M
+│   │   ├── raw/                      # 원본 CSV
+│   │   ├── genre.csv                 # 장르 multi-hot 보조 산출물
+│   │   └── readme.md                 # 데이터셋 설명
 │   ├── ml-32m-extension-main/        # ML-32M extension
 │   ├── genome_2021/                  # Genome 2021
 │   ├── movies_processed.csv          # 영화 통합 전처리 결과
@@ -31,8 +36,17 @@ degent/
 ├── schemas/                          # 데이터 계약 정본
 ├── preprocess/                       # 전처리 및 후처리 스크립트
 ├── dashboard/                        # 클러스터링 결과 시각화 대시보드
+├── model/                            # SASRec + Contrastive Loss 모델 파이프라인
+├── outputs/                          # 모델 산출물과 실행 로그
+├── experiments/                      # 가벼운 실험 메타데이터
 ├── eda/                              # raw / processed EDA
-├── plan/                             # 작업 계획서
+├── docs/                             # 데이터 흐름, 산출물, 설계 결정 보조 문서
+├── plan/                             # 작업 계획서와 상태별 보관
+├── todo.md                           # 현재 작업 상태와 협업 메모
+├── AGENTS.md                         # Codex 등 LLM 작업 진입점
+├── CLAUDE.md                         # Claude 작업 진입점
+├── .cursorrules                      # Cursor 작업 진입점
+├── .windsurfrules                    # Windsurf 작업 진입점
 ├── requirements.txt
 ├── PROJECT_GUIDE.md
 └── README.md
@@ -165,6 +179,18 @@ JSONL 레코드 예시:
 }
 ```
 
+### 보조. 장르 multi-hot CSV 생성
+
+MovieLens `movies.csv`의 pipe-delimited genre를 multi-hot 벡터로 변환해 `data/ml-32m/genre.csv`를 만든다. 현재 메인 전처리/drop/user-sequence 파이프라인의 필수 단계는 아니다.
+
+```bash
+(cd preprocess/preprocess_genre && python3 preprocess_genre.py)
+```
+
+출력:
+
+- `data/ml-32m/genre.csv`
+
 ## EDA
 
 ### Raw 데이터 EDA
@@ -184,9 +210,11 @@ python3 -m eda.raw.eda_overview --source all
 
 출력 위치:
 
-- `eda/raw/outputs/ml_32m/`
-- `eda/raw/outputs/genome_2021/`
-- `eda/raw/outputs/`
+- `eda/eda_outputs/ml_32m/`
+- `eda/eda_outputs/genome_2021/`
+- `eda/eda_outputs/`
+
+이전 실행 결과가 `eda/raw/outputs/` 아래에 남아 있을 수 있지만, 현재 raw EDA 코드는 `eda/eda_outputs/`를 쓴다.
 
 ### Processed 데이터 EDA
 
@@ -230,6 +258,18 @@ streamlit run dashboard/cluster_dashboard.py
 
 실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
 
+## 모델 실험 기록
+
+`python model/train.py`는 기본적으로 새 run id를 만들고, `python model/extract.py`, `python model/cluster.py`는 최신 run id를 이어받는다.
+
+가벼운 기록:
+
+- `experiments/model/<run_id>/manifest.json`: command, git 상태, 입력/출력 metadata, config
+- `experiments/model/<run_id>/metrics.jsonl`: 학습 지표와 extract/cluster summary
+- `experiments/model/<run_id>/notes.md`: 사람이 적는 실험 해석
+
+무거운 모델 산출물은 기존처럼 `outputs/` 아래에 두고 git으로 추적하지 않는다. 세부 옵션은 `model/README.md`를 따른다.
+
 ## 스키마 정책
 
 스키마는 `schemas/`가 정본이다.
@@ -247,9 +287,9 @@ streamlit run dashboard/cluster_dashboard.py
 ## 협업 규칙
 
 - `PROJECT_GUIDE.md`를 단일 진실 공급원으로 사용한다.
-- 새 작업 전 `plan/`의 기존 계획을 확인한다.
+- 새 작업 전 `todo.md`와 `plan/active/`의 기존 계획을 확인한다.
 - `data/**/raw/`는 절대 수정하지 않는다.
-- 생성물은 스크립트로 재생성하는 것을 원칙으로 한다.
+- 생성물은 스크립트로 재생성하는 것을 원칙으로 한다. 단, `data/ml-32m/genre.csv`처럼 명시적으로 포함된 보조 산출물은 예외로 둔다.
 - 데이터셋이나 파이프라인이 바뀌면 `PROJECT_GUIDE.md`도 함께 갱신한다.
 
 ## 현재 산출물 기준 참고 수치
@@ -266,7 +306,17 @@ streamlit run dashboard/cluster_dashboard.py
 ## 관련 문서
 
 - `PROJECT_GUIDE.md`: 프로젝트 운영 규칙과 구조
+- `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`: LLM 도구별 진입점
+- `todo.md`: 현재 작업 상태와 협업 메모
+- `docs/data-flow.md`: raw -> processed -> model -> dashboard 흐름
+- `docs/artifacts.md`: 원본 데이터와 생성물의 수정 가능 여부
+- `docs/decisions/`: 중요한 설계 결정 기록
+- `experiments/model/README.md`: 모델 실험 메타데이터 기록 규칙
 - `schemas/README.md`: 스키마 컨벤션
-- `plan/`: 단계별 구현 계획
+- `preprocess/README.md`: 전처리 실행 순서와 입출력
+- `plan/_template.md`: 새 계획서 템플릿
+- `plan/active/`: 진행 중 계획
+- `plan/done/`: 완료된 계획
+- `plan/expired/`: 이전 문서 구조 기준의 만료된 계획
 - `eda/processed/outputs/eda_report.md`: processed 데이터 분석 결과
-- `eda/raw/outputs/eda_report.md`: raw 데이터 통합 분석 결과
+- `eda/eda_outputs/eda_report.md`: raw 데이터 통합 분석 결과
