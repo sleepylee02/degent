@@ -7,7 +7,16 @@ import umap
 import hdbscan
 from tqdm import tqdm
 
-from runtime import setup_run_logging
+from runtime import (
+    append_metric,
+    command_line,
+    ensure_experiment_run,
+    file_metadata,
+    git_metadata,
+    resolve_model_run_id,
+    setup_run_logging,
+    update_experiment_manifest,
+)
 
 
 # =====================
@@ -74,7 +83,9 @@ def cluster_user(h, min_cluster_size=10, random_state=42,
 
 def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
                             min_cluster_size=10, stride=1,
-                            window_size=100, window_step=10, logger=None):
+                            window_size=100, window_step=10,
+                            random_state=42, cluster_n_components=10,
+                            viz_n_components=3, logger=None):
     """
     모든 유저에 대해 개별 UMAP + HDBSCAN 수행
 
@@ -118,6 +129,9 @@ def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
 
         global_labels, z, interest_vectors, n_clusters, win_centers, win_k = cluster_user(
             h, min_cluster_size=min_cluster_size,
+            random_state=random_state,
+            cluster_n_components=cluster_n_components,
+            viz_n_components=viz_n_components,
             window_size=window_size, window_step=window_step,
         )
 
@@ -220,26 +234,83 @@ if __name__ == "__main__":
                         help="슬라이딩 윈도우 크기 (기본: 100)")
     parser.add_argument("--window-step", type=int, default=10,
                         help="윈도우 이동 간격 (기본: 10)")
+    parser.add_argument("--min-cluster-size", type=int, default=10,
+                        help="HDBSCAN 최소 클러스터 크기 (기본: 10)")
+    parser.add_argument("--cluster-dim", type=int, default=10,
+                        help="클러스터링용 UMAP 차원 (기본: 10)")
+    parser.add_argument("--viz-dim", type=int, default=3,
+                        help="시각화용 UMAP 차원 (기본: 3)")
+    parser.add_argument("--random-state", type=int, default=42,
+                        help="UMAP random_state (기본: 42)")
+    parser.add_argument("--run-id", type=str, default=None,
+                        help="Experiment run id. Defaults to latest model run.")
+    parser.add_argument("--hash-inputs", action="store_true",
+                        help="Compute SHA256 for input artifact files.")
+    parser.add_argument("--hash-limit-mb", type=int, default=100,
+                        help="Max file size for SHA256 hashing. Use -1 for no limit.")
     args = parser.parse_args()
 
-    OUTPUTS_DIR = Path(__file__).resolve().parent.parent / 'outputs'
+    ROOT = Path(__file__).resolve().parent.parent
+    OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    logger, _ = setup_run_logging("cluster", OUTPUTS_DIR)
+    run_id = resolve_model_run_id(OUTPUTS_DIR, args.run_id, prefer_latest=True)
+    run_dir = ensure_experiment_run(ROOT, run_id)
+    logger, log_path = setup_run_logging("cluster", OUTPUTS_DIR)
+    hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
+    embeddings_path = OUTPUTS_DIR / 'embeddings.npz'
 
+    logger.info("Experiment run id: %s", run_id)
+    logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
 
+    update_experiment_manifest(
+        run_dir,
+        {
+            "run_id": run_id,
+            "git": git_metadata(ROOT),
+            "stages": {
+                "cluster": {
+                    "command": command_line(),
+                    "log": file_metadata(log_path, root=ROOT),
+                    "inputs": {
+                        "embeddings": file_metadata(
+                            embeddings_path,
+                            root=ROOT,
+                            include_sha256=args.hash_inputs,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                    },
+                    "clustering_config": {
+                        "user_id": args.user_id,
+                        "top_n": args.top_n,
+                        "stride": args.stride,
+                        "window_size": args.window_size,
+                        "window_step": args.window_step,
+                        "min_cluster_size": args.min_cluster_size,
+                        "cluster_n_components": args.cluster_dim,
+                        "viz_n_components": args.viz_dim,
+                        "random_state": args.random_state,
+                    },
+                }
+            },
+        },
+    )
+
     # embeddings.npz 로드 (extract.py 출력)
-    data          = np.load(OUTPUTS_DIR / 'embeddings.npz')
+    data          = np.load(embeddings_path)
     embeddings    = data['embeddings']     # (N, 128)
     user_ids      = data['user_ids']       # (N,)
     timepoint_idx = data['timepoint_idx']  # (N,)
+    initial_embedding_rows = int(embeddings.shape[0])
+    initial_unique_users = int(len(np.unique(user_ids)))
     logger.info("Loaded embeddings: %s | unique users: %d",
-                embeddings.shape, len(np.unique(user_ids)))
+                embeddings.shape, initial_unique_users)
 
     # NaN 행 제거
     nan_mask = np.isnan(embeddings).any(axis=1)
+    dropped_nan_rows = int(nan_mask.sum())
     if nan_mask.any():
-        logger.warning("Dropping %d NaN rows", nan_mask.sum())
+        logger.warning("Dropping %d NaN rows", dropped_nan_rows)
         embeddings    = embeddings[~nan_mask]
         user_ids      = user_ids[~nan_mask]
         timepoint_idx = timepoint_idx[~nan_mask]
@@ -272,27 +343,94 @@ if __name__ == "__main__":
 
     # 유저별 UMAP(R^3) + HDBSCAN
     logger.info(
-        "Starting per-user clustering | cluster_dim=10 viz_dim=3 "
-        "min_cluster_size=10 stride=%d window_size=%d window_step=%d",
-        args.stride, args.window_size, args.window_step,
+        "Starting per-user clustering | cluster_dim=%d viz_dim=%d "
+        "min_cluster_size=%d stride=%d window_size=%d window_step=%d random_state=%d",
+        args.cluster_dim,
+        args.viz_dim,
+        args.min_cluster_size,
+        args.stride,
+        args.window_size,
+        args.window_step,
+        args.random_state,
     )
     t0      = time.time()
     results = run_per_user_clustering(
         embeddings, user_ids, timepoint_idx,
-        min_cluster_size=10,
+        min_cluster_size=args.min_cluster_size,
         stride=args.stride,
         window_size=args.window_size,
         window_step=args.window_step,
+        random_state=args.random_state,
+        cluster_n_components=args.cluster_dim,
+        viz_n_components=args.viz_dim,
         logger=logger,
     )
-    logger.info("Total elapsed: %.1fs", time.time() - t0)
+    elapsed_seconds = time.time() - t0
+    logger.info("Total elapsed: %.1fs", elapsed_seconds)
 
     # K 분포 요약
     k_values = [r['n_clusters'] for r in results.values()]
-    logger.info("K distribution | min=%d  max=%d  mean=%.1f  median=%.1f",
-                min(k_values), max(k_values),
-                np.mean(k_values), np.median(k_values))
+    if k_values:
+        k_summary = {
+            "min": int(min(k_values)),
+            "max": int(max(k_values)),
+            "mean": float(np.mean(k_values)),
+            "median": float(np.median(k_values)),
+        }
+        logger.info("K distribution | min=%d  max=%d  mean=%.1f  median=%.1f",
+                    k_summary["min"], k_summary["max"],
+                    k_summary["mean"], k_summary["median"])
+    else:
+        k_summary = {"min": None, "max": None, "mean": None, "median": None}
+        logger.warning("K distribution unavailable: no users clustered")
 
     # 저장
     out_path = OUTPUTS_DIR / 'user_interests.npz'
     save_results(results, out_path, logger=logger)
+
+    metric_record = {
+        "stage": "cluster",
+        "input_embedding_rows": initial_embedding_rows,
+        "input_unique_users": initial_unique_users,
+        "dropped_nan_rows": dropped_nan_rows,
+        "clustered_users": int(len(results)),
+        "filtered_embedding_rows": int(embeddings.shape[0]),
+        "filtered_unique_users": int(len(np.unique(user_ids))),
+        "elapsed_seconds": float(elapsed_seconds),
+        "k_min": k_summary["min"],
+        "k_max": k_summary["max"],
+        "k_mean": k_summary["mean"],
+        "k_median": k_summary["median"],
+    }
+    append_metric(run_dir, metric_record)
+    update_experiment_manifest(
+        run_dir,
+        {
+            "stages": {
+                "cluster": {
+                    "data_summary": {
+                        "initial_embedding_rows": initial_embedding_rows,
+                        "initial_unique_users": initial_unique_users,
+                        "dropped_nan_rows": dropped_nan_rows,
+                        "filtered_embedding_rows": int(embeddings.shape[0]),
+                        "filtered_unique_users": int(len(np.unique(user_ids))),
+                    },
+                    "outputs": {
+                        "user_interests": file_metadata(
+                            out_path,
+                            root=ROOT,
+                            include_sha256=True,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                        "metrics": file_metadata(
+                            run_dir / "metrics.jsonl",
+                            root=ROOT,
+                            include_sha256=True,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                    },
+                    "summary_metrics": metric_record,
+                }
+            },
+        },
+    )

@@ -1,4 +1,6 @@
 from pathlib import Path
+import argparse
+import json
 
 import numpy as np
 import pandas as pd
@@ -10,7 +12,48 @@ from tqdm import tqdm
 
 from dataset import build_genre_map, build_user_sequences, temporal_split, MovieLensDataset
 from model import SASRecCL, augment_sequence, contrastive_loss
-from runtime import log_torch_runtime, resolve_torch_device, setup_run_logging
+from runtime import (
+    append_metric,
+    command_line,
+    ensure_experiment_run,
+    file_metadata,
+    git_metadata,
+    log_torch_runtime,
+    resolve_model_run_id,
+    resolve_torch_device,
+    schema_metadata,
+    set_global_seed,
+    setup_run_logging,
+    update_experiment_manifest,
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train SASRecCL and record experiment metadata.")
+    parser.add_argument("--run-id", type=str, default=None, help="Experiment run id. Defaults to a timestamp id.")
+    parser.add_argument("--hash-inputs", action="store_true", help="Compute SHA256 for input data files.")
+    parser.add_argument(
+        "--hash-limit-mb",
+        type=int,
+        default=100,
+        help="Max file size for SHA256 hashing. Use -1 for no limit.",
+    )
+    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--eval-every", type=int, default=5)
+    parser.add_argument("--seq-len", type=int, default=100)
+    parser.add_argument("--stride", type=int, default=50)
+    parser.add_argument("--min-interactions", type=int, default=200)
+    parser.add_argument("--min-activity-days", type=int, default=30)
+    parser.add_argument("--d-model", type=int, default=128)
+    parser.add_argument("--num-heads", type=int, default=2)
+    parser.add_argument("--num-layers", type=int, default=2)
+    parser.add_argument("--dropout", type=float, default=0.2)
+    parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--cl-lambda", type=float, default=0.1)
+    parser.add_argument("--seed", type=int, default=42)
+    return parser.parse_args()
 
 
 # =====================
@@ -104,22 +147,90 @@ class Trainer:
 # =====================
 
 if __name__ == "__main__":
+    args = parse_args()
     ROOT        = Path(__file__).resolve().parent.parent
     DATA_DIR    = ROOT / 'data'
     OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-    logger, _   = setup_run_logging("train", OUTPUTS_DIR)
+    run_id      = resolve_model_run_id(OUTPUTS_DIR, args.run_id, prefer_latest=False)
+    run_dir     = ensure_experiment_run(ROOT, run_id)
+    logger, log_path = setup_run_logging("train", OUTPUTS_DIR)
 
     movies_path = DATA_DIR / 'movies_processed_drop.csv'
     ratings_path = DATA_DIR / 'ratings_drop_processed.jsonl'
-    num_epochs = 20
-    batch_size = 256
-    num_workers = 4
-    eval_every = 5
+    num_epochs = args.epochs
+    batch_size = args.batch_size
+    num_workers = args.num_workers
+    eval_every = args.eval_every
+    hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
 
+    logger.info("Experiment run id: %s", run_id)
+    logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
     logger.info("Movies input: %s", movies_path)
     logger.info("Ratings input: %s", ratings_path)
+    logger.info("Seed: %d", args.seed)
+
+    set_global_seed(args.seed)
+
+    update_experiment_manifest(
+        run_dir,
+        {
+            "run_id": run_id,
+            "git": git_metadata(ROOT),
+            "stages": {
+                "train": {
+                    "command": command_line(),
+                    "log": file_metadata(log_path, root=ROOT),
+                    "inputs": {
+                        "movies": file_metadata(
+                            movies_path,
+                            root=ROOT,
+                            include_sha256=args.hash_inputs,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                        "ratings": file_metadata(
+                            ratings_path,
+                            root=ROOT,
+                            include_sha256=args.hash_inputs,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                    },
+                    "schemas": {
+                        "movies_processed": schema_metadata(
+                            ROOT / "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+                            root=ROOT,
+                        ),
+                        "ratings_drop_processed": schema_metadata(
+                            ROOT / "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+                            root=ROOT,
+                        ),
+                    },
+                    "model_config": {
+                        "architecture": "SASRecCL",
+                        "d_model": args.d_model,
+                        "num_heads": args.num_heads,
+                        "num_layers": args.num_layers,
+                        "dropout": args.dropout,
+                        "max_len": args.seq_len,
+                    },
+                    "training_config": {
+                        "epochs": num_epochs,
+                        "batch_size": batch_size,
+                        "num_workers": num_workers,
+                        "eval_every": eval_every,
+                        "seq_len": args.seq_len,
+                        "stride": args.stride,
+                        "min_interactions": args.min_interactions,
+                        "min_activity_days": args.min_activity_days,
+                        "lr": args.lr,
+                        "cl_lambda": args.cl_lambda,
+                        "seed": args.seed,
+                    },
+                }
+            },
+        },
+    )
 
     device, device_label = resolve_torch_device()
     log_torch_runtime(logger, device, device_label)
@@ -132,8 +243,8 @@ if __name__ == "__main__":
 
     user_sequences = build_user_sequences(
         ratings_path,
-        min_interactions=200,
-        min_activity_days=30
+        min_interactions=args.min_interactions,
+        min_activity_days=args.min_activity_days
     )
     logger.info("Filtered user sequences: %d", len(user_sequences))
 
@@ -163,9 +274,17 @@ if __name__ == "__main__":
     val_seq_idx   = remap(val_seq)
 
     # Dataset / DataLoader
-    train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=100, stride=50)
-    val_dataset   = MovieLensDataset(val_seq_idx,   genre_map_idx, num_genres, seq_len=100, stride=50)
-    train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,  num_workers=num_workers)
+    train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=args.seq_len, stride=args.stride)
+    val_dataset   = MovieLensDataset(val_seq_idx,   genre_map_idx, num_genres, seq_len=args.seq_len, stride=args.stride)
+    train_generator = torch.Generator()
+    train_generator.manual_seed(args.seed)
+    train_loader  = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        generator=train_generator,
+    )
     val_loader    = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False, num_workers=num_workers)
     logger.info(
         "Dataset summary | items=%d train_samples=%d val_samples=%d train_batches=%d val_batches=%d",
@@ -180,27 +299,62 @@ if __name__ == "__main__":
     model  = SASRecCL(
         num_items  = num_items,
         num_genres = num_genres,
-        d_model    = 128,
-        num_heads  = 2,
-        num_layers = 2,
-        dropout    = 0.2,
-        max_len    = 100
+        d_model    = args.d_model,
+        num_heads  = args.num_heads,
+        num_layers = args.num_layers,
+        dropout    = args.dropout,
+        max_len    = args.seq_len
     )
 
-    trainer = Trainer(model, lr=1e-3, cl_lambda=0.1, device=device)
+    trainer = Trainer(model, lr=args.lr, cl_lambda=args.cl_lambda, device=device)
     logger.info(
-        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f",
+        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f lr=%.6f",
         num_epochs,
         batch_size,
-        100,
-        50,
-        0.1,
+        args.seq_len,
+        args.stride,
+        args.cl_lambda,
+        args.lr,
+    )
+
+    update_experiment_manifest(
+        run_dir,
+        {
+            "stages": {
+                "train": {
+                    "runtime": {
+                        "device": str(device),
+                        "device_label": device_label,
+                        "torch_version": torch.__version__,
+                    },
+                    "data_summary": {
+                        "movies_rows": int(len(movies)),
+                        "unique_genres": int(num_genres),
+                        "filtered_user_sequences": int(len(user_sequences)),
+                        "num_items": int(num_items),
+                        "train_users": int(len(train_seq)),
+                        "val_users": int(len(val_seq)),
+                        "test_users": int(len(test_seq)),
+                        "train_samples": int(len(train_dataset)),
+                        "val_samples": int(len(val_dataset)),
+                        "train_batches": int(len(train_loader)),
+                        "val_batches": int(len(val_loader)),
+                    },
+                }
+            },
+        },
     )
 
     # 학습
+    final_metrics = {}
     for epoch in range(num_epochs):
         loss = trainer.train_epoch(train_loader)
         logger.info("Epoch %02d/%02d | loss=%.4f", epoch + 1, num_epochs, loss)
+        metric_record = {
+            "stage": "train",
+            "epoch": epoch + 1,
+            "loss": float(loss),
+        }
 
         if (epoch + 1) % eval_every == 0:
             metrics = trainer.evaluate(val_loader, k=10)
@@ -210,6 +364,15 @@ if __name__ == "__main__":
                 metrics["Recall@10"],
                 metrics["NDCG@10"],
             )
+            metric_record.update(
+                {
+                    "recall_at_10": float(metrics["Recall@10"]),
+                    "ndcg_at_10": float(metrics["NDCG@10"]),
+                }
+            )
+
+        append_metric(run_dir, metric_record)
+        final_metrics = metric_record
 
     # 모델 저장
     out_path = OUTPUTS_DIR / 'sasrec_cl.pt'
@@ -217,8 +380,38 @@ if __name__ == "__main__":
     logger.info("Saved model checkpoint: %s", out_path)
 
     # item2idx 저장 (extract.py에서 동일 vocabulary 재사용)
-    import json
     item2idx_path = OUTPUTS_DIR / 'item2idx.json'
     with open(item2idx_path, 'w') as f:
         json.dump({str(k): v for k, v in item2idx.items()}, f)
     logger.info("Saved item2idx: %s (%d items)", item2idx_path, len(item2idx))
+
+    update_experiment_manifest(
+        run_dir,
+        {
+            "stages": {
+                "train": {
+                    "outputs": {
+                        "checkpoint": file_metadata(
+                            out_path,
+                            root=ROOT,
+                            include_sha256=True,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                        "item2idx": file_metadata(
+                            item2idx_path,
+                            root=ROOT,
+                            include_sha256=True,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                        "metrics": file_metadata(
+                            run_dir / "metrics.jsonl",
+                            root=ROOT,
+                            include_sha256=True,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                    },
+                    "final_metrics": final_metrics,
+                }
+            },
+        },
+    )
