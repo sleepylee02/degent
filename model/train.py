@@ -18,15 +18,19 @@ from runtime import log_torch_runtime, resolve_torch_device, setup_run_logging
 # =====================
 
 class Trainer:
-    def __init__(self, model, lr=1e-3, cl_lambda=0.1, device='cuda'):
-        self.model     = model.to(device)
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        self.cl_lambda = cl_lambda
-        self.device    = device
+    def __init__(self, model, lr=1e-3, cl_lambda=0.1, device='cuda', patience=10):
+        self.model      = model.to(device)
+        self.optimizer  = torch.optim.Adam(model.parameters(), lr=lr)
+        self.cl_lambda  = cl_lambda
+        self.device     = device
+        self.patience   = patience
+        self.best_recall   = 0.0
+        self.no_improve    = 0
+        self.best_epoch    = 0
 
     def train_epoch(self, dataloader):
         self.model.train()
-        total_loss = 0
+        total_loss, total_ce, total_cl = 0, 0, 0
 
         pbar = tqdm(dataloader, desc="train", leave=False)
         for batch in pbar:
@@ -60,13 +64,15 @@ class Trainer:
             self.optimizer.step()
 
             total_loss += loss.item()
+            total_ce   += ce_loss.item()
+            total_cl   += cl.item()
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-        return total_loss / len(dataloader)
+        n = len(dataloader)
+        return total_loss / n, total_ce / n, total_cl / n
 
     @torch.no_grad()
     def evaluate(self, dataloader, k=10):
-        """Recall@K, NDCG@K"""
         self.model.eval()
         recalls, ndcgs = [], []
 
@@ -98,6 +104,18 @@ class Trainer:
             f"NDCG@{k}":   np.mean(ndcgs)
         }
 
+    def check_early_stop(self, recall, epoch, best_path):
+        """Recall@10 기준 early stopping. best checkpoint 저장."""
+        if recall > self.best_recall:
+            self.best_recall  = recall
+            self.best_epoch   = epoch
+            self.no_improve   = 0
+            torch.save(self.model.state_dict(), best_path)
+            return False  # 계속 학습
+        else:
+            self.no_improve += 1
+            return self.no_improve >= self.patience  # True면 stop
+
 
 # =====================
 # 실행
@@ -110,12 +128,13 @@ if __name__ == "__main__":
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     logger, _   = setup_run_logging("train", OUTPUTS_DIR)
 
-    movies_path = DATA_DIR / 'movies_processed_drop.csv'
+    movies_path  = DATA_DIR / 'movies_processed_drop.csv'
     ratings_path = DATA_DIR / 'ratings_drop_processed.jsonl'
-    num_epochs = 20
-    batch_size = 256
-    num_workers = 4
-    eval_every = 5
+    num_epochs   = 100
+    batch_size   = 256
+    num_workers  = 4
+    eval_every   = 5
+    patience     = 10  # early stopping patience (eval 횟수 기준)
 
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
     logger.info("Movies input: %s", movies_path)
@@ -137,20 +156,16 @@ if __name__ == "__main__":
     )
     logger.info("Filtered user sequences: %d", len(user_sequences))
 
-    # item id 재매핑 (0: padding)
     all_items = sorted(set(i for seq in user_sequences.values() for i, _ in seq))
     item2idx  = {item: idx + 1 for idx, item in enumerate(all_items)}
     num_items = len(item2idx)
 
     genre_map_idx = {item2idx[k]: v for k, v in genre_map.items() if k in item2idx}
 
-    # 시간 기준 global split
     train_seq, val_seq, test_seq = temporal_split(user_sequences)
     logger.info(
         "Temporal split users | train=%d val=%d test=%d",
-        len(train_seq),
-        len(val_seq),
-        len(test_seq),
+        len(train_seq), len(val_seq), len(test_seq),
     )
 
     def remap(sequences):
@@ -162,22 +177,16 @@ if __name__ == "__main__":
     train_seq_idx = remap(train_seq)
     val_seq_idx   = remap(val_seq)
 
-    # Dataset / DataLoader
     train_dataset = MovieLensDataset(train_seq_idx, genre_map_idx, num_genres, seq_len=100, stride=50)
     val_dataset   = MovieLensDataset(val_seq_idx,   genre_map_idx, num_genres, seq_len=100, stride=50)
     train_loader  = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,  num_workers=num_workers)
     val_loader    = DataLoader(val_dataset,   batch_size=batch_size, shuffle=False, num_workers=num_workers)
     logger.info(
         "Dataset summary | items=%d train_samples=%d val_samples=%d train_batches=%d val_batches=%d",
-        num_items,
-        len(train_dataset),
-        len(val_dataset),
-        len(train_loader),
-        len(val_loader),
+        num_items, len(train_dataset), len(val_dataset), len(train_loader), len(val_loader),
     )
 
-    # 모델 초기화
-    model  = SASRecCL(
+    model = SASRecCL(
         num_items  = num_items,
         num_genres = num_genres,
         d_model    = 128,
@@ -187,36 +196,46 @@ if __name__ == "__main__":
         max_len    = 100
     )
 
-    trainer = Trainer(model, lr=1e-3, cl_lambda=0.1, device=device)
+    trainer = Trainer(model, lr=1e-3, cl_lambda=0.1, device=device, patience=patience)
     logger.info(
-        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f",
-        num_epochs,
-        batch_size,
-        100,
-        50,
-        0.1,
+        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f patience=%d",
+        num_epochs, batch_size, 100, 50, 0.1, patience,
     )
 
-    # 학습
+    best_path = OUTPUTS_DIR / 'sasrec_cl_best.pt'
+
     for epoch in range(num_epochs):
-        loss = trainer.train_epoch(train_loader)
-        logger.info("Epoch %02d/%02d | loss=%.4f", epoch + 1, num_epochs, loss)
+        loss, ce, cl = trainer.train_epoch(train_loader)
+        logger.info(
+            "Epoch %02d/%02d | loss=%.4f ce=%.4f cl=%.4f",
+            epoch + 1, num_epochs, loss, ce, cl,
+        )
 
         if (epoch + 1) % eval_every == 0:
             metrics = trainer.evaluate(val_loader, k=10)
+            recall  = metrics["Recall@10"]
             logger.info(
                 "Validation | epoch=%02d Recall@10=%.4f NDCG@10=%.4f",
-                epoch + 1,
-                metrics["Recall@10"],
-                metrics["NDCG@10"],
+                epoch + 1, recall, metrics["NDCG@10"],
             )
 
-    # 모델 저장
+            stop = trainer.check_early_stop(recall, epoch + 1, best_path)
+            if stop:
+                logger.info(
+                    "Early stopping | best_epoch=%d best_Recall@10=%.4f",
+                    trainer.best_epoch, trainer.best_recall,
+                )
+                break
+
+    logger.info("Training finished | best_epoch=%d best_Recall@10=%.4f",
+                trainer.best_epoch, trainer.best_recall)
+
+    # 마지막 체크포인트 저장
     out_path = OUTPUTS_DIR / 'sasrec_cl.pt'
     torch.save(model.state_dict(), out_path)
-    logger.info("Saved model checkpoint: %s", out_path)
+    logger.info("Saved last checkpoint: %s", out_path)
+    logger.info("Saved best checkpoint: %s", best_path)
 
-    # item2idx 저장 (extract.py에서 동일 vocabulary 재사용)
     import json
     item2idx_path = OUTPUTS_DIR / 'item2idx.json'
     with open(item2idx_path, 'w') as f:
