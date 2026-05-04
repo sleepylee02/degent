@@ -2,6 +2,11 @@
 
 ## Active
 
+- Streaming Hybrid Recommendation Pipeline 전환 master plan
+  - owner: sleepylee / LLM
+  - plan: `plan/active/streaming_pipeline.md`
+  - files: `plan/active/streaming_pipeline.md`, `todo.md`
+  - status: 전체 coarse plan 등록. 각 phase는 별도 세부 계획 작성 및 승인 후 진행
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM
   - files: `model/IMPLEMENTATION_STATUS.md`, `model/README.md`, `PROJECT_GUIDE.md`
