@@ -6,12 +6,12 @@ SASRec + Contrastive Loss 기반 적응형 다중 관심사 추천 시스템 구
 
 ```
 python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 저장
-     ↓
-python3 -m model.batch.extract → 10개 간격 히든스테이트 추출 (min_interactions=1000) → embeddings.npz 저장
-     ↓
-python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
-     ↓
-python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
+  ├─ python3 -m model.batch.extract → legacy overlap 히든스테이트 추출 → embeddings.npz 저장
+  │    ↓
+  │  python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
+  │    ↓
+  │  python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
+  └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
 ```
 
 ---
@@ -21,9 +21,11 @@ python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시�
 | 경로 | 역할 |
 |---|---|
 | `batch/train.py` | batch 학습 실행 |
-| `batch/extract.py` | batch 히든스테이트 추출 |
+| `batch/extract.py` | legacy overlap-window batch 히든스테이트 추출 |
+| `batch/extract_canonical.py` | event당 canonical 히든스테이트 1개 추출 |
 | `batch/cluster.py` | batch 유저별 UMAP + HDBSCAN 클러스터링 |
 | `batch/visualize_clusters.py` | batch 클러스터 변화 시각화 |
+| `common/canonical.py` | canonical event window, Dataset, 검증 helper |
 | `common/dataset.py` | 데이터 로드, 전처리, Dataset |
 | `common/sasrec.py` | SASRecCL 모델, Contrastive Loss |
 | `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
@@ -44,6 +46,12 @@ python3 -m model.batch.train --run-id sasrec_cl_cl0_05 --cl-lambda 0.05
 # 2. 임베딩 추출
 python3 -m model.batch.extract
 
+# 2-1. streaming/replay 계약 검증용 canonical event embedding 추출
+python3 -m model.batch.extract_canonical
+
+# 2-2. canonical extract smoke test
+python3 -m model.batch.extract_canonical --limit-users 2 --batch-size 32 --num-workers 0 --output outputs/test_canonical_embeddings.npz
+
 # 3. 클러스터링 (전체 유저)
 python3 -m model.batch.cluster
 
@@ -61,7 +69,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 ## 실행 환경과 로그
 
-- `batch/train.py`, `batch/extract.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
+- `batch/train.py`, `batch/extract.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
 - `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
@@ -71,7 +79,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 ## 실험 메타데이터
 
 - `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
-- `python3 -m model.batch.extract`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
+- `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster summary를 append한다.
@@ -111,6 +119,8 @@ git diff <old_commit>..<new_commit> -- model/
 | extract: min_interactions | 1000 | 클러스터링 대상 유저 필터링 기준 |
 | extract: stride | 10 | 추출용 슬라이딩 윈도우 간격 |
 | extract: interval | 10 | 히든스테이트 추출 간격 |
+| extract_canonical: min_interactions | 1000 | canonical event embedding 대상 유저 필터링 기준 |
+| extract_canonical: output | `outputs/canonical_embeddings.npz` | event당 embedding 1개를 저장하는 기본 출력 경로 |
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
@@ -126,6 +136,7 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/sasrec_cl.pt` | 학습된 모델 가중치 |
 | `outputs/item2idx.json` | 아이템 ID → 인덱스 매핑 (학습 vocabulary) |
 | `outputs/embeddings.npz` | 시점별 히든스테이트 `embeddings(N,128)`, `user_ids(N,)`, `timepoint_idx(N,)` |
+| `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
@@ -149,6 +160,9 @@ git diff <old_commit>..<new_commit> -- model/
 
 **u_k 기반 추천 스코어링 구현**
 `user_interests.npz`의 u_k를 이용한 `score(u, i) = max_k(u_k^T · v_i)` 계산 모듈 및 평가 파이프라인 미구현
+
+**canonical embedding downstream 연결**
+`outputs/canonical_embeddings.npz`는 streaming/replay 계약 검증용 산출물이다. 아직 `batch/cluster.py`와 dashboard export는 이 산출물을 직접 소비하지 않는다.
 
 **데이터 포맷 검증**
 `movies_processed_drop.csv`의 genres 컬럼 형태, `ratings_drop_processed.jsonl` 스키마가 실제 파일과 일치하는지 확인 필요

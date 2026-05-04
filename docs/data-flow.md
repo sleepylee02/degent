@@ -17,17 +17,22 @@ data/**/raw/
   -> python3 -m model.batch.train
   -> outputs/sasrec_cl.pt + outputs/item2idx.json
   -> experiments/model/<run_id>/manifest.json + metrics.jsonl
-  -> python3 -m model.batch.extract
-  -> outputs/embeddings.npz
-  -> experiments/model/<run_id>/manifest.json + metrics.jsonl
-  -> python3 -m model.batch.cluster
-  -> outputs/user_interests.npz
-  -> experiments/model/<run_id>/manifest.json + metrics.jsonl
-  -> python3 -m model.batch.visualize_clusters
-  -> outputs/viz/
-  -> dashboard input export (not implemented yet)
-  -> data/clustering/user_clusters.parquet
-  -> dashboard/cluster_dashboard.py
+     -> legacy branch:
+        -> python3 -m model.batch.extract
+        -> outputs/embeddings.npz
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> python3 -m model.batch.cluster
+        -> outputs/user_interests.npz
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> python3 -m model.batch.visualize_clusters
+        -> outputs/viz/
+        -> dashboard input export (not implemented yet)
+        -> data/clustering/user_clusters.parquet
+        -> dashboard/cluster_dashboard.py
+     -> streaming/replay contract branch:
+        -> python3 -m model.batch.extract_canonical
+        -> outputs/canonical_embeddings.npz
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
 ```
 
 보조 장르 산출물 흐름:
@@ -122,6 +127,7 @@ python3 preprocess/process_rating/process_ratings_drop.py
 ```bash
 python3 -m model.batch.train
 python3 -m model.batch.extract
+python3 -m model.batch.extract_canonical
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 ```
@@ -131,6 +137,7 @@ python3 -m model.batch.visualize_clusters
 - `outputs/sasrec_cl.pt`
 - `outputs/item2idx.json`
 - `outputs/embeddings.npz`
+- `outputs/canonical_embeddings.npz`
 - `outputs/user_interests.npz`
 - `outputs/viz/`
 - `outputs/logs/`
@@ -141,6 +148,8 @@ python3 -m model.batch.visualize_clusters
 세부 실행 옵션은 `model/README.md`를 따른다.
 
 모델 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 `experiments/model/<run_id>/`에 남긴다.
+
+`outputs/embeddings.npz`는 기존 overlap-window 추출 산출물이고, `outputs/canonical_embeddings.npz`는 streaming/replay 전환을 위해 event 하나당 embedding 하나를 보장하는 산출물이다. 현재 `batch/cluster.py`는 아직 legacy `embeddings.npz`를 입력으로 사용한다.
 
 ## 7. Dashboard input
 

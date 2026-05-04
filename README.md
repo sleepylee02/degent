@@ -262,7 +262,9 @@ streamlit run dashboard/cluster_dashboard.py
 
 ## 모델 실험 기록
 
-`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract`, `python3 -m model.batch.cluster`는 최신 run id를 이어받는다.
+`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 최신 run id를 이어받는다.
+
+`python3 -m model.batch.extract`는 기존 overlap-window hidden state를 `outputs/embeddings.npz`로 저장한다. `python3 -m model.batch.extract_canonical`은 streaming/replay 전환용으로 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다.
 
 가벼운 기록:
 

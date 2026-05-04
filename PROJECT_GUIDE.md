@@ -38,9 +38,11 @@ degent/
 │   ├── batch/               #   batch 모델 파이프라인 실행 entrypoint
 │   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + item2idx.json
 │   │   ├── extract.py       #     히든스테이트 추출 → embeddings.npz
+│   │   ├── extract_canonical.py #  event당 canonical 히든스테이트 추출 → canonical_embeddings.npz
 │   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz
 │   │   └── visualize_clusters.py # 클러스터 변화 시각화 → outputs/viz/
 │   ├── common/              #   batch/stream 공통 모델 유틸
+│   │   ├── canonical.py     #     canonical event window/Dataset/검증 helper
 │   │   ├── dataset.py       #     데이터 로드/전처리/Dataset
 │   │   ├── sasrec.py        #     SASRecCL 모델, Contrastive Loss
 │   │   └── runtime.py       #     로그, run metadata, device/seed 유틸
@@ -115,7 +117,7 @@ degent/
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.
-- `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
+- `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.

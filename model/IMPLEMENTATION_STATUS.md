@@ -1,6 +1,6 @@
 # Model Implementation Status
 
-검토일: 2026-04-14
+검토일: 2026-05-04
 
 이 문서는 별도 파이프라인을 붙이기 전에 현재 model 파트의 구현 범위, 산출물 상태, 추후 보완 후보를 한곳에서 확인하기 위한 체크 파일이다.
 
@@ -23,6 +23,7 @@
 | SASRec + Contrastive Loss | [x] | `common/sasrec.py` | item/genre/position embedding, causal Transformer encoder, weight tying score, item masking augmentation, InfoNCE loss | 모델 구조 자체는 구현됨 |
 | 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, Recall@10/NDCG@10, checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler/early stopping, 튜닝 sweep는 없음 |
 | 히든스테이트 추출 | [~] | `batch/extract.py` | checkpoint/item2idx 재사용, train split 대상 hidden state 추출, `embeddings.npz` 저장, run metadata 기록 코드 | overlap window 중복 timepoint 처리 방침 결정 필요 |
+| canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록 | 아직 cluster/replay/dashboard downstream 입력으로 연결되지는 않음 |
 | 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
@@ -35,6 +36,7 @@
 - `outputs/sasrec_cl.pt`: 학습 checkpoint 존재. 로그 기준 2026-04-08 09:34:52부터 20 epoch 학습, epoch 20 validation `Recall@10=0.0406`, `NDCG@10=0.0197`.
 - `outputs/item2idx.json`: 학습 vocabulary 존재. 로그 기준 item 수 55,726.
 - `outputs/embeddings.npz`: shape `(763772, 128)`, dtype `float32`, unique user 622.
+- `outputs/canonical_embeddings.npz`: 기본 출력 경로. Phase 2 smoke test에서는 `outputs/test_canonical_embeddings.npz`로 별도 저장해 검증했다.
 - `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, interest vector `(103, 128)`, `user_ids_list=[10202]`. 최신 로그가 `user_id=10202` 테스트 모드였으므로 전체 유저 클러스터링 산출물로 간주하면 안 된다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
@@ -67,7 +69,37 @@
 
 - 현재 embedding은 고유 시점별 representation이 아니라 overlap window context별 representation에 가깝다.
 - downstream cluster는 중복 timepoint를 제거하지 않고 받기 때문에, 특정 시점이 최대 10번까지 가중되는 효과가 생긴다.
-- 이 방식을 유지할지, 각 timepoint별 canonical embedding만 남길지 먼저 결정해야 한다.
+- 이 legacy 산출물은 보존하되, streaming/replay 계약에는 canonical event embedding을 사용한다.
+
+## Canonical Event Embedding 흐름
+
+`batch/extract_canonical.py` 기준 흐름:
+
+1. `outputs/sasrec_cl.pt`와 `outputs/item2idx.json`을 로드한다.
+2. `ratings_drop_processed.jsonl`에서 activity span 30일 이상, positive interaction 1000개 이상인 유저를 필터링한다.
+3. split 없이 user별 positive sequence 전체를 timestamp 순서로 사용한다.
+4. event를 먼저 고르고, 해당 event를 마지막 non-padding 위치로 하는 최근 `seq_len`개 window를 만든다.
+5. `SASRecCL.get_last_hidden()`으로 마지막 non-padding hidden state를 뽑는다.
+6. `embeddings`, `user_ids`, `event_idx`, `movie_ids`, `rated_at_ts`, `rated_at_iso`, `history_len`, `context_start_idx`를 `outputs/canonical_embeddings.npz`에 저장한다.
+
+계약:
+
+- row 하나는 user의 positive rating event 하나를 뜻한다.
+- `(user_id, event_idx)`는 고유해야 한다.
+- `event_idx`는 user별 positive sequence 기준 0-based index다.
+- `history_len`은 해당 embedding이 사용한 context 길이이며, 첫 event는 1이고 최대 `seq_len`이다.
+- `item2idx`에 없는 event는 현재 checkpoint가 모르는 item이므로 1차 정책에서 skip하고 metric으로 기록한다.
+
+Phase 2 smoke test:
+
+- command: `.venv/bin/python -m model.batch.extract_canonical --run-id phase2_canonical_smoke --limit-users 2 --batch-size 32 --num-workers 0 --output outputs/test_canonical_embeddings.npz`
+- output: `outputs/test_canonical_embeddings.npz`
+- shape: `(2869, 128)`
+- unique `(user_id, event_idx)`: 2869 / 2869
+- NaN row: 0
+- max `history_len`: 100
+- invalid `context_start_idx`: 0
+- skipped unknown item: 0
 
 ## 현재 정리 방향
 

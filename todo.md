@@ -18,6 +18,11 @@
 
 ## Done
 
+- Streaming Pipeline Phase 2: Canonical Event Embedding 전환
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase2_canonical_embedding.md`
+  - files: `model/common/canonical.py`, `model/batch/extract_canonical.py`, `PROJECT_GUIDE.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `README.md`, `todo.md`
+  - status: legacy `model/batch/extract.py`는 보존하고 `python3 -m model.batch.extract_canonical` 경로를 추가. event 하나당 canonical embedding 하나를 보장하며 smoke test에서 `(2869, 128)`, duplicate 0, NaN 0 확인
 - Streaming Pipeline Phase 1: 모델 구조 재정리
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase1_structure.md`
