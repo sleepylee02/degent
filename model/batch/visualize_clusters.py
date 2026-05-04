@@ -2,9 +2,9 @@
 유저별 클러스터 변화 시각화
 
 사용:
-    python visualize_clusters.py                      # 전체 유저 생성
-    python visualize_clusters.py --user-id 28         # 특정 유저만
-    python visualize_clusters.py --user-id 28 --output my_plot.png
+    python3 -m model.batch.visualize_clusters                      # 전체 유저 생성
+    python3 -m model.batch.visualize_clusters --user-id 28         # 특정 유저만
+    python3 -m model.batch.visualize_clusters --user-id 28 --output my_plot.png
 """
 from pathlib import Path
 import argparse
@@ -103,7 +103,7 @@ if __name__ == "__main__":
                         help="저장 경로 (--user-id 지정 시에만 유효)")
     args = parser.parse_args()
 
-    OUTPUTS_DIR = Path(__file__).resolve().parent.parent / "outputs"
+    OUTPUTS_DIR = Path(__file__).resolve().parents[2] / "outputs"
     VIZ_DIR     = OUTPUTS_DIR / "viz"
     VIZ_DIR.mkdir(parents=True, exist_ok=True)
     data_path   = OUTPUTS_DIR / "user_interests.npz"

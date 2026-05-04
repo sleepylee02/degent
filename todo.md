@@ -18,6 +18,11 @@
 
 ## Done
 
+- Streaming Pipeline Phase 1: 모델 구조 재정리
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase1_structure.md`
+  - files: `model/`, `PROJECT_GUIDE.md`, `README.md`, `docs/data-flow.md`, `model/README.md`, `todo.md`
+  - status: `model/batch`, `model/common`, `model/stream` 구조로 분리. 공식 실행 명령은 `python3 -m model.batch.*`. `model/prev/`는 제거하고 과거 모델 정보는 git history, `docs/decisions/`, `experiments/model/`로 추적
 - LLM 친화적 프로젝트 문서 구조 정리
   - owner: sleepylee / LLM
   - plan: `plan/done/llm_project_structure.md`

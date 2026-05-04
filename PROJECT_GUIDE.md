@@ -35,14 +35,21 @@ degent/
 │   └── README.md            #   전처리 실행 순서와 입출력 요약
 ├── dashboard/               # 클러스터링 결과 시각화 대시보드
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
-│   ├── dataset.py           #   데이터 로드/전처리/Dataset
-│   ├── model.py             #   SASRecCL 모델, Contrastive Loss
-│   ├── train.py             #   학습 실행 → sasrec_cl.pt + item2idx.json
-│   ├── extract.py           #   히든스테이트 추출 → embeddings.npz
-│   ├── cluster.py           #   유저별 UMAP + HDBSCAN → user_interests.npz
-│   ├── visualize_clusters.py #  클러스터 변화 시각화 → outputs/viz/
+│   ├── batch/               #   batch 모델 파이프라인 실행 entrypoint
+│   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + item2idx.json
+│   │   ├── extract.py       #     히든스테이트 추출 → embeddings.npz
+│   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz
+│   │   └── visualize_clusters.py # 클러스터 변화 시각화 → outputs/viz/
+│   ├── common/              #   batch/stream 공통 모델 유틸
+│   │   ├── dataset.py       #     데이터 로드/전처리/Dataset
+│   │   ├── sasrec.py        #     SASRecCL 모델, Contrastive Loss
+│   │   └── runtime.py       #     로그, run metadata, device/seed 유틸
+│   ├── stream/              #   streaming pipeline skeleton
+│   │   ├── extract_online.py #    online embedding inference 예정
+│   │   ├── interest_assign.py #   online interest assignment 예정
+│   │   ├── drift_detector.py #    refit trigger/drift detection 예정
+│   │   └── cluster_refit.py #     triggered cluster refit 예정
 │   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
-│   ├── prev/                #   이전 모델 실험 코드 보관
 │   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
 │   ├── eda_outputs/         #   raw EDA 현재 출력 위치
@@ -108,10 +115,18 @@ degent/
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.
-- `train.py`, `extract.py`, `cluster.py`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
+- `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.
+
+### 모델 변경 이력 추적
+- 이전 모델 코드는 `model/prev/` 같은 스냅샷 디렉터리에 복사하지 않는다.
+- 코드가 어떤 식으로 바뀌었는지는 git commit, `git log`, `git show`, `git diff`로 추적한다.
+- 왜 바꿨는지는 `docs/decisions/`의 ADR에 기록한다.
+- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰은 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`에 기록한다.
+- 현재 구현 상태와 보류 결정은 `model/IMPLEMENTATION_STATUS.md`에서 먼저 확인한다.
+- 비교 가능한 오래된 구현을 계속 실행해야 하는 경우에만 `model/baselines/`처럼 목적이 명확한 디렉터리를 별도 결정 후 추가한다.
 
 ## 환경 설정
 
@@ -142,6 +157,7 @@ AI 도구(Claude Code, Cursor, Codex 등)는 작업 전에 아래 순서를 따�
 
 1. `PROJECT_GUIDE.md`를 먼저 읽는다.
 2. `todo.md`, `plan/active/`, 관련 `schemas/README.md`, 해당 모듈 README를 확인한다.
+   - 모델 과거 정보가 필요하면 `model/README.md`의 변경 이력 안내를 따른다. 우선순위는 `docs/decisions/` → `experiments/model/` → git history다.
 3. 단순 질의, 한 파일 안의 경미한 수정, 현황 점검/문서 인벤토리 작업이 아니라면, 작업 전에 `plan/_template.md`를 기준으로 `plan/active/`에 계획서를 작성하고 `todo.md`의 Active에 등록한다.
 4. 이미 관련 active plan이 있으면 새 계획서를 만들지 않고 기존 계획서를 따른다. 범위, 산출물, 검증 방법이 바뀌면 코드보다 계획서와 `todo.md`를 먼저 갱신한다.
 5. 스키마 변경이 있으면 코드보다 `schemas/`를 먼저 수정한다.

@@ -262,7 +262,7 @@ streamlit run dashboard/cluster_dashboard.py
 
 ## 모델 실험 기록
 
-`python model/train.py`는 기본적으로 새 run id를 만들고, `python model/extract.py`, `python model/cluster.py`는 최신 run id를 이어받는다.
+`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract`, `python3 -m model.batch.cluster`는 최신 run id를 이어받는다.
 
 가벼운 기록:
 
@@ -271,6 +271,17 @@ streamlit run dashboard/cluster_dashboard.py
 - `experiments/model/<run_id>/notes.md`: 사람이 적는 실험 해석
 
 무거운 모델 산출물은 기존처럼 `outputs/` 아래에 두고 git으로 추적하지 않는다. 세부 옵션은 `model/README.md`를 따른다.
+
+## 모델 변경 이력 찾기
+
+이전 모델 코드는 `model/prev/` 같은 스냅샷 디렉터리에 복사하지 않는다.
+
+- 현재 공식 구조와 실행 경로: `PROJECT_GUIDE.md`, `model/README.md`
+- 구조 변경과 모델링 판단 이유: `docs/decisions/`
+- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: `experiments/model/<run_id>/`
+- 특정 파일의 과거 코드: git history
+
+비교 대상으로 계속 실행해야 하는 구현은 별도 결정 후 `model/baselines/`처럼 목적이 명확한 경로로 둔다.
 
 ## 스키마 정책
 

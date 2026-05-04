@@ -55,8 +55,19 @@
 - streaming 평가는 기존 global split보다 chronological replay split을 기준으로 한다.
 - refit trigger의 1차 baseline은 event count 기반으로 시작한다.
 - batch extract 산출물은 canonical event embedding 계약에 맞게 재생성한다.
+- batch 전체 clustering과 trigger-based refit은 GPU-first backend로 전환한다.
 - C++ replay engine과 dashboard 연동은 전체 master plan 범위에 포함한다.
 - 추천 scoring/evaluation은 당장 선행 구현하지 않고, 담당 작업 또는 별도 phase가 준비되면 붙인다.
+
+## 1차 계획 추가 범위: GPU-first clustering/refit
+
+- 이 1차 총 파이프라인에는 clustering/refit backend를 GPU-first로 전환하는 작업까지 포함한다.
+- 대상은 batch 전체 clustering과 streaming trigger에 의해 실행되는 refit이다.
+- 기존 per-user UMAP/HDBSCAN 구조는 유지하되, 서버 환경에서는 RAPIDS cuML 같은 GPU backend를 우선 사용한다.
+- 로컬/개발 환경과 GPU backend가 준비되지 않은 환경을 위해 CPU fallback은 유지한다.
+- 구현 후보는 `--cluster-backend cpu|gpu|auto`이며, 기본 방향은 `auto`에서 CUDA/cuML 사용 가능 시 GPU를 선택하는 것이다.
+- 매 이벤트마다 UMAP/HDBSCAN을 refit하지 않는다. Streaming path에서는 online embedding과 interest assignment를 수행하고, refit은 trigger-based batch 작업으로 유지한다.
+- 검증 기준은 단순 label 일치가 아니라 runtime, 유저별 K 분포, noise ratio, interest vector 안정성, downstream 추천 지표로 둔다.
 
 ## 핵심 계약: Canonical Event Embedding
 
@@ -157,6 +168,15 @@ model/
 - 1차 trigger는 event count 기반으로 시작한다.
 - 이후 confidence, outlier 비율, 시간 기반, 추천 metric degradation 기반 trigger를 비교 후보로 둔다.
 
+### Phase 4-1. GPU-first Clustering/Refit Backend
+
+- batch 전체 clustering과 trigger-based refit에 GPU-first backend를 추가한다.
+- 기존 CPU `umap-learn` + `hdbscan` 경로는 fallback과 baseline 비교용으로 유지한다.
+- GPU 경로는 RAPIDS cuML UMAP/HDBSCAN을 우선 후보로 둔다.
+- backend 선택은 `cpu|gpu|auto` 형태로 명시 가능하게 한다.
+- `auto`는 CUDA/cuML 사용 가능 시 GPU를 사용하고, 불가능하면 CPU로 fallback한다.
+- CPU/GPU 결과 비교는 label 완전 일치가 아니라 runtime, K 분포, noise ratio, interest vector 안정성, downstream 추천 지표를 기준으로 한다.
+
 ### Phase 5. C++ Replay Engine
 
 - ML-32M timestamp를 기준으로 rating event stream을 replay한다.
@@ -192,4 +212,3 @@ model/
 - Master plan이 active plan으로 등록된다.
 - `todo.md`에서 추적 가능하다.
 - 이후 작업자는 Phase 1부터 세부 계획을 작성하고 승인받은 뒤 구현을 시작할 수 있다.
-

@@ -10,18 +10,22 @@
 - `[~]` 부분 구현됨 또는 추가 확인 필요
 - `[ ]` 미구현
 
+## 과거 정보 탐색
+
+이전 모델 코드는 `model/prev/`에 복사 보관하지 않는다. 현재 구현 상태는 이 문서에서 확인하고, 변경 이유는 `docs/decisions/`, 실험별 비교는 `experiments/model/<run_id>/`, 특정 파일의 과거 코드는 git history에서 확인한다.
+
 ## 파이프라인 현황
 
 | 단계 | 상태 | 구현 파일 | 현재 범위 | 체크할 점 |
 |---|---:|---|---|---|
-| 입력 데이터 로드/필터링 | [~] | `dataset.py` | `movies_processed_drop.csv`, `ratings_drop_processed.jsonl` 로드, rating z-score 기반 positive 필터링, 활동 기간/상호작용 수 필터링 | 실제 파일과 스키마 일치 검증 로직은 별도 없음 |
-| 시계열 split/Dataset | [~] | `dataset.py` | global timestamp split, sliding window 샘플 생성, padding, 장르 multi-hot tensor 생성 | 평가 프로토콜이 next-item last label 중심이라 negative sampling/후보군 정의 확인 필요 |
-| SASRec + Contrastive Loss | [x] | `model.py` | item/genre/position embedding, causal Transformer encoder, weight tying score, item masking augmentation, InfoNCE loss | 모델 구조 자체는 구현됨 |
-| 학습 | [~] | `train.py` | CLI hyperparameter, device 선택, train/val loop, Recall@10/NDCG@10, checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler/early stopping, 튜닝 sweep는 없음 |
-| 히든스테이트 추출 | [~] | `extract.py` | checkpoint/item2idx 재사용, train split 대상 hidden state 추출, `embeddings.npz` 저장, run metadata 기록 코드 | overlap window 중복 timepoint 처리 방침 결정 필요 |
-| 유저별 클러스터링 | [~] | `cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
-| 클러스터 시각화 | [~] | `visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
-| 실험 메타데이터 유틸 | [~] | `runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
+| 입력 데이터 로드/필터링 | [~] | `common/dataset.py` | `movies_processed_drop.csv`, `ratings_drop_processed.jsonl` 로드, rating z-score 기반 positive 필터링, 활동 기간/상호작용 수 필터링 | 실제 파일과 스키마 일치 검증 로직은 별도 없음 |
+| 시계열 split/Dataset | [~] | `common/dataset.py` | global timestamp split, sliding window 샘플 생성, padding, 장르 multi-hot tensor 생성 | 평가 프로토콜이 next-item last label 중심이라 negative sampling/후보군 정의 확인 필요 |
+| SASRec + Contrastive Loss | [x] | `common/sasrec.py` | item/genre/position embedding, causal Transformer encoder, weight tying score, item masking augmentation, InfoNCE loss | 모델 구조 자체는 구현됨 |
+| 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, Recall@10/NDCG@10, checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler/early stopping, 튜닝 sweep는 없음 |
+| 히든스테이트 추출 | [~] | `batch/extract.py` | checkpoint/item2idx 재사용, train split 대상 hidden state 추출, `embeddings.npz` 저장, run metadata 기록 코드 | overlap window 중복 timepoint 처리 방침 결정 필요 |
+| 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
+| 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
+| 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
 | `u_k` 기반 추천 스코어링 | [ ] | 없음 | `user_interests.npz`의 interest vector로 `score(u, i) = max_k(u_k^T v_i)`를 계산하는 모듈 없음 | 추후 보완 후보 |
 | downstream 추천 평가 | [ ] | 없음 | `u_k` 기반 retrieval/rerank 평가 파이프라인 없음 | Recall@K/NDCG@K 평가 기준부터 확정 필요 |
 | 설정 파일 기반 실행 | [ ] | 없음 | 주요 hyperparameter는 CLI 인자와 코드 기본값에 분산 | run 비교를 위해 config 파일 도입 검토 |
@@ -38,7 +42,7 @@
 
 ## Embedding 추출 흐름
 
-현재 `extract.py` 기준 흐름:
+현재 `batch/extract.py` 기준 흐름:
 
 1. `outputs/sasrec_cl.pt`와 `outputs/item2idx.json`을 로드한다.
 2. `ratings_drop_processed.jsonl`에서 activity span 30일 이상, positive interaction 1000개 이상인 유저만 필터링한다.
@@ -76,10 +80,10 @@
 
 ### 나중에 재검토할 핵심 후보
 
-- [ ] 최신 코드로 `--run-id`를 명시해 train/extract/cluster를 다시 실행하고 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md` 생성 여부를 확인한다.
-- [ ] `extract.py`에서 overlap window로 생기는 duplicate `(user_id, timepoint_idx)` 처리 방침을 정한다.
-- [ ] `extract.py`에서 발생한 NaN embedding row 원인을 추적하고 제거/방지 로직을 추가한다.
-- [ ] `cluster.py`가 테스트 실행 결과로 전체 `outputs/user_interests.npz`를 덮어쓰지 않도록 output path 옵션 또는 테스트 산출물 분리 방식을 추가한다.
+- [ ] 최신 코드로 `--run-id`를 명시해 `python3 -m model.batch.train/extract/cluster`를 다시 실행하고 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md` 생성 여부를 확인한다.
+- [ ] `batch/extract.py`에서 overlap window로 생기는 duplicate `(user_id, timepoint_idx)` 처리 방침을 정한다.
+- [ ] `batch/extract.py`에서 발생한 NaN embedding row 원인을 추적하고 제거/방지 로직을 추가한다.
+- [ ] `batch/cluster.py`가 테스트 실행 결과로 전체 `outputs/user_interests.npz`를 덮어쓰지 않도록 output path 옵션 또는 테스트 산출물 분리 방식을 추가한다.
 - [ ] `outputs/user_interests.npz`를 전체 유저 대상으로 재생성하고 clustered user 수, K 분포, NaN drop 수를 기록한다.
 - [ ] `u_k` 기반 추천 스코어링 모듈을 설계/구현한다.
 - [ ] `u_k` 기반 scoring을 Recall@K/NDCG@K로 평가하는 파이프라인을 추가한다.
@@ -94,7 +98,7 @@
 
 ### 문서화 후보
 
-- [ ] `visualize_clusters.py` 실행도 run metadata에 기록한다.
+- [ ] `batch/visualize_clusters.py` 실행도 run metadata에 기록한다.
 - [ ] 전체 유저 클러스터 결과를 요약하는 report 파일을 추가한다.
 - [ ] dashboard 입력 계약과 `user_interests.npz` schema를 문서화한다.
 

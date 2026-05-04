@@ -8,9 +8,9 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import build_genre_map, build_user_sequences, temporal_split, MovieLensDataset
-from model import SASRecCL
-from runtime import (
+from model.common.dataset import build_genre_map, build_user_sequences, temporal_split, MovieLensDataset
+from model.common.sasrec import SASRecCL
+from model.common.runtime import (
     append_metric,
     command_line,
     ensure_experiment_run,
@@ -103,7 +103,7 @@ def extract_embeddings(model, dataloader, device, interval=10):
 
 if __name__ == "__main__":
     args = parse_args()
-    ROOT        = Path(__file__).resolve().parent.parent
+    ROOT        = Path(__file__).resolve().parents[2]
     DATA_DIR    = ROOT / 'data'
     OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)

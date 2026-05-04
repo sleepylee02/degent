@@ -14,16 +14,16 @@ data/**/raw/
   -> data/ratings_drop.csv
   -> preprocess/process_rating/process_ratings_drop.py
   -> data/ratings_drop_processed.jsonl
-  -> model/train.py
+  -> python3 -m model.batch.train
   -> outputs/sasrec_cl.pt + outputs/item2idx.json
   -> experiments/model/<run_id>/manifest.json + metrics.jsonl
-  -> model/extract.py
+  -> python3 -m model.batch.extract
   -> outputs/embeddings.npz
   -> experiments/model/<run_id>/manifest.json + metrics.jsonl
-  -> model/cluster.py
+  -> python3 -m model.batch.cluster
   -> outputs/user_interests.npz
   -> experiments/model/<run_id>/manifest.json + metrics.jsonl
-  -> model/visualize_clusters.py
+  -> python3 -m model.batch.visualize_clusters
   -> outputs/viz/
   -> dashboard input export (not implemented yet)
   -> data/clustering/user_clusters.parquet
@@ -120,10 +120,10 @@ python3 preprocess/process_rating/process_ratings_drop.py
 ## 6. Model pipeline
 
 ```bash
-python model/train.py
-python model/extract.py
-python model/cluster.py
-python model/visualize_clusters.py
+python3 -m model.batch.train
+python3 -m model.batch.extract
+python3 -m model.batch.cluster
+python3 -m model.batch.visualize_clusters
 ```
 
 주요 출력:

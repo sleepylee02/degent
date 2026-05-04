@@ -10,9 +10,9 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset import build_genre_map, build_user_sequences, temporal_split, MovieLensDataset
-from model import SASRecCL, augment_sequence, contrastive_loss
-from runtime import (
+from model.common.dataset import build_genre_map, build_user_sequences, temporal_split, MovieLensDataset
+from model.common.sasrec import SASRecCL, augment_sequence, contrastive_loss
+from model.common.runtime import (
     append_metric,
     command_line,
     ensure_experiment_run,
@@ -148,7 +148,7 @@ class Trainer:
 
 if __name__ == "__main__":
     args = parse_args()
-    ROOT        = Path(__file__).resolve().parent.parent
+    ROOT        = Path(__file__).resolve().parents[2]
     DATA_DIR    = ROOT / 'data'
     OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)

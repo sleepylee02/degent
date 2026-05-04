@@ -5,27 +5,29 @@ SASRec + Contrastive Loss 기반 적응형 다중 관심사 추천 시스템 구
 ## 전체 흐름
 
 ```
-train.py 실행 → 모델 학습 → sasrec_cl.pt + item2idx.json 저장
+python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 저장
      ↓
-extract.py 실행 → 10개 간격 히든스테이트 추출 (min_interactions=1000) → embeddings.npz 저장
+python3 -m model.batch.extract → 10개 간격 히든스테이트 추출 (min_interactions=1000) → embeddings.npz 저장
      ↓
-cluster.py 실행 → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
+python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
      ↓
-visualize_clusters.py 실행 → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
+python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
 ```
 
 ---
 
 ## 파일 구성
 
-| 파일 | 역할 |
+| 경로 | 역할 |
 |---|---|
-| `dataset.py` | 데이터 로드, 전처리, Dataset |
-| `model.py` | SASRecCL 모델, Contrastive Loss |
-| `train.py` | 학습 실행 |
-| `extract.py` | 히든스테이트 추출 |
-| `cluster.py` | 유저별 UMAP + HDBSCAN 클러스터링 |
-| `visualize_clusters.py` | 클러스터 변화 시각화 |
+| `batch/train.py` | batch 학습 실행 |
+| `batch/extract.py` | batch 히든스테이트 추출 |
+| `batch/cluster.py` | batch 유저별 UMAP + HDBSCAN 클러스터링 |
+| `batch/visualize_clusters.py` | batch 클러스터 변화 시각화 |
+| `common/dataset.py` | 데이터 로드, 전처리, Dataset |
+| `common/sasrec.py` | SASRecCL 모델, Contrastive Loss |
+| `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
+| `stream/` | online embedding, assignment, drift/refit skeleton |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
 ---
@@ -34,47 +36,66 @@ visualize_clusters.py 실행 → 유저별 클러스터 변화 시각화 → out
 
 ```bash
 # 1. 학습 (GPU 환경)
-python model/train.py
+python3 -m model.batch.train
 
 # 1-1. 특정 실험 ID로 학습
-python model/train.py --run-id sasrec_cl_cl0_05 --cl-lambda 0.05
+python3 -m model.batch.train --run-id sasrec_cl_cl0_05 --cl-lambda 0.05
 
 # 2. 임베딩 추출
-python model/extract.py
+python3 -m model.batch.extract
 
 # 3. 클러스터링 (전체 유저)
-python model/cluster.py
+python3 -m model.batch.cluster
 
 # 3-1. 클러스터링 (옵션)
-python model/cluster.py --user-id 28        # 특정 유저만
-python model/cluster.py --top-n 50          # 시퀀스 긴 상위 50명
-python model/cluster.py --stride 2          # 매 2번째 시점만 사용 (속도 향상)
+python3 -m model.batch.cluster --user-id 28        # 특정 유저만
+python3 -m model.batch.cluster --top-n 50          # 시퀀스 긴 상위 50명
+python3 -m model.batch.cluster --stride 2          # 매 2번째 시점만 사용 (속도 향상)
 
 # 4. 시각화
-python model/visualize_clusters.py          # 전체 유저
-python model/visualize_clusters.py --user-id 28  # 특정 유저만
+python3 -m model.batch.visualize_clusters          # 전체 유저
+python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 ```
 
 ---
 
 ## 실행 환경과 로그
 
-- `train.py`, `extract.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
+- `batch/train.py`, `batch/extract.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
-- `cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
+- `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
 
 ---
 
 ## 실험 메타데이터
 
-- `train.py`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
-- `extract.py`, `cluster.py`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
+- `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
+- `python3 -m model.batch.extract`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster summary를 append한다.
 - `notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 파일이다.
 - 큰 입력/산출물은 git에 저장하지 않는다. SHA256은 기본 100MB 이하 파일만 계산하고, 큰 파일은 size/mtime만 남긴다. 필요하면 `--hash-inputs --hash-limit-mb -1`로 강제할 수 있다.
+
+---
+
+## 모델 변경 이력 찾기
+
+이전 모델 코드는 `model/prev/`에 복사해 보관하지 않는다. 과거 정보가 필요하면 아래 순서로 찾는다.
+
+1. 현재 공식 구조와 실행 경로: `PROJECT_GUIDE.md`, `model/README.md`
+2. 구조 변경과 모델링 판단 이유: `docs/decisions/`
+3. 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: `experiments/model/<run_id>/`
+4. 특정 파일의 과거 코드: git history
+
+```bash
+git log -- model/
+git show <commit>:model/cluster.py
+git diff <old_commit>..<new_commit> -- model/
+```
+
+계속 실행할 필요가 있는 비교 구현은 `prev`가 아니라 별도 결정 후 `model/baselines/` 같은 명확한 경로로 둔다.
 
 ---
 

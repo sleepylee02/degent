@@ -7,7 +7,7 @@ import umap
 import hdbscan
 from tqdm import tqdm
 
-from runtime import (
+from model.common.runtime import (
     append_metric,
     command_line,
     ensure_experiment_run,
@@ -250,7 +250,7 @@ if __name__ == "__main__":
                         help="Max file size for SHA256 hashing. Use -1 for no limit.")
     args = parser.parse_args()
 
-    ROOT = Path(__file__).resolve().parent.parent
+    ROOT = Path(__file__).resolve().parents[2]
     OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     run_id = resolve_model_run_id(OUTPUTS_DIR, args.run_id, prefer_latest=True)
