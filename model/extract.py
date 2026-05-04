@@ -51,9 +51,9 @@ def parse_args() -> argparse.Namespace:
 
 
 @torch.no_grad()
-def extract_embeddings(model, dataloader, device, interval=50):
+def extract_embeddings(model, dataloader, device, interval=10):
     """
-    50개 간격으로 히든스테이트 추출
+    interval 간격으로 히든스테이트 추출
     유저별, 시점별 정보 함께 저장
 
     returns:
@@ -81,7 +81,7 @@ def extract_embeddings(model, dataloader, device, interval=50):
 
             valid_h = h[i, -length:, :]  # (length, d_model)
 
-            # 50개 간격으로 히든스테이트 추출
+            # interval 간격으로 히든스테이트 추출
             indices = list(range(interval - 1, length, interval))
             if not indices:
                 indices = [length - 1]  # interval보다 짧으면 마지막만

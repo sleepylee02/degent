@@ -26,6 +26,7 @@ visualize_clusters.py 실행 → 유저별 클러스터 변화 시각화 → out
 | `extract.py` | 히든스테이트 추출 |
 | `cluster.py` | 유저별 UMAP + HDBSCAN 클러스터링 |
 | `visualize_clusters.py` | 클러스터 변화 시각화 |
+| `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
 ---
 
@@ -114,7 +115,7 @@ python model/visualize_clusters.py --user-id 28  # 특정 유저만
 
 ---
 
-## 보완할 점
+## 추후 보완 후보
 
 **cl_lambda 튜닝**
 현재 0.1 고정. 0.05 / 0.1 / 0.2 범위에서 실험 필요

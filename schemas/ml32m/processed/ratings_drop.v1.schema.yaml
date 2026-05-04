@@ -1,6 +1,7 @@
 name: ratings_drop
 version: v1
 stage: processed
+primary_key: []
 columns:
   - name: userId
     logical_type: int64

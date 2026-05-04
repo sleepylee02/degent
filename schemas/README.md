@@ -14,9 +14,9 @@
 - `name`: 데이터셋 이름
 - `version`: 계약 버전
 - `stage`: 데이터 단계
-- `primary_key`: 주 키 컬럼 목록
+- `primary_key`: 주 키 컬럼 목록. 안정적인 주 키가 없는 이벤트 로그는 빈 배열 `[]`로 명시한다.
 - `columns`: 컬럼 정의 목록
-- `constraints`: 검증 규칙 목록
+- `constraints`: 검증 규칙 목록. 별도 규칙이 없으면 빈 배열 `[]`로 명시한다.
 
 ## Column Fields
 
@@ -25,8 +25,8 @@
 - `physical_type`: 실제 저장 타입
 - `nullable`: null 허용 여부
 - `description`: 컬럼 설명
-- `source_columns`: 파생 출처 컬럼 목록
-- `ingest`: raw 입력을 읽을 때 필요한 컬럼인지 여부
+- `source_columns`: 파생 출처 컬럼 목록. raw 스키마에서는 생략할 수 있다.
+- `ingest`: raw 입력을 읽을 때 필요한 컬럼인지 여부. processed 스키마에서는 생략할 수 있다.
 - `default`: 기본값이 있으면 명시
 
 ## Type Rules

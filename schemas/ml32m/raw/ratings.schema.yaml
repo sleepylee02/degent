@@ -1,12 +1,13 @@
 name: ml32m_ratings_raw
 version: v1
 stage: raw
+primary_key: []
 columns:
   - name: userId
     logical_type: int64
     physical_type: int64
     nullable: false
-    ingest: false
+    ingest: true
     description: User identifier for the rating event
 
   - name: movieId
@@ -27,5 +28,6 @@ columns:
     logical_type: int64
     physical_type: int64
     nullable: false
-    ingest: false
+    ingest: true
     description: Unix timestamp of the rating event
+constraints: []

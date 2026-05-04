@@ -2,7 +2,10 @@
 
 ## Active
 
-- 없음
+- 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
+  - owner: sleepylee / LLM
+  - files: `model/IMPLEMENTATION_STATUS.md`, `model/README.md`, `PROJECT_GUIDE.md`
+  - status: 별도 active plan 없이 `model/IMPLEMENTATION_STATUS.md`로 현재 구현 현황, 산출물 상태, 추후 보류 보완 후보를 정리
 
 ## Blocked
 

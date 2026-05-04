@@ -1,6 +1,7 @@
 name: ml32m_tags_raw
 version: v1
 stage: raw
+primary_key: []
 columns:
   - name: userId
     logical_type: int64
@@ -29,3 +30,4 @@ columns:
     nullable: false
     ingest: false
     description: Unix timestamp of the tagging event
+constraints: []

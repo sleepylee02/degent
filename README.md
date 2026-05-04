@@ -241,6 +241,8 @@ streamlit run dashboard/cluster_dashboard.py
 
 - `data/clustering/user_clusters.parquet`
 
+현재 저장소에는 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트가 아직 없다. 실제 모델 결과를 대시보드에 연결하려면 이 변환 단계를 먼저 추가해야 한다.
+
 필수 컬럼:
 
 - `userId`

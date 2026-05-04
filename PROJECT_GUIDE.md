@@ -41,6 +41,7 @@ degent/
 │   ├── extract.py           #   히든스테이트 추출 → embeddings.npz
 │   ├── cluster.py           #   유저별 UMAP + HDBSCAN → user_interests.npz
 │   ├── visualize_clusters.py #  클러스터 변화 시각화 → outputs/viz/
+│   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
 │   ├── prev/                #   이전 모델 실험 코드 보관
 │   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
@@ -98,6 +99,7 @@ degent/
 - 진행 중 계획은 `plan/active/`, 완료된 계획은 `plan/done/`에 둔다.
 - 이전 문서 구조나 더 이상 유효하지 않은 계획은 `plan/expired/`에 보관한다.
 - 기존 계획이 있으면 그것을 따르고, 변경이 필요하면 계획서를 먼저 수정한다.
+- 현황 점검, 문서 인벤토리, 짧은 정리처럼 별도 실행 계획보다 추적 문서가 적합한 작업은 active plan을 생략할 수 있다. 이 경우 `todo.md`에 기준 문서와 생략 사유를 명시한다.
 
 ### 대시보드
 - 대시보드 코드는 `dashboard/` 아래에 둔다.
@@ -140,7 +142,7 @@ AI 도구(Claude Code, Cursor, Codex 등)는 작업 전에 아래 순서를 따�
 
 1. `PROJECT_GUIDE.md`를 먼저 읽는다.
 2. `todo.md`, `plan/active/`, 관련 `schemas/README.md`, 해당 모듈 README를 확인한다.
-3. 단순 질의나 한 파일 안의 경미한 수정이 아니라면, 작업 전에 `plan/_template.md`를 기준으로 `plan/active/`에 계획서를 작성하고 `todo.md`의 Active에 등록한다.
+3. 단순 질의, 한 파일 안의 경미한 수정, 현황 점검/문서 인벤토리 작업이 아니라면, 작업 전에 `plan/_template.md`를 기준으로 `plan/active/`에 계획서를 작성하고 `todo.md`의 Active에 등록한다.
 4. 이미 관련 active plan이 있으면 새 계획서를 만들지 않고 기존 계획서를 따른다. 범위, 산출물, 검증 방법이 바뀌면 코드보다 계획서와 `todo.md`를 먼저 갱신한다.
 5. 스키마 변경이 있으면 코드보다 `schemas/`를 먼저 수정한다.
 6. `data/**/raw/`와 생성물 CSV/JSONL은 직접 수정하지 않는다.

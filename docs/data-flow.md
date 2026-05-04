@@ -25,7 +25,7 @@ data/**/raw/
   -> experiments/model/<run_id>/manifest.json + metrics.jsonl
   -> model/visualize_clusters.py
   -> outputs/viz/
-  -> dashboard input export
+  -> dashboard input export (not implemented yet)
   -> data/clustering/user_clusters.parquet
   -> dashboard/cluster_dashboard.py
 ```
@@ -149,6 +149,8 @@ python model/visualize_clusters.py
 기본 입력 경로:
 
 - `data/clustering/user_clusters.parquet`
+
+현재 저장소에는 `outputs/user_interests.npz`를 위 테이블 포맷으로 변환하는 export 스크립트가 없다. 새 파이프라인에서 실제 모델 결과를 대시보드에 연결하려면 이 단계를 명시적으로 추가한다.
 
 대시보드 입력 파일은 `dashboard/README.md`의 입력 스키마를 따른다. 실제 결과 파일이 없으면 대시보드에서 demo 데이터를 사용해 UI를 먼저 확인할 수 있다.
 
