@@ -14,3 +14,6 @@ Streaming Phase 3 산출물은 `outputs/stream/` 아래에 둔다.
 - `outputs/stream/user_states/{user_id}.json`: raw rating event와 현재 positive projection state
 - `outputs/stream/online_embeddings.npz`: Phase 4가 소비할 active positive online embeddings
 - `outputs/stream/online_embedding_events.jsonl`: online ingest/extract 실행 요약 로그
+- `outputs/stream/interest_states/{user_id}.json`: user별 interest vectors, pending ids, assignment/refit trigger state
+- `outputs/stream/interest_assignments.jsonl`: assignment/pending/outlier 결과 로그
+- `outputs/stream/refit_requests.jsonl`: triggered refit backend가 소비할 refit 요청 로그

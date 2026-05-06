@@ -14,6 +14,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
        ↓
      python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
+       ↓
+     python3 -m model.stream.interest_assign → interest assignment + refit request 기록
 ```
 
 ---
@@ -33,7 +35,7 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
 | `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
 | `stream/state.py` | online user raw event state, positive projection, state JSON 저장/로드 |
 | `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
-| `stream/interest_assign.py` | Phase 4 online interest assignment placeholder |
+| `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/drift_detector.py` | Phase 4 refit trigger placeholder |
 | `stream/cluster_refit.py` | Phase 4 triggered refit placeholder |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
@@ -60,6 +62,9 @@ python3 -m model.batch.extract_canonical --limit-users 2 --batch-size 32 --num-w
 
 # 2-3. online embedding/user state smoke test
 python3 -m model.stream.extract_online --bootstrap-user-id 28 --output outputs/stream/test_online_embeddings.npz
+
+# 2-4. online interest assignment/refit trigger smoke test
+python3 -m model.stream.interest_assign --embeddings outputs/stream/test_online_embeddings.npz
 
 # 3. 클러스터링 (전체 유저)
 python3 -m model.batch.cluster
@@ -133,6 +138,10 @@ git diff <old_commit>..<new_commit> -- model/
 | stream: min_ratings_for_zscore | 3 | online positive projection에서 z-score를 적용하기 전 optimistic cold-start 기준 |
 | stream: output | `outputs/stream/online_embeddings.npz` | active positive online embedding 기본 출력 경로 |
 | stream: state_dir | `outputs/stream/user_states/` | user별 raw event state JSON 저장 경로 |
+| interest_assign: similarity_threshold | 0.2 | nearest interest cosine similarity가 이 값보다 낮으면 outlier |
+| interest_assign: refit_min_events | 20 | no-interest/pending event 기반 refit request 최소 이벤트 수 |
+| interest_assign: assign_trigger_count | 50 | refit 이후 assign 누적 수 기반 refit request 기준 |
+| interest_assign: outlier_trigger_count | 10 | outlier 누적 수 기반 refit request 기준 |
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
@@ -152,6 +161,9 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/user_states/{user_id}.json` | user별 raw rating event와 현재 positive projection state |
 | `outputs/stream/online_embeddings.npz` | active positive online embedding `embeddings(N,128)`, `user_ids(N,)`, `raw_event_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)`, `status(N,)` |
 | `outputs/stream/online_embedding_events.jsonl` | online ingest/extract run summary event log |
+| `outputs/stream/interest_states/{user_id}.json` | user별 interest vectors, pending raw event ids, assignment/refit trigger state |
+| `outputs/stream/interest_assignments.jsonl` | online embedding별 assignment/pending/outlier 결과 log |
+| `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |

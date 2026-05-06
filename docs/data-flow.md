@@ -38,6 +38,11 @@ data/**/raw/
         -> outputs/stream/online_embeddings.npz
         -> outputs/stream/online_embedding_events.jsonl
         -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> python3 -m model.stream.interest_assign
+        -> outputs/stream/interest_states/{user_id}.json
+        -> outputs/stream/interest_assignments.jsonl
+        -> outputs/stream/refit_requests.jsonl
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
 ```
 
 보조 장르 산출물 흐름:
@@ -134,6 +139,7 @@ python3 -m model.batch.train
 python3 -m model.batch.extract
 python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online
+python3 -m model.stream.interest_assign
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 ```
@@ -147,6 +153,9 @@ python3 -m model.batch.visualize_clusters
 - `outputs/stream/user_states/{user_id}.json`
 - `outputs/stream/online_embeddings.npz`
 - `outputs/stream/online_embedding_events.jsonl`
+- `outputs/stream/interest_states/{user_id}.json`
+- `outputs/stream/interest_assignments.jsonl`
+- `outputs/stream/refit_requests.jsonl`
 - `outputs/user_interests.npz`
 - `outputs/viz/`
 - `outputs/logs/`
@@ -159,6 +168,8 @@ python3 -m model.batch.visualize_clusters
 모델 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 `experiments/model/<run_id>/`에 남긴다.
 
 `outputs/embeddings.npz`는 기존 overlap-window 추출 산출물이고, `outputs/canonical_embeddings.npz`는 streaming/replay 전환을 위해 event 하나당 embedding 하나를 보장하는 batch 산출물이다. `outputs/stream/online_embeddings.npz`는 raw rating을 모두 user state에 저장한 뒤 현재까지 관측된 positive projection에서 생성한 active online embedding이다. 현재 `batch/cluster.py`는 아직 legacy `embeddings.npz`를 입력으로 사용한다.
+
+`outputs/stream/interest_assignments.jsonl`과 `outputs/stream/refit_requests.jsonl`은 active online embedding을 interest state에 연결하기 위한 stream 산출물이다. Phase 4는 refit request만 기록하고 실제 UMAP/HDBSCAN refit은 실행하지 않는다.
 
 ## 7. Dashboard input
 

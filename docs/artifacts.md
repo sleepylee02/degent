@@ -39,6 +39,9 @@
 | `outputs/stream/user_states/{user_id}.json` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
 | `outputs/stream/online_embeddings.npz` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
 | `outputs/stream/online_embedding_events.jsonl` | streaming run log | `python3 -m model.stream.extract_online` | append/regenerate |
+| `outputs/stream/interest_states/{user_id}.json` | streaming model artifact | `python3 -m model.stream.interest_assign` | regenerate |
+| `outputs/stream/interest_assignments.jsonl` | streaming assignment log | `python3 -m model.stream.interest_assign` | append/regenerate |
+| `outputs/stream/refit_requests.jsonl` | streaming refit request log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
 | `outputs/user_interests.npz` | model artifact | `python3 -m model.batch.cluster` | regenerate |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
@@ -64,6 +67,7 @@ python3 -m model.batch.train
 python3 -m model.batch.extract
 python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online --bootstrap-user-id <userId>
+python3 -m model.stream.interest_assign
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 # add/run an explicit export step for data/clustering/user_clusters.parquet when using the dashboard with real data

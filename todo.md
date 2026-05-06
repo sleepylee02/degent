@@ -18,6 +18,11 @@
 
 ## Done
 
+- Streaming Pipeline Phase 4: Interest Assign / Refit Trigger
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase4_interest_assign_refit_trigger.md`
+  - files: `model/stream/interest_assign.py`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `docs/artifacts.md`, `outputs/readme.md`, `README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: active positive online embedding을 interest state에 assign하고, interest state가 없거나 pending/outlier/event-count trigger 기준을 넘는 user에 refit request를 남김. smoke에서 no-interest pending 1579/refit request 1, seeded-interest assigned 1579, outlier 1/refit request 확인
 - Streaming Pipeline Phase 3: Online Embedding / User Interest State
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase3_online_embedding_state.md`
