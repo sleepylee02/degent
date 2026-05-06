@@ -27,6 +27,7 @@
 | online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | interest assign / refit trigger | [x] | `stream/interest_assign.py` | active online embedding을 user별 interest state에 cosine nearest-interest로 assign하고, no-interest/pending/outlier/event-count 기준 refit request를 기록 | 실제 refit은 Phase 4-1 이후 범위 |
 | triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | 로컬 `.venv`는 RAPIDS/cuML `25.10.0` 조합에서 GPU smoke 통과 |
+| replay engine / closed-loop demo | [x] | `replay/cpp/rating_replay.cpp`, `stream/replay_pipeline.py` | ML-32M user history를 timestamp-sorted replay input으로 만들고, Phase 3~4-1 CLI를 micro-batch로 호출해 `outputs/stream/replay_demo/`에 격리된 artifact를 기록 | Phase 6 dashboard는 내부 구현이 아니라 `docs/streaming-replay-dashboard-contract.md`와 summary/JSONL artifact만 읽는다 |
 | 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
@@ -47,6 +48,7 @@
 - `outputs/stream/interest_assignments.jsonl`: Phase 4 assignment/pending/outlier 결과 log.
 - `outputs/stream/refit_requests.jsonl`: Phase 4-1 이후 refit backend가 소비할 request log.
 - `outputs/stream/refit_events.jsonl`: Phase 4-1 refit request close/skip event log.
+- `outputs/stream/replay_demo/`: Phase 5 replay demo root. `replay_summary.json`은 dashboard entrypoint, `replay_events.jsonl`은 progress log, 나머지 stream state/log/embedding은 replay run 안에 격리된다.
 - `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, interest vector `(103, 128)`, `user_ids_list=[10202]`. 최신 로그가 `user_id=10202` 테스트 모드였으므로 전체 유저 클러스터링 산출물로 간주하면 안 된다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
@@ -180,6 +182,30 @@ Phase 4-1 GPU dependency/smoke:
 - `pip check`, PyTorch CUDA import, CuPy kernel, cuML/cudf import를 확인했다.
 - `phase4_1_cluster_refit_auto_gpu_smoke_final`에서 `--cluster-backend auto`가 GPU를 선택했고, user 28 active embedding 1,579개를 refit해 interest 33개를 생성했다. elapsed는 약 0.26초, noise row는 124개였다.
 - GPU dependency 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`에 기록했다.
+
+## Replay Engine 흐름
+
+Phase 5는 새 모델링을 추가하지 않고 Phase 3~4-1 CLI를 replay run 단위로 묶는다.
+
+1. `make -C replay`로 `replay/bin/rating_replay`를 빌드한다.
+2. `rating_replay`가 `data/ratings_drop_processed.jsonl`을 읽고 `ratedAtTs`, `userId`, `movieId`, `eventId` 순서의 `replay_input_events.jsonl`을 만든다.
+3. `python3 -m model.stream.replay_pipeline`이 replay input을 micro-batch로 나눈다.
+4. batch마다 `extract_online -> interest_assign -> cluster_refit`을 호출한다.
+5. 모든 산출물은 `outputs/stream/replay_demo/` 아래에 저장해 기본 `outputs/stream/*` 산출물을 덮어쓰지 않는다.
+6. `replay_events.jsonl`에는 progress, replay clock, latency, assignment/refit count를 append하고, `replay_summary.json`에는 dashboard가 읽을 stable entrypoint를 기록한다.
+
+Phase 5 smoke:
+
+- command: `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke`
+- output root: `outputs/stream/replay_demo/`
+- input events: 30
+- processed events: 30
+- unique users: 1
+- micro-batches: 2
+- final active embedding rows: 12
+- refit requests opened/closed: 2 / 2
+- backend selected by refit events: GPU
+- elapsed: 약 11.18초
 
 ## 현재 정리 방향
 

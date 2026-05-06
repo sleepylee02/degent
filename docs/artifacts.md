@@ -44,6 +44,15 @@
 | `outputs/stream/interest_assignments.jsonl` | streaming assignment log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/stream/refit_requests.jsonl` | streaming refit request log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/stream/refit_events.jsonl` | streaming refit event log | `python3 -m model.stream.cluster_refit` | append/regenerate |
+| `outputs/stream/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
+| `outputs/stream/replay_demo/replay_summary.json` | replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline` | regenerate |
+| `outputs/stream/replay_demo/replay_events.jsonl` | replay progress log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/stream/replay_demo/user_states/{user_id}.json` | replay-scoped user state | `python3 -m model.stream.replay_pipeline` | regenerate |
+| `outputs/stream/replay_demo/online_embeddings.npz` | replay-scoped online embeddings | `python3 -m model.stream.replay_pipeline` | regenerate |
+| `outputs/stream/replay_demo/interest_assignments.jsonl` | replay-scoped assignment log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/stream/replay_demo/refit_requests.jsonl` | replay-scoped refit request log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/stream/replay_demo/refit_events.jsonl` | replay-scoped refit event log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/stream/replay_demo/interest_states/{user_id}.json` | replay-scoped interest state | `python3 -m model.stream.replay_pipeline` | regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
 | `outputs/user_interests.npz` | model artifact | `python3 -m model.batch.cluster` | regenerate |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
@@ -72,6 +81,8 @@ python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online --bootstrap-user-id <userId>
 python3 -m model.stream.interest_assign
 python3 -m model.stream.cluster_refit
+make -C replay
+python3 -m model.stream.replay_pipeline --generate-events
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 # add/run an explicit export step for data/clustering/user_clusters.parquet when using the dashboard with real data

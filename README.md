@@ -35,6 +35,7 @@ degent/
 │   └── ratings_drop_processed.jsonl  # user sequence JSONL
 ├── schemas/                          # 데이터 계약 정본
 ├── preprocess/                       # 전처리 및 후처리 스크립트
+├── replay/                           # C++ rating replay event generator
 ├── dashboard/                        # 클러스터링 결과 시각화 대시보드
 ├── model/                            # SASRec + Contrastive Loss 모델 파이프라인
 ├── outputs/                          # 모델 산출물과 실행 로그
@@ -231,15 +232,17 @@ python3 eda/processed/eda_processed.py
 - `eda/processed/outputs/eda_report.md`
 - `eda/processed/outputs/*.png`
 
-## 클러스터링 대시보드
+## 추천 대시보드
 
-사용자 상태 임베딩을 차원 축소하고 밀도 기반 클러스터링한 결과를 인터랙티브하게 탐색할 수 있다.
+사용자 상태 임베딩 cluster 결과와 streaming replay 진행 상황을 인터랙티브하게 탐색할 수 있다.
 
 ```bash
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-기본적으로 아래 결과 파일을 기대한다.
+사이드바의 `Dashboard view`에서 `Cluster explorer`와 `Replay monitor`를 전환한다. 기본 replay artifact가 있으면 replay view가 먼저 열리고, 없으면 기존 cluster view가 먼저 열린다.
+
+Cluster explorer는 기본적으로 아래 결과 파일을 기대한다.
 
 - `data/clustering/user_clusters.parquet`
 
@@ -262,6 +265,8 @@ streamlit run dashboard/cluster_dashboard.py
 
 실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
 
+Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 artifact를 읽는 read-only view다. Stable entrypoint는 `outputs/stream/replay_demo/replay_summary.json`이며, summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+
 ## 모델 실험 기록
 
 `python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 최신 run id를 이어받는다.
@@ -273,6 +278,8 @@ streamlit run dashboard/cluster_dashboard.py
 `python3 -m model.stream.interest_assign`은 active online embedding을 user별 interest state에 연결한다. interest vector가 없으면 pending buffer와 refit request를 남기고, interest vector가 있으면 cosine similarity로 assign한다. 기본 출력은 `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`이다.
 
 `python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML이 있으면 GPU, 없으면 CPU `umap-learn + hdbscan` fallback을 사용한다. 현재 `.venv`에서는 RAPIDS/cuML `25.10.0` 조합으로 GPU smoke가 통과했다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
+
+`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `outputs/stream/replay_demo/` 아래에 `replay_summary.json`, `replay_events.jsonl`, replay-scoped state/log/embedding을 기록한다. 기본 `--replay-speed 0`은 wall-clock pacing 없이 빠르게 처리하고, 양수 값은 timestamp gap을 배속으로 압축한다.
 
 가벼운 기록:
 

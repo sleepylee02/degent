@@ -47,6 +47,20 @@ data/**/raw/
         -> outputs/stream/refit_events.jsonl
         -> outputs/stream/interest_states/{user_id}.json
         -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> Phase 5 replay demo artifacts
+        -> make -C replay
+        -> replay/bin/rating_replay
+        -> outputs/stream/replay_demo/replay_input_events.jsonl
+        -> python3 -m model.stream.replay_pipeline
+        -> outputs/stream/replay_demo/replay_summary.json
+        -> outputs/stream/replay_demo/replay_events.jsonl
+        -> outputs/stream/replay_demo/user_states/{user_id}.json
+        -> outputs/stream/replay_demo/online_embeddings.npz
+        -> outputs/stream/replay_demo/interest_assignments.jsonl
+        -> outputs/stream/replay_demo/refit_requests.jsonl
+        -> outputs/stream/replay_demo/refit_events.jsonl
+        -> outputs/stream/replay_demo/interest_states/{user_id}.json
+        -> dashboard/cluster_dashboard.py Replay monitor
 ```
 
 보조 장르 산출물 흐름:
@@ -145,6 +159,8 @@ python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online
 python3 -m model.stream.interest_assign
 python3 -m model.stream.cluster_refit
+make -C replay
+python3 -m model.stream.replay_pipeline --generate-events
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 ```
@@ -162,6 +178,15 @@ python3 -m model.batch.visualize_clusters
 - `outputs/stream/interest_assignments.jsonl`
 - `outputs/stream/refit_requests.jsonl`
 - `outputs/stream/refit_events.jsonl`
+- `outputs/stream/replay_demo/replay_input_events.jsonl`
+- `outputs/stream/replay_demo/replay_summary.json`
+- `outputs/stream/replay_demo/replay_events.jsonl`
+- `outputs/stream/replay_demo/user_states/{user_id}.json`
+- `outputs/stream/replay_demo/online_embeddings.npz`
+- `outputs/stream/replay_demo/interest_assignments.jsonl`
+- `outputs/stream/replay_demo/refit_requests.jsonl`
+- `outputs/stream/replay_demo/refit_events.jsonl`
+- `outputs/stream/replay_demo/interest_states/{user_id}.json`
 - `outputs/user_interests.npz`
 - `outputs/viz/`
 - `outputs/logs/`
@@ -179,9 +204,11 @@ python3 -m model.batch.visualize_clusters
 
 `outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 `interest_states/{user_id}.json`의 interest vectors를 replace한다. `--cluster-backend auto`는 현재 `.venv`의 RAPIDS/cuML `25.10.0` 조합에서 GPU smoke가 통과했으며, cuML을 사용할 수 없는 환경에서는 CPU `umap-learn + hdbscan` fallback을 사용한다.
 
+Phase 5 replay demo artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline`은 이 입력을 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출한다. Phase 6 dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths`가 있으면 해당 경로를 우선 사용한다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+
 ## 7. Dashboard input
 
-현재 모델 클러스터링 산출물은 `outputs/user_interests.npz`이고, 대시보드 기본 입력은 테이블 파일이다.
+현재 모델 클러스터링 산출물은 `outputs/user_interests.npz`이고, cluster explorer의 기본 입력은 테이블 파일이다.
 
 기본 입력 경로:
 
@@ -189,7 +216,16 @@ python3 -m model.batch.visualize_clusters
 
 현재 저장소에는 `outputs/user_interests.npz`를 위 테이블 포맷으로 변환하는 export 스크립트가 없다. 새 파이프라인에서 실제 모델 결과를 대시보드에 연결하려면 이 단계를 명시적으로 추가한다.
 
-대시보드 입력 파일은 `dashboard/README.md`의 입력 스키마를 따른다. 실제 결과 파일이 없으면 대시보드에서 demo 데이터를 사용해 UI를 먼저 확인할 수 있다.
+Cluster explorer 입력 파일은 `dashboard/README.md`의 입력 스키마를 따른다. 실제 결과 파일이 없으면 대시보드에서 demo 데이터를 사용해 UI를 먼저 확인할 수 있다.
+
+Replay monitor 입력은 Phase 5 replay artifact다.
+
+- `outputs/stream/replay_demo/replay_summary.json`
+- `outputs/stream/replay_demo/replay_events.jsonl`
+- `outputs/stream/replay_demo/interest_assignments.jsonl`
+- `outputs/stream/replay_demo/refit_requests.jsonl`
+- `outputs/stream/replay_demo/refit_events.jsonl`
+- `outputs/stream/replay_demo/interest_states/{user_id}.json`
 
 ## 8. Dashboard
 
@@ -197,4 +233,4 @@ python3 -m model.batch.visualize_clusters
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-세부 입력 계약은 `dashboard/README.md`를 따른다.
+세부 입력 계약은 `dashboard/README.md`와 `docs/streaming-replay-dashboard-contract.md`를 따른다.

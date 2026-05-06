@@ -18,6 +18,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
      python3 -m model.stream.interest_assign → interest assignment + refit request 기록
        ↓
      python3 -m model.stream.cluster_refit → refit request 소비 + interest state replace
+       ↓
+     python3 -m model.stream.replay_pipeline → timestamp replay closed-loop demo
 ```
 
 ---
@@ -40,6 +42,7 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/drift_detector.py` | Phase 4 refit trigger placeholder |
 | `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback |
+| `stream/replay_pipeline.py` | replay input event를 micro-batch로 소비해 Phase 3~4-1 CLI를 순서대로 호출 |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
 ---
@@ -74,6 +77,12 @@ python3 -m model.stream.cluster_refit --embeddings outputs/stream/test_online_em
 # 2-6. triggered cluster refit GPU/auto smoke test
 python3 -m model.stream.cluster_refit --embeddings outputs/stream/test_online_embeddings.npz --cluster-backend auto
 
+# 2-7. replay event generator build
+make -C replay
+
+# 2-8. replay closed-loop smoke test
+python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke
+
 # 3. 클러스터링 (전체 유저)
 python3 -m model.batch.cluster
 
@@ -95,6 +104,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
 - `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
 - `stream/cluster_refit.py`의 `auto` backend는 cuML import가 가능하면 GPU를 사용하고, 아니면 CPU `umap-learn + hdbscan`으로 fallback한다.
+- `stream/replay_pipeline.py`의 `--replay-speed 0` 기본값은 wall-clock pacing 없이 가능한 한 빠르게 처리한다. 양수 값을 주면 timestamp gap을 speed multiplier로 나눠 micro-batch 사이를 대기하며, `--max-sleep-sec`로 sleep 상한을 둔다.
 - 현재 GPU 검증된 `.venv` 조합은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2`다. 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
 
@@ -104,6 +114,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 - `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
 - `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
+- `python3 -m model.stream.replay_pipeline`은 `replay_summary.json`, `replay_events.jsonl` metadata를 run별 manifest/metrics에 기록한다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster summary를 append한다.
@@ -155,6 +166,9 @@ git diff <old_commit>..<new_commit> -- model/
 | cluster_refit: cluster_backend | `auto` | cuML 사용 가능 시 GPU, 아니면 CPU fallback |
 | cluster_refit: refit_min_events | 20 | refit 실행 최소 active embedding 수 |
 | cluster_refit: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
+| replay: output_root | `outputs/stream/replay_demo` | Phase 5/6 demo 산출물 격리 경로 |
+| replay: micro_batch_size | 20 | replay orchestrator가 한 번에 Phase 3~4-1에 전달하는 event 수 |
+| replay: replay_speed | 0 | wall-clock pacing 비활성. 양수면 timestamp gap을 배속으로 압축 |
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
@@ -178,6 +192,15 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/interest_assignments.jsonl` | online embedding별 assignment/pending/outlier 결과 log |
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/stream/refit_events.jsonl` | refit request 소비/skip/close 결과 log |
+| `outputs/stream/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
+| `outputs/stream/replay_demo/replay_events.jsonl` | replay progress, micro-batch latency, replay clock, assignment/refit count log |
+| `outputs/stream/replay_demo/replay_summary.json` | Phase 6 dashboard가 읽는 replay run summary entrypoint |
+| `outputs/stream/replay_demo/user_states/{user_id}.json` | replay run에 격리된 user raw/positive state |
+| `outputs/stream/replay_demo/interest_states/{user_id}.json` | replay run에 격리된 user interest state |
+| `outputs/stream/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding |
+| `outputs/stream/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
+| `outputs/stream/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
+| `outputs/stream/replay_demo/refit_events.jsonl` | replay run의 refit close/skip 결과 log |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |

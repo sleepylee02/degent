@@ -2,11 +2,6 @@
 
 ## Active
 
-- Streaming Hybrid Recommendation Pipeline 전환 master plan
-  - owner: sleepylee / LLM
-  - plan: `plan/active/streaming_pipeline.md`
-  - files: `plan/active/streaming_pipeline.md`, `todo.md`
-  - status: 전체 coarse plan 등록. 각 phase는 별도 세부 계획 작성 및 승인 후 진행
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM
   - files: `model/IMPLEMENTATION_STATUS.md`, `model/README.md`, `PROJECT_GUIDE.md`
@@ -18,6 +13,21 @@
 
 ## Done
 
+- Streaming Hybrid Recommendation Pipeline 전환 master plan
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline.md`
+  - files: `plan/done/streaming_pipeline.md`, `todo.md`
+  - status: Phase 1~6과 Phase 4-1 완료. Hybrid streaming pipeline은 batch/common/stream 구조, canonical event embedding, online user/interest state, interest assign/refit trigger, GPU-first refit backend, C++ replay engine, replay dashboard reader까지 하나의 replay smoke 흐름으로 검증 완료
+- Streaming Pipeline Phase 5: Replay Engine
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase5_replay_engine.md`
+  - files: `replay/`, `model/stream/replay_pipeline.py`, `docs/streaming-replay-dashboard-contract.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `docs/artifacts.md`, `outputs/readme.md`, `README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: C++ replay generator와 Python micro-batch orchestrator 구현 완료. Smoke에서 user 28 events 30, micro-batch 2개, GPU refit request opened/closed 2/2, final active embedding rows 12 확인. 모든 demo artifact는 `outputs/stream/replay_demo/`에 격리
+- Streaming Pipeline Phase 6: Replay Dashboard
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase6_replay_dashboard.md`
+  - files: `dashboard/cluster_dashboard.py`, `dashboard/README.md`, `README.md`, `docs/data-flow.md`, `docs/artifacts.md`, `outputs/readme.md`, `todo.md`
+  - status: Phase 5 replay artifact를 읽는 read-only dashboard reader 구현 완료. `replay_summary.json` stable entrypoint와 summary `paths` 우선순위, replay events/assignment/refit/interest state view 추가. Phase 5 내부 구현에는 의존하지 않고 `docs/streaming-replay-dashboard-contract.md`만 따른다
 - Streaming Pipeline Phase 4-1: GPU-first Clustering/Refit Backend
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase4_1_gpu_refit_backend.md`

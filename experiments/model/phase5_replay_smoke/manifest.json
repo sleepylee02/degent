@@ -1,0 +1,450 @@
+{
+  "created_at": "2026-05-06T14:13:21+09:00",
+  "run_id": "phase5_replay_smoke",
+  "git": {
+    "commit": "65026ef0ed4fd9883b6f30ca8cec4bb6464cc9a2",
+    "branch": "jy_experimentlab",
+    "dirty": true,
+    "status_short": [
+      "M README.md",
+      " M dashboard/README.md",
+      " M dashboard/cluster_dashboard.py",
+      " M docs/artifacts.md",
+      " M docs/data-flow.md",
+      " M outputs/readme.md",
+      " M plan/active/streaming_pipeline.md",
+      " M todo.md",
+      "?? docs/streaming-replay-dashboard-contract.md",
+      "?? experiments/model/phase5_replay_smoke/",
+      "?? model/stream/replay_pipeline.py",
+      "?? outputs/logs/cluster_refit_20260506_141324.log",
+      "?? outputs/logs/cluster_refit_20260506_141330.log",
+      "?? outputs/logs/cluster_refit_20260506_141804.log",
+      "?? outputs/logs/cluster_refit_20260506_141809.log",
+      "?? outputs/logs/extract_online_20260506_141321.log",
+      "?? outputs/logs/extract_online_20260506_141327.log",
+      "?? outputs/logs/extract_online_20260506_141800.log",
+      "?? outputs/logs/extract_online_20260506_141806.log",
+      "?? outputs/logs/interest_assign_20260506_141324.log",
+      "?? outputs/logs/interest_assign_20260506_141329.log",
+      "?? outputs/logs/interest_assign_20260506_141803.log",
+      "?? outputs/logs/interest_assign_20260506_141809.log",
+      "?? outputs/logs/replay_pipeline_20260506_141320.log",
+      "?? outputs/logs/replay_pipeline_20260506_141759.log",
+      "?? plan/active/streaming_pipeline_phase5_replay_engine.md",
+      "?? plan/active/streaming_pipeline_phase6_replay_dashboard.md",
+      "?? plan/expired/streaming_pipeline_phase5_6_replay_dashboard_demo.md",
+      "?? replay/"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/extract_online.py --run-id phase5_replay_smoke --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --checkpoint /home/hungrylee/Desktop/0proj/degent/outputs/sasrec_cl.pt --item2idx /home/hungrylee/Desktop/0proj/degent/outputs/item2idx.json --state-dir /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/user_states --output /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embeddings.npz --event-log /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embedding_events.jsonl --event-jsonl /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/batches/batch_000001.jsonl --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256",
+      "log": {
+        "path": "outputs/logs/extract_online_20260506_141806.log",
+        "exists": true,
+        "size_bytes": 730,
+        "mtime_ns": 1778044686550937035
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862000000000
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775609561305994691,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1777951465096547396,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/stream/replay_demo/user_states",
+        "output": "outputs/stream/replay_demo/online_embeddings.npz",
+        "event_log": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+        "bootstrap_user_id": null,
+        "event_jsonl": "/home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/batches/batch_000001.jsonl",
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 256
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 28,
+            "statePath": "outputs/stream/replay_demo/user_states/28.json",
+            "rawEventCount": 30,
+            "positiveEventCount": 12,
+            "activeEventCount": 12,
+            "droppedEventCount": 18,
+            "skippedUnknownItems": 0,
+            "ratingMean": 3.2333333333333334,
+            "ratingStd": 1.1455226851626388,
+            "positiveReason": "zscore",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 12
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 10618,
+          "mtime_ns": 1778044688133929506,
+          "sha256": "3784340820dedad063389f589ccdb85d69cf45103487b9a2710da79040ce8e5c"
+        },
+        "event_log": {
+          "path": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 1694,
+          "mtime_ns": 1778044688133929506,
+          "sha256": "24d17b5c08d9b9fef4979eac7cce0e61f0bb1b097d17a3f85d7725b2a8f3c294"
+        },
+        "metrics": {
+          "path": "experiments/model/phase5_replay_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 3916,
+          "mtime_ns": 1778044688133929506,
+          "sha256": "838b51d17dd64b04d43a029d9b356fa394cec1a86bb21755d6181d032a3fc12b"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 15,
+        "embedding_rows": 12,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 12,
+        "nan_embedding_rows": 0,
+        "max_history_len": 12,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true
+      }
+    },
+    "interest_assign": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/interest_assign.py --run-id phase5_replay_smoke --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embeddings.npz --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/interest_states --assignments /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/interest_assignments.jsonl --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3",
+      "log": {
+        "path": "outputs/logs/interest_assign_20260506_141809.log",
+        "exists": true,
+        "size_bytes": 880,
+        "mtime_ns": 1778044689040925191
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 10618,
+          "mtime_ns": 1778044688133929506
+        }
+      },
+      "assignment_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "assignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+        "refit_requests": "outputs/stream/replay_demo/refit_requests.jsonl",
+        "similarity_threshold": 0.2,
+        "refit_min_events": 3,
+        "assign_trigger_count": 3,
+        "outlier_trigger_count": 3
+      },
+      "data_summary": {
+        "active_embedding_rows": 12,
+        "processed_users": 1,
+        "user_summaries": [
+          {
+            "userId": 28,
+            "inputRows": 12,
+            "interestCount": 1,
+            "pendingBefore": 0,
+            "pendingAfter": 0,
+            "processedBefore": 7,
+            "processedAfter": 12,
+            "refitRequired": true,
+            "refitReasons": [
+              "assigned_since_last_refit"
+            ],
+            "statuses": {
+              "already_processed": 7,
+              "assigned": 5
+            },
+            "statePath": "outputs/stream/replay_demo/interest_states/28.json"
+          }
+        ]
+      },
+      "outputs": {
+        "assignments": {
+          "path": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "exists": true,
+          "size_bytes": 5620,
+          "mtime_ns": 1778044689052925134,
+          "sha256": "4a48d74e1c7c845c81e84899ddd2ba5d721e7d8b29869ac84239bb361a0c980b"
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 613,
+          "mtime_ns": 1778044689052925134,
+          "sha256": "b188242a16f57bb9f540520a29aee075800d18c2ad10bc4211c9e06427a76320"
+        },
+        "metrics": {
+          "path": "experiments/model/phase5_replay_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 4156,
+          "mtime_ns": 1778044689052925134,
+          "sha256": "c62918c091e8f21e67dd158c2a6c1540a961e86eb75e1dc8771e956c221107da"
+        }
+      },
+      "summary_metrics": {
+        "stage": "interest_assign",
+        "input_rows": 12,
+        "processed_users": 1,
+        "assignment_records": 12,
+        "refit_requests": 1,
+        "status_counts": {
+          "pending_no_interest": 2,
+          "pending_refit_required": 5,
+          "already_processed": 7,
+          "assigned": 5
+        },
+        "embedding_dim": 128
+      }
+    },
+    "cluster_refit": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/cluster_refit.py --run-id phase5_replay_smoke --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embeddings.npz --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/refit_requests.jsonl --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/interest_states --refit-events /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/refit_events.jsonl --cluster-backend auto --refit-min-events 3 --min-cluster-size 2 --cluster-dim 3 --user-id 28",
+      "log": {
+        "path": "outputs/logs/cluster_refit_20260506_141809.log",
+        "exists": true,
+        "size_bytes": 964,
+        "mtime_ns": 1778044690777916924
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 10618,
+          "mtime_ns": 1778044688133929506
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 613,
+          "mtime_ns": 1778044689052925134
+        }
+      },
+      "refit_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "refit_events": "outputs/stream/replay_demo/refit_events.jsonl",
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "refit_min_events": 3,
+        "min_cluster_size": 2,
+        "cluster_dim": 3,
+        "random_state": 42,
+        "user_id": 28,
+        "limit_users": null
+      },
+      "data_summary": {
+        "active_embedding_rows": 12,
+        "active_embedding_users": 1,
+        "user_summaries": [
+          {
+            "recordedAt": "2026-05-06T14:18:10+09:00",
+            "runId": "phase5_replay_smoke",
+            "userId": 28,
+            "request": {
+              "recordedAt": "2026-05-06T14:18:09+09:00",
+              "runId": "phase5_replay_smoke",
+              "userId": 28,
+              "status": "open",
+              "reasons": [
+                "assigned_since_last_refit"
+              ],
+              "pendingRawEventCount": 0,
+              "assignedSinceLastRefit": 5,
+              "outlierSinceLastRefit": 0,
+              "refitMinEvents": 3,
+              "assignTriggerCount": 3,
+              "outlierTriggerCount": 3
+            },
+            "statePath": "outputs/stream/replay_demo/interest_states/28.json",
+            "backendRequested": "auto",
+            "backendSelected": "gpu",
+            "backendFallbackReason": null,
+            "activeEmbeddingRows": 12,
+            "status": "closed",
+            "refitElapsedSec": 0.18547511100769043,
+            "interestCount": 2,
+            "processedRawEventCount": 12,
+            "clusterSummary": {
+              "nClusters": 2,
+              "interestCount": 2,
+              "noiseCount": 0,
+              "fallbackUsed": false,
+              "labelCounts": {
+                "0": 5,
+                "1": 7
+              },
+              "clusterSizes": {
+                "0": 5,
+                "1": 7
+              },
+              "backend": "gpu",
+              "reducedDim": 3,
+              "nNeighbors": 11
+            }
+          }
+        ]
+      },
+      "outputs": {
+        "refit_events": {
+          "path": "outputs/stream/replay_demo/refit_events.jsonl",
+          "exists": true,
+          "size_bytes": 1802,
+          "mtime_ns": 1778044690973915991,
+          "sha256": "dbdb336f22d6c92cdbde1a65d565e6787b71ebbd69443a312945434e4f1cc95b"
+        },
+        "metrics": {
+          "path": "experiments/model/phase5_replay_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 4472,
+          "mtime_ns": 1778044690973915991,
+          "sha256": "0c14b3de7cadcc8b747ce5cf28e3f2d9efbc92d159f252c24c00ba2b3014886b"
+        }
+      },
+      "summary_metrics": {
+        "stage": "cluster_refit",
+        "open_requests": 1,
+        "selected_requests": 1,
+        "refit_count": 1,
+        "skipped_count": 0,
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "elapsed_sec": 0.18615436553955078,
+        "embedding_dim": 128
+      }
+    },
+    "replay_pipeline": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/replay_pipeline.py --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke",
+      "log": {
+        "path": "outputs/logs/replay_pipeline_20260506_141759.log",
+        "exists": true,
+        "size_bytes": 5008,
+        "mtime_ns": 1778044689189924482
+      },
+      "inputs": {
+        "replay_input_events": {
+          "path": "outputs/stream/replay_demo/replay_input_events.jsonl",
+          "exists": true,
+          "size_bytes": 6038,
+          "mtime_ns": 1778044680193967234,
+          "sha256": "ba31e9daec2ae235efee2dd47036f03ca7f4e839ff861fb4be14af4b83f5377b"
+        }
+      },
+      "outputs": {
+        "replay_summary": {
+          "path": "outputs/stream/replay_demo/replay_summary.json",
+          "exists": true,
+          "size_bytes": 951,
+          "mtime_ns": 1778044691374914081,
+          "sha256": "1636e2e3eb6e5ab30e865418384e522c58e2952f891cc527ca01aa0e7be740af"
+        },
+        "replay_events": {
+          "path": "outputs/stream/replay_demo/replay_events.jsonl",
+          "exists": true,
+          "size_bytes": 1520,
+          "mtime_ns": 1778044691374914081,
+          "sha256": "527e8890ec1f492651790602792c69546de02fbc9655d54362e21c22d4b6ee46"
+        }
+      },
+      "summary_metrics": {
+        "version": "stream_replay_summary.v1",
+        "runId": "phase5_replay_smoke",
+        "status": "completed",
+        "startedAt": "2026-05-06T14:18:00+09:00",
+        "endedAt": "2026-05-06T14:18:11+09:00",
+        "elapsedSec": 11.179348945617676,
+        "inputEvents": 30,
+        "processedEvents": 30,
+        "uniqueUsers": 1,
+        "microBatchSize": 15,
+        "refitBackend": "auto",
+        "totals": {
+          "activeEmbeddingRows": 19,
+          "assignmentRecords": 19,
+          "refitRequestsOpened": 2,
+          "refitClosed": 2,
+          "refitSkipped": 0
+        },
+        "paths": {
+          "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
+          "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
+          "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "refitEvents": "outputs/stream/replay_demo/refit_events.jsonl",
+          "interestStateDir": "outputs/stream/replay_demo/interest_states"
+        }
+      }
+    }
+  },
+  "updated_at": "2026-05-06T14:18:11+09:00"
+}

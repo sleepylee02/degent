@@ -33,6 +33,10 @@ degent/
 │   ├── drop_rating/         #   movie drop 결과를 rating에 전파하는 후처리
 │   ├── process_rating/      #   rating row를 user sequence JSONL로 재구성
 │   └── README.md            #   전처리 실행 순서와 입출력 요약
+├── replay/                  # C++ rating replay event generator
+│   ├── cpp/                 #   replay source
+│   ├── Makefile             #   replay binary build
+│   └── README.md            #   replay generator/orchestrator usage
 ├── dashboard/               # 클러스터링 결과 시각화 대시보드
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
 │   ├── batch/               #   batch 모델 파이프라인 실행 entrypoint
@@ -50,7 +54,8 @@ degent/
 │   │   ├── extract_online.py #    online rating ingest → user state + canonical embedding
 │   │   ├── interest_assign.py #   online interest assignment + refit request 기록
 │   │   ├── drift_detector.py #    refit trigger/drift detection 예정
-│   │   └── cluster_refit.py #     triggered cluster refit backend
+│   │   ├── cluster_refit.py #     triggered cluster refit backend
+│   │   └── replay_pipeline.py #   replay event micro-batch orchestrator
 │   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
 │   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
@@ -65,6 +70,7 @@ degent/
 ├── docs/                    # LLM/사람이 함께 보는 보조 문서
 │   ├── data-flow.md         #   raw -> processed -> model -> dashboard 흐름
 │   ├── artifacts.md         #   원본/생성물 목록과 수정 가능 여부
+│   ├── streaming-replay-dashboard-contract.md # Phase 5/6 replay artifact 계약
 │   └── decisions/           #   중요한 설계 결정 기록
 ├── plan/                    # 작업 계획서
 │   ├── _template.md         #   새 계획서 템플릿
@@ -121,6 +127,7 @@ degent/
 - `python3 -m model.stream.extract_online`은 raw rating event를 user state에 저장하고 active positive embedding을 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.cluster_refit`은 refit request를 소비해 user별 interest state를 갱신한다.
+- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 micro-batch로 소비해 Phase 3~4-1 closed-loop 산출물을 `outputs/stream/replay_demo/` 아래에 격리해 기록한다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.

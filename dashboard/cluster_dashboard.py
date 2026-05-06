@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Streamlit dashboard for reduced user embeddings and density-based clustering results."""
+"""Streamlit dashboard for clustering results and streaming replay artifacts."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -13,8 +15,18 @@ import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CLUSTER_PATH = REPO_ROOT / "data" / "clustering" / "user_clusters.parquet"
+DEFAULT_REPLAY_ROOT = REPO_ROOT / "outputs" / "stream" / "replay_demo"
+DEFAULT_REPLAY_SUMMARY_PATH = DEFAULT_REPLAY_ROOT / "replay_summary.json"
 REQUIRED_COLUMNS = {"userId", "clusterLabel", "x", "y"}
 NOISE_LABEL = -1
+REPLAY_PATH_KEYS = {
+    "replayEvents": "replay_events.jsonl",
+    "onlineEmbeddings": "online_embeddings.npz",
+    "interestAssignments": "interest_assignments.jsonl",
+    "refitRequests": "refit_requests.jsonl",
+    "refitEvents": "refit_events.jsonl",
+    "interestStateDir": "interest_states",
+}
 
 
 def infer_numeric_columns(frame: pd.DataFrame) -> list[str]:
@@ -36,6 +48,111 @@ def load_frame(path: Path) -> pd.DataFrame:
     else:
         raise ValueError(f"Unsupported file format: {suffix}")
     return frame.to_pandas()
+
+
+def resolve_repo_path(path_value: str | Path) -> Path:
+    path = Path(str(path_value)).expanduser()
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def default_replay_paths() -> dict[str, Path]:
+    return {key: DEFAULT_REPLAY_ROOT / relative_path for key, relative_path in REPLAY_PATH_KEYS.items()}
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSONL at {path}:{line_number}: {exc}") from exc
+            if isinstance(record, dict):
+                records.append(record)
+            else:
+                raise ValueError(f"JSONL record must be an object at {path}:{line_number}")
+    return records
+
+
+def records_to_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
+    if not records:
+        return pd.DataFrame()
+    return pd.json_normalize(records)
+
+
+def replay_paths_from_summary(summary: dict[str, Any]) -> dict[str, Path]:
+    paths = default_replay_paths()
+    summary_paths = summary.get("paths", {})
+    if not isinstance(summary_paths, dict):
+        return paths
+
+    for key in REPLAY_PATH_KEYS:
+        path_value = summary_paths.get(key)
+        if path_value:
+            paths[key] = resolve_repo_path(str(path_value))
+    return paths
+
+
+def path_status_rows(paths: dict[str, Path]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key, path in paths.items():
+        exists = path.exists()
+        is_dir = path.is_dir()
+        rows.append({
+            "artifact": key,
+            "path": str(path),
+            "exists": exists,
+            "kind": "directory" if is_dir else "file",
+            "sizeBytes": None if (not exists or is_dir) else path.stat().st_size,
+        })
+    return rows
+
+
+def compact_columns(frame: pd.DataFrame, preferred_columns: list[str], *, max_columns: int = 18) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+
+    preferred = [column for column in preferred_columns if column in frame.columns]
+    remaining = [column for column in frame.columns if column not in preferred]
+    selected = [*preferred, *remaining[: max(0, max_columns - len(preferred))]]
+    return frame[selected]
+
+
+def status_counts_frame(frame: pd.DataFrame, column: str) -> pd.DataFrame:
+    if frame.empty or column not in frame.columns:
+        return pd.DataFrame(columns=[column, "count"])
+    counts = frame[column].fillna("missing").astype(str).value_counts().reset_index()
+    counts.columns = [column, "count"]
+    return counts
+
+
+def format_count(value: Any) -> str:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return "-"
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def format_seconds(value: Any) -> str:
+    if value is None:
+        return "-"
+    try:
+        return f"{float(value):.2f}s"
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def generate_demo_frame(
@@ -227,13 +344,11 @@ def render_distribution_chart(frame: pd.DataFrame, metric_column: str) -> None:
     st.plotly_chart(figure, use_container_width=True)
 
 
-def main() -> None:
-    st.set_page_config(page_title="User Cluster Dashboard", layout="wide")
-    st.title("User Cluster Dashboard")
+def render_cluster_dashboard() -> None:
+    st.subheader("Cluster Explorer")
     st.caption("User-state embeddings reduced for density-based clustering exploration.")
-
     with st.sidebar:
-        st.header("Data")
+        st.header("Cluster Data")
         default_path = st.text_input("Cluster result path", value=str(DEFAULT_CLUSTER_PATH))
         use_demo_data = st.toggle("Use demo data", value=not Path(default_path).exists())
 
@@ -309,6 +424,318 @@ def main() -> None:
         visible_columns.append("z")
     visible_columns.extend([column for column in ["clusterProbability", "outlierScore", "sequenceLength", "embeddingNorm"] if column in filtered.columns])
     st.dataframe(filtered[visible_columns], use_container_width=True, hide_index=True)
+
+
+def render_replay_summary(summary: dict[str, Any], paths: dict[str, Path]) -> None:
+    totals = summary.get("totals", {})
+    if not isinstance(totals, dict):
+        totals = {}
+
+    input_events = summary.get("inputEvents")
+    processed_events = summary.get("processedEvents")
+    elapsed_sec = summary.get("elapsedSec")
+    throughput = summary.get("throughputEventsPerSec")
+    if throughput is None:
+        try:
+            elapsed = float(elapsed_sec)
+            throughput = None if elapsed <= 0 else float(processed_events or 0) / elapsed
+        except (TypeError, ValueError):
+            throughput = None
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Run status", str(summary.get("status", "-")))
+    col2.metric("Processed events", f"{format_count(processed_events)} / {format_count(input_events)}")
+    col3.metric("Unique users", format_count(summary.get("uniqueUsers")))
+    col4.metric("Elapsed", format_seconds(elapsed_sec))
+
+    col5, col6, col7, col8 = st.columns(4)
+    col5.metric("Throughput", "-" if throughput is None else f"{float(throughput):,.2f}/s")
+    col6.metric("Active embeddings", format_count(totals.get("activeEmbeddingRows")))
+    col7.metric("Refit opened", format_count(totals.get("refitRequestsOpened")))
+    col8.metric("Refit closed", format_count(totals.get("refitClosed")))
+
+    metadata = {
+        "version": summary.get("version"),
+        "runId": summary.get("runId"),
+        "startedAt": summary.get("startedAt"),
+        "endedAt": summary.get("endedAt"),
+        "microBatchSize": summary.get("microBatchSize"),
+        "refitBackend": summary.get("refitBackend"),
+    }
+    st.dataframe(pd.DataFrame([metadata]), use_container_width=True, hide_index=True)
+
+    with st.expander("Replay artifact paths", expanded=False):
+        st.dataframe(pd.DataFrame(path_status_rows(paths)), use_container_width=True, hide_index=True)
+
+
+def render_replay_events(frame: pd.DataFrame, max_rows: int) -> None:
+    st.subheader("Replay events")
+    if frame.empty:
+        st.info("No replay event records found.")
+        return
+
+    plot_frame = frame.copy()
+    plot_frame["row"] = np.arange(1, len(plot_frame) + 1)
+    x_column = "recordedAt" if "recordedAt" in plot_frame.columns else "row"
+    progress_columns = [
+        column for column in ["processedEvents", "activeEmbeddingRows", "refitRequestsOpened", "refitClosed"] if column in plot_frame.columns
+    ]
+    if progress_columns:
+        melted = plot_frame.melt(
+            id_vars=[x_column],
+            value_vars=progress_columns,
+            var_name="metric",
+            value_name="value",
+        )
+        figure = px.line(melted, x=x_column, y="value", color="metric", markers=True, title="Replay progress")
+        figure.update_layout(height=380, xaxis_title="", yaxis_title="")
+        st.plotly_chart(figure, use_container_width=True)
+
+    left, right = st.columns(2)
+    with left:
+        if "latencySec" in plot_frame.columns:
+            color_column = "stage" if "stage" in plot_frame.columns else None
+            figure = px.bar(plot_frame, x=x_column, y="latencySec", color=color_column, title="Batch latency")
+            figure.update_layout(height=360, xaxis_title="", yaxis_title="Seconds")
+            st.plotly_chart(figure, use_container_width=True)
+    with right:
+        assignment_columns = [column for column in plot_frame.columns if column.startswith("assignmentStatusCounts.")]
+        if assignment_columns:
+            melted = plot_frame.melt(
+                id_vars=[x_column],
+                value_vars=assignment_columns,
+                var_name="status",
+                value_name="count",
+            )
+            melted["status"] = melted["status"].str.replace("assignmentStatusCounts.", "", regex=False)
+            figure = px.bar(melted, x=x_column, y="count", color="status", title="Assignment status by replay event")
+            figure.update_layout(height=360, xaxis_title="", yaxis_title="Records")
+            st.plotly_chart(figure, use_container_width=True)
+
+    preferred = [
+        "recordedAt",
+        "runId",
+        "stage",
+        "status",
+        "batchId",
+        "eventStart",
+        "eventEnd",
+        "processedEvents",
+        "uniqueUsers",
+        "activeEmbeddingRows",
+        "refitRequestsOpened",
+        "refitClosed",
+        "latencySec",
+    ]
+    st.dataframe(compact_columns(plot_frame.tail(max_rows), preferred), use_container_width=True, hide_index=True)
+
+
+def render_assignment_refit_view(assignments: pd.DataFrame, requests: pd.DataFrame, refit_events: pd.DataFrame, max_rows: int) -> None:
+    st.subheader("Assignments and refit")
+
+    assignment_records = len(assignments)
+    open_requests = 0
+    if not requests.empty and "status" in requests.columns:
+        open_requests = int((requests["status"].astype(str) == "open").sum())
+    closed_refits = 0
+    skipped_refits = 0
+    if not refit_events.empty and "status" in refit_events.columns:
+        closed_refits = int((refit_events["status"].astype(str) == "closed").sum())
+        skipped_refits = int((refit_events["status"].astype(str) == "skipped").sum())
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Assignment records", format_count(assignment_records))
+    col2.metric("Open requests", format_count(open_requests))
+    col3.metric("Closed refits", format_count(closed_refits))
+    col4.metric("Skipped refits", format_count(skipped_refits))
+
+    left, right = st.columns(2)
+    with left:
+        if assignments.empty or "status" not in assignments.columns:
+            st.info("No assignment status records found.")
+        else:
+            counts = status_counts_frame(assignments, "status")
+            figure = px.bar(counts, x="status", y="count", title="Assignment statuses")
+            figure.update_layout(height=360, xaxis_title="", yaxis_title="Records")
+            st.plotly_chart(figure, use_container_width=True)
+    with right:
+        if refit_events.empty or "status" not in refit_events.columns:
+            st.info("No refit event records found.")
+        else:
+            counts = status_counts_frame(refit_events, "status")
+            figure = px.bar(counts, x="status", y="count", title="Refit event statuses")
+            figure.update_layout(height=360, xaxis_title="", yaxis_title="Events")
+            st.plotly_chart(figure, use_container_width=True)
+
+    assignment_preferred = [
+        "recordedAt",
+        "runId",
+        "userId",
+        "rawEventId",
+        "eventIdx",
+        "movieId",
+        "status",
+        "reason",
+        "assignedInterestId",
+        "similarity",
+        "historyLen",
+    ]
+    request_preferred = [
+        "recordedAt",
+        "runId",
+        "userId",
+        "status",
+        "pendingRawEventCount",
+        "assignedSinceLastRefit",
+        "outlierSinceLastRefit",
+        "reasons",
+    ]
+    refit_preferred = [
+        "recordedAt",
+        "runId",
+        "userId",
+        "status",
+        "backendRequested",
+        "backendSelected",
+        "activeEmbeddingRows",
+        "refitElapsedSec",
+        "interestCount",
+        "clusterSummary.noiseCount",
+        "clusterSummary.fallbackUsed",
+    ]
+
+    tab1, tab2, tab3 = st.tabs(["Assignments", "Refit requests", "Refit events"])
+    with tab1:
+        st.dataframe(compact_columns(assignments.tail(max_rows), assignment_preferred), use_container_width=True, hide_index=True)
+    with tab2:
+        st.dataframe(compact_columns(requests.tail(max_rows), request_preferred), use_container_width=True, hide_index=True)
+    with tab3:
+        st.dataframe(compact_columns(refit_events.tail(max_rows), refit_preferred), use_container_width=True, hide_index=True)
+
+
+def interest_state_rows(state_dir: Path) -> list[dict[str, Any]]:
+    if not state_dir.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for path in sorted(state_dir.glob("*.json")):
+        try:
+            state = load_json(path)
+        except Exception:
+            continue
+        user_id = state.get("userId", path.stem)
+        rows.append({
+            "userId": int(user_id) if str(user_id).isdigit() else str(user_id),
+            "path": path,
+            "interestCount": len(state.get("interests", [])),
+            "pendingCount": len(state.get("pendingRawEventIds", [])),
+            "processedCount": len(state.get("processedRawEventIds", [])),
+            "updatedAt": state.get("updatedAt"),
+        })
+    return sorted(rows, key=lambda item: str(item["userId"]))
+
+
+def render_interest_state_browser(state_dir: Path) -> None:
+    st.subheader("Interest state browser")
+    rows = interest_state_rows(state_dir)
+    if not rows:
+        st.info(f"No interest state JSON files found under `{state_dir}`.")
+        return
+
+    options = [str(row["userId"]) for row in rows]
+    selected_user = st.selectbox("User", options=options)
+    selected_row = next(row for row in rows if str(row["userId"]) == selected_user)
+    state = load_json(Path(selected_row["path"]))
+
+    interests = state.get("interests", [])
+    pending_ids = state.get("pendingRawEventIds", [])
+    processed_ids = state.get("processedRawEventIds", [])
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Interests", format_count(len(interests)))
+    col2.metric("Pending events", format_count(len(pending_ids)))
+    col3.metric("Processed events", format_count(len(processed_ids)))
+    col4.metric("Embedding dim", format_count(state.get("embeddingDim")))
+
+    col5, col6, col7, col8 = st.columns(4)
+    col5.metric("Assigned since refit", format_count(state.get("assignedSinceLastRefit")))
+    col6.metric("Outliers since refit", format_count(state.get("outlierSinceLastRefit")))
+    col7.metric("Refit required", str(state.get("refitRequired", False)))
+    col8.metric("Request open", str(state.get("refitRequestOpen", False)))
+
+    st.caption(f"State path: `{selected_row['path']}`")
+    refit_reasons = state.get("refitReasons", [])
+    if refit_reasons:
+        st.write("Refit reasons:", ", ".join(str(value) for value in refit_reasons))
+
+    interest_rows: list[dict[str, Any]] = []
+    for interest in interests:
+        vector = interest.get("vector", [])
+        vector_norm = None
+        if isinstance(vector, list) and vector:
+            vector_norm = float(np.linalg.norm(np.array(vector, dtype=np.float32)))
+        interest_rows.append({
+            "interestId": interest.get("interestId"),
+            "assignedCount": interest.get("assignedCount"),
+            "source": interest.get("source"),
+            "vectorNorm": vector_norm,
+            "createdAt": interest.get("createdAt"),
+            "updatedAt": interest.get("updatedAt"),
+        })
+
+    st.dataframe(pd.DataFrame(interest_rows), use_container_width=True, hide_index=True)
+
+
+def render_replay_dashboard() -> None:
+    st.subheader("Replay Monitor")
+    st.caption("Read-only monitor for Phase 5 replay artifacts under the streaming replay/dashboard contract.")
+
+    with st.sidebar:
+        st.header("Replay Data")
+        summary_path_text = st.text_input("Replay summary path", value=str(DEFAULT_REPLAY_SUMMARY_PATH))
+        max_rows = st.number_input("Rows per table", min_value=20, max_value=5000, value=200, step=20)
+
+    summary_path = resolve_repo_path(summary_path_text)
+    if not summary_path.is_file():
+        st.info(f"No replay summary found at `{summary_path}`.")
+        st.write("The dashboard reads Phase 5 artifacts only when they exist. Use the cluster explorer for existing dashboard data.")
+        with st.expander("Expected default replay paths", expanded=True):
+            st.dataframe(pd.DataFrame(path_status_rows(default_replay_paths())), use_container_width=True, hide_index=True)
+        return
+
+    try:
+        summary = load_json(summary_path)
+        paths = replay_paths_from_summary(summary)
+        replay_events = records_to_frame(load_jsonl_records(paths["replayEvents"]))
+        assignments = records_to_frame(load_jsonl_records(paths["interestAssignments"]))
+        refit_requests = records_to_frame(load_jsonl_records(paths["refitRequests"]))
+        refit_events = records_to_frame(load_jsonl_records(paths["refitEvents"]))
+    except Exception as exc:
+        st.error(f"Failed to load replay artifacts: {exc}")
+        st.stop()
+
+    render_replay_summary(summary, paths)
+    render_replay_events(replay_events, int(max_rows))
+    render_assignment_refit_view(assignments, refit_requests, refit_events, int(max_rows))
+    render_interest_state_browser(paths["interestStateDir"])
+
+
+def main() -> None:
+    st.set_page_config(page_title="Recommendation Dashboard", layout="wide")
+    st.title("Recommendation Dashboard")
+
+    default_view = "Replay monitor" if DEFAULT_REPLAY_SUMMARY_PATH.is_file() else "Cluster explorer"
+    with st.sidebar:
+        st.header("View")
+        view = st.radio(
+            "Dashboard view",
+            options=["Replay monitor", "Cluster explorer"],
+            index=0 if default_view == "Replay monitor" else 1,
+        )
+
+    if view == "Replay monitor":
+        render_replay_dashboard()
+    else:
+        render_cluster_dashboard()
 
 
 if __name__ == "__main__":
