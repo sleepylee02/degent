@@ -10,6 +10,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
   │    ↓
   │  python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
   │    ↓
+  │  python3 -m model.batch.recommend → u_k 기반 추천 스코어링 → recommendations.csv/npz 저장
+  │    ↓
   │  python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
        ↓
@@ -28,6 +30,7 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
 | `batch/extract.py` | legacy overlap-window batch 히든스테이트 추출 |
 | `batch/extract_canonical.py` | event당 canonical 히든스테이트 1개 추출 |
 | `batch/cluster.py` | batch 유저별 UMAP + HDBSCAN 클러스터링 |
+| `batch/recommend.py` | user interest vector 기반 item scoring/recommendation 산출 |
 | `batch/visualize_clusters.py` | batch 클러스터 변화 시각화 |
 | `common/canonical.py` | canonical event window, Dataset, 검증 helper |
 | `common/dataset.py` | 데이터 로드, 전처리, Dataset |
@@ -74,7 +77,9 @@ python3 -m model.batch.cluster --user-id 28        # 특정 유저만
 python3 -m model.batch.cluster --top-n 50          # 시퀀스 긴 상위 50명
 python3 -m model.batch.cluster --stride 2          # 매 2번째 시점만 사용 (속도 향상)
 
-# 4. 시각화
+# 4. 추천/시각화
+python3 -m model.batch.recommend                  # 추천 CSV/NPZ 산출
+python3 -m model.batch.recommend --user-id 28 --top-k 20
 python3 -m model.batch.visualize_clusters          # 전체 유저
 python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 ```
@@ -85,7 +90,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 - `batch/train.py`, `batch/extract.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
-- `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
+- `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남기고, `batch/recommend.py`는 checkpoint item embedding을 CPU로 로드해 추천 로그를 남긴다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
 
 ---
@@ -93,7 +98,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 ## 실험 메타데이터
 
 - `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
-- `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
+- `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster summary를 append한다.
@@ -145,6 +150,9 @@ git diff <old_commit>..<new_commit> -- model/
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
+| recommend: top_k | 20 | 유저별 추천 후보 저장 개수 |
+| recommend: output_csv | `outputs/recommendations.csv` | 대시보드/검사용 추천 테이블 기본 출력 |
+| recommend: output_npz | `outputs/recommendations.npz` | 추천 결과 배열 기본 출력 |
 
 ---
 
@@ -166,6 +174,8 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
+| `outputs/recommendations.csv` | `score(u,i)=max_k(u_k^T v_i)` 기반 유저별 top-k 추천 테이블. 기본적으로 user positive history는 제외 |
+| `outputs/recommendations.npz` | 추천 결과 배열 `user_ids`, `ranks`, `movie_ids`, `item_indices`, `scores`, `best_cluster_ids`, `cluster_scores` |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
 | `outputs/logs/*.log` | 스크립트별 실행 로그 |
 | `experiments/model/<run_id>/manifest.json` | run별 config, git 상태, 입력/출력 metadata |
@@ -185,8 +195,8 @@ git diff <old_commit>..<new_commit> -- model/
 **min_cluster_size 튜닝**
 현재 10 고정. downstream 추천 성능(Recall@K, NDCG@K)으로 최적값 탐색 필요
 
-**u_k 기반 추천 스코어링 구현**
-`user_interests.npz`의 u_k를 이용한 `score(u, i) = max_k(u_k^T · v_i)` 계산 모듈 및 평가 파이프라인 미구현
+**u_k 기반 추천 평가**
+`user_interests.npz`의 u_k를 이용한 `score(u, i) = max_k(u_k^T · v_i)` 추천 산출은 `batch/recommend.py`에 구현됨. Recall@K/NDCG@K 평가 파이프라인은 아직 미구현
 
 **canonical embedding downstream 연결**
 `outputs/canonical_embeddings.npz`는 streaming/replay 계약 검증용 산출물이다. 아직 `batch/cluster.py`와 dashboard export는 이 산출물을 직접 소비하지 않는다.

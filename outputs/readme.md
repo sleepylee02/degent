@@ -17,3 +17,8 @@ Streaming Phase 3 산출물은 `outputs/stream/` 아래에 둔다.
 - `outputs/stream/interest_states/{user_id}.json`: user별 interest vectors, pending ids, assignment/refit trigger state
 - `outputs/stream/interest_assignments.jsonl`: assignment/pending/outlier 결과 로그
 - `outputs/stream/refit_requests.jsonl`: triggered refit backend가 소비할 refit 요청 로그
+
+추천 산출물:
+
+- `outputs/recommendations.csv`: `user_interests.npz`와 checkpoint item embedding으로 만든 유저별 top-k 추천 테이블
+- `outputs/recommendations.npz`: 같은 추천 결과의 배열 저장본

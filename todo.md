@@ -2,6 +2,11 @@
 
 ## Active
 
+- Interest Scoring Recommendations
+  - owner: sleepylee / LLM
+  - plan: `plan/active/interest_scoring_recommendations.md`
+  - files: `model/batch/recommend.py`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/artifacts.md`, `docs/data-flow.md`, `outputs/readme.md`, `todo.md`
+  - status: `user_interests.npz` 기반 u_k scoring/recommendation 산출 로직 구현 완료. 로컬에 torch 환경과 최신 `outputs/user_interests.npz`가 없어 실행 smoke는 보류
 - Streaming Hybrid Recommendation Pipeline 전환 master plan
   - owner: sleepylee / LLM
   - plan: `plan/active/streaming_pipeline.md`

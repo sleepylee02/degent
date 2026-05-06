@@ -40,6 +40,7 @@ degent/
 │   │   ├── extract.py       #     히든스테이트 추출 → embeddings.npz
 │   │   ├── extract_canonical.py #  event당 canonical 히든스테이트 추출 → canonical_embeddings.npz
 │   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz
+│   │   ├── recommend.py     #     interest vector 기반 추천 산출 → recommendations.csv/npz
 │   │   └── visualize_clusters.py # 클러스터 변화 시각화 → outputs/viz/
 │   ├── common/              #   batch/stream 공통 모델 유틸
 │   │   ├── canonical.py     #     canonical event window/Dataset/검증 helper
@@ -117,7 +118,7 @@ degent/
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.
-- `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
+- `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
 - `python3 -m model.stream.extract_online`은 raw rating event를 user state에 저장하고 active positive embedding을 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.

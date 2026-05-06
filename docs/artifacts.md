@@ -44,6 +44,8 @@
 | `outputs/stream/refit_requests.jsonl` | streaming refit request log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
 | `outputs/user_interests.npz` | model artifact | `python3 -m model.batch.cluster` | regenerate |
+| `outputs/recommendations.csv` | model artifact | `python3 -m model.batch.recommend` | regenerate |
+| `outputs/recommendations.npz` | model artifact | `python3 -m model.batch.recommend` | regenerate |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
 | `outputs/logs/` | tracked runtime logs | model scripts | append/regenerate |
 | `outputs/latest_model_run_id.txt` | local run pointer | model scripts | regenerate |
@@ -69,6 +71,7 @@ python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online --bootstrap-user-id <userId>
 python3 -m model.stream.interest_assign
 python3 -m model.batch.cluster
+python3 -m model.batch.recommend
 python3 -m model.batch.visualize_clusters
 # add/run an explicit export step for data/clustering/user_clusters.parquet when using the dashboard with real data
 streamlit run dashboard/cluster_dashboard.py

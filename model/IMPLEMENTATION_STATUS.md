@@ -29,7 +29,7 @@
 | 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
-| `u_k` 기반 추천 스코어링 | [ ] | 없음 | `user_interests.npz`의 interest vector로 `score(u, i) = max_k(u_k^T v_i)`를 계산하는 모듈 없음 | 추후 보완 후보 |
+| `u_k` 기반 추천 스코어링 | [x] | `batch/recommend.py` | `user_interests.npz`의 interest vector와 checkpoint item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산하고 CSV/NPZ 추천 산출물을 저장 | 대시보드 연결은 별도 작업 |
 | downstream 추천 평가 | [ ] | 없음 | `u_k` 기반 retrieval/rerank 평가 파이프라인 없음 | Recall@K/NDCG@K 평가 기준부터 확정 필요 |
 | 설정 파일 기반 실행 | [ ] | 없음 | 주요 hyperparameter는 CLI 인자와 코드 기본값에 분산 | run 비교를 위해 config 파일 도입 검토 |
 
@@ -46,6 +46,7 @@
 - `outputs/stream/interest_assignments.jsonl`: Phase 4 assignment/pending/outlier 결과 log.
 - `outputs/stream/refit_requests.jsonl`: Phase 4-1 이후 refit backend가 소비할 request log.
 - `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, interest vector `(103, 128)`, `user_ids_list=[10202]`. 최신 로그가 `user_id=10202` 테스트 모드였으므로 전체 유저 클러스터링 산출물로 간주하면 안 된다.
+- `outputs/recommendations.csv`, `outputs/recommendations.npz`: `model.batch.recommend` 기본 출력. 현재 로컬에는 최신 `outputs/user_interests.npz`가 없어 아직 생성하지 않았다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
 - `outputs/logs/`: train/extract/cluster 로그가 존재하지만 과거 절대 경로가 서로 달라 historical evidence로만 취급한다.
@@ -164,7 +165,7 @@ Phase 2 smoke test:
 - [ ] `batch/extract.py`에서 발생한 NaN embedding row 원인을 추적하고 제거/방지 로직을 추가한다.
 - [ ] `batch/cluster.py`가 테스트 실행 결과로 전체 `outputs/user_interests.npz`를 덮어쓰지 않도록 output path 옵션 또는 테스트 산출물 분리 방식을 추가한다.
 - [ ] `outputs/user_interests.npz`를 전체 유저 대상으로 재생성하고 clustered user 수, K 분포, NaN drop 수를 기록한다.
-- [ ] `u_k` 기반 추천 스코어링 모듈을 설계/구현한다.
+- [x] `u_k` 기반 추천 스코어링 모듈을 설계/구현한다.
 - [ ] `u_k` 기반 scoring을 Recall@K/NDCG@K로 평가하는 파이프라인을 추가한다.
 - [ ] `movies_processed_drop.csv`의 `genres`와 `ratings_drop_processed.jsonl` 입력 포맷을 스키마 기준으로 검증하는 체크를 추가한다.
 

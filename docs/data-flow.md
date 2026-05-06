@@ -24,6 +24,9 @@ data/**/raw/
         -> python3 -m model.batch.cluster
         -> outputs/user_interests.npz
         -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> python3 -m model.batch.recommend
+        -> outputs/recommendations.csv + outputs/recommendations.npz
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.batch.visualize_clusters
         -> outputs/viz/
         -> dashboard input export (not implemented yet)
@@ -141,6 +144,7 @@ python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online
 python3 -m model.stream.interest_assign
 python3 -m model.batch.cluster
+python3 -m model.batch.recommend
 python3 -m model.batch.visualize_clusters
 ```
 
@@ -157,6 +161,8 @@ python3 -m model.batch.visualize_clusters
 - `outputs/stream/interest_assignments.jsonl`
 - `outputs/stream/refit_requests.jsonl`
 - `outputs/user_interests.npz`
+- `outputs/recommendations.csv`
+- `outputs/recommendations.npz`
 - `outputs/viz/`
 - `outputs/logs/`
 - `experiments/model/<run_id>/manifest.json`
@@ -170,6 +176,8 @@ python3 -m model.batch.visualize_clusters
 `outputs/embeddings.npz`는 기존 overlap-window 추출 산출물이고, `outputs/canonical_embeddings.npz`는 streaming/replay 전환을 위해 event 하나당 embedding 하나를 보장하는 batch 산출물이다. `outputs/stream/online_embeddings.npz`는 raw rating을 모두 user state에 저장한 뒤 현재까지 관측된 positive projection에서 생성한 active online embedding이다. 현재 `batch/cluster.py`는 아직 legacy `embeddings.npz`를 입력으로 사용한다.
 
 `outputs/stream/interest_assignments.jsonl`과 `outputs/stream/refit_requests.jsonl`은 active online embedding을 interest state에 연결하기 위한 stream 산출물이다. Phase 4는 refit request만 기록하고 실제 UMAP/HDBSCAN refit은 실행하지 않는다.
+
+`outputs/recommendations.csv`와 `outputs/recommendations.npz`는 `outputs/user_interests.npz`의 interest vector와 `outputs/sasrec_cl.pt`의 item embedding을 사용해 `score(u,i)=max_k(u_k^T v_i)`로 만든 batch 추천 산출물이다. 기본 실행은 `ratings_drop_processed.jsonl` 기준 user positive history를 제외하고 top-k 후보를 저장한다.
 
 ## 7. Dashboard input
 
