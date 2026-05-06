@@ -18,6 +18,11 @@
 
 ## Done
 
+- Streaming Pipeline Phase 3: Online Embedding / User Interest State
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase3_online_embedding_state.md`
+  - files: `model/stream/state.py`, `model/stream/extract_online.py`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `docs/artifacts.md`, `outputs/readme.md`, `README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: raw rating event를 모두 user state에 저장하고 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive embedding만 생성. user 28 smoke에서 online `(1579, 128)`, NaN 0, invalid context 0, Phase 2 canonical 비교 1579/1579 allclose 확인
 - Streaming Pipeline Phase 2: Canonical Event Embedding 전환
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase2_canonical_embedding.md`

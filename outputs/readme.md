@@ -8,3 +8,9 @@ Git 추적 정책:
 - 추적 제외: checkpoint, embedding, clustering result, plot 같은 재생성 가능한 대형 산출물
 
 주요 산출물 계약은 `model/README.md`와 `docs/artifacts.md`를 따른다.
+
+Streaming Phase 3 산출물은 `outputs/stream/` 아래에 둔다.
+
+- `outputs/stream/user_states/{user_id}.json`: raw rating event와 현재 positive projection state
+- `outputs/stream/online_embeddings.npz`: Phase 4가 소비할 active positive online embeddings
+- `outputs/stream/online_embedding_events.jsonl`: online ingest/extract 실행 요약 로그

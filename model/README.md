@@ -12,6 +12,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
   │    ↓
   │  python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
+       ↓
+     python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
 ```
 
 ---
@@ -29,7 +31,11 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
 | `common/dataset.py` | 데이터 로드, 전처리, Dataset |
 | `common/sasrec.py` | SASRecCL 모델, Contrastive Loss |
 | `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
-| `stream/` | online embedding, assignment, drift/refit skeleton |
+| `stream/state.py` | online user raw event state, positive projection, state JSON 저장/로드 |
+| `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
+| `stream/interest_assign.py` | Phase 4 online interest assignment placeholder |
+| `stream/drift_detector.py` | Phase 4 refit trigger placeholder |
+| `stream/cluster_refit.py` | Phase 4 triggered refit placeholder |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
 ---
@@ -51,6 +57,9 @@ python3 -m model.batch.extract_canonical
 
 # 2-2. canonical extract smoke test
 python3 -m model.batch.extract_canonical --limit-users 2 --batch-size 32 --num-workers 0 --output outputs/test_canonical_embeddings.npz
+
+# 2-3. online embedding/user state smoke test
+python3 -m model.stream.extract_online --bootstrap-user-id 28 --output outputs/stream/test_online_embeddings.npz
 
 # 3. 클러스터링 (전체 유저)
 python3 -m model.batch.cluster
@@ -121,6 +130,9 @@ git diff <old_commit>..<new_commit> -- model/
 | extract: interval | 10 | 히든스테이트 추출 간격 |
 | extract_canonical: min_interactions | 1000 | canonical event embedding 대상 유저 필터링 기준 |
 | extract_canonical: output | `outputs/canonical_embeddings.npz` | event당 embedding 1개를 저장하는 기본 출력 경로 |
+| stream: min_ratings_for_zscore | 3 | online positive projection에서 z-score를 적용하기 전 optimistic cold-start 기준 |
+| stream: output | `outputs/stream/online_embeddings.npz` | active positive online embedding 기본 출력 경로 |
+| stream: state_dir | `outputs/stream/user_states/` | user별 raw event state JSON 저장 경로 |
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
@@ -137,6 +149,9 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/item2idx.json` | 아이템 ID → 인덱스 매핑 (학습 vocabulary) |
 | `outputs/embeddings.npz` | 시점별 히든스테이트 `embeddings(N,128)`, `user_ids(N,)`, `timepoint_idx(N,)` |
 | `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |
+| `outputs/stream/user_states/{user_id}.json` | user별 raw rating event와 현재 positive projection state |
+| `outputs/stream/online_embeddings.npz` | active positive online embedding `embeddings(N,128)`, `user_ids(N,)`, `raw_event_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)`, `status(N,)` |
+| `outputs/stream/online_embedding_events.jsonl` | online ingest/extract run summary event log |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
@@ -163,6 +178,9 @@ git diff <old_commit>..<new_commit> -- model/
 
 **canonical embedding downstream 연결**
 `outputs/canonical_embeddings.npz`는 streaming/replay 계약 검증용 산출물이다. 아직 `batch/cluster.py`와 dashboard export는 이 산출물을 직접 소비하지 않는다.
+
+**online positive policy 고도화**
+Phase 3 stream path는 raw rating을 모두 저장하고, 현재까지 관측된 user history 기준 z-score positive projection을 재검증한다. 실제 서비스 정책에서는 threshold, running statistics, 유보 상태, latency budget을 추가 비교해야 한다.
 
 **데이터 포맷 검증**
 `movies_processed_drop.csv`의 genres 컬럼 형태, `ratings_drop_processed.jsonl` 스키마가 실제 파일과 일치하는지 확인 필요

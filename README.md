@@ -266,6 +266,8 @@ streamlit run dashboard/cluster_dashboard.py
 
 `python3 -m model.batch.extract`는 기존 overlap-window hidden state를 `outputs/embeddings.npz`로 저장한다. `python3 -m model.batch.extract_canonical`은 streaming/replay 전환용으로 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다.
 
+`python3 -m model.stream.extract_online`은 raw rating event를 user state에 모두 저장하고, 현재까지 관측된 history 기준 positive projection에서 active online embedding을 만든다. 기본 출력은 `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl`이다.
+
 가벼운 기록:
 
 - `experiments/model/<run_id>/manifest.json`: command, git 상태, 입력/출력 metadata, config

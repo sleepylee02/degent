@@ -32,12 +32,16 @@
 | `preprocess/drop_rating/bad_rows.csv` | validation artifact | `python3 preprocess/drop_rating/drop_ratings.py` | regenerate |
 | `preprocess/process_rating/validation_report.json` | validation artifact | `python3 preprocess/process_rating/process_ratings_drop.py` | regenerate |
 | `preprocess/process_rating/bad_rows.csv` | validation artifact | `python3 preprocess/process_rating/process_ratings_drop.py` | regenerate |
-| `outputs/sasrec_cl.pt` | model artifact | `python model/train.py` | regenerate |
-| `outputs/item2idx.json` | model artifact | `python model/train.py` | regenerate |
-| `outputs/embeddings.npz` | model artifact | `python model/extract.py` | regenerate |
+| `outputs/sasrec_cl.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
+| `outputs/item2idx.json` | model artifact | `python3 -m model.batch.train` | regenerate |
+| `outputs/embeddings.npz` | model artifact | `python3 -m model.batch.extract` | regenerate |
+| `outputs/canonical_embeddings.npz` | model artifact | `python3 -m model.batch.extract_canonical` | regenerate |
+| `outputs/stream/user_states/{user_id}.json` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
+| `outputs/stream/online_embeddings.npz` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
+| `outputs/stream/online_embedding_events.jsonl` | streaming run log | `python3 -m model.stream.extract_online` | append/regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
-| `outputs/user_interests.npz` | model artifact | `python model/cluster.py` | regenerate |
-| `outputs/viz/` | visualization artifact | `python model/visualize_clusters.py` | regenerate |
+| `outputs/user_interests.npz` | model artifact | `python3 -m model.batch.cluster` | regenerate |
+| `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
 | `outputs/logs/` | tracked runtime logs | model scripts | append/regenerate |
 | `outputs/latest_model_run_id.txt` | local run pointer | model scripts | regenerate |
 | `experiments/model/<run_id>/manifest.json` | experiment metadata | model scripts | append/update |
@@ -56,10 +60,12 @@ python3 preprocess/drop_movie/drop_movies.py
 python3 preprocess/drop_rating/drop_ratings.py
 python3 preprocess/process_rating/process_ratings_drop.py
 (cd preprocess/preprocess_genre && python3 preprocess_genre.py)
-python model/train.py
-python model/extract.py
-python model/cluster.py
-python model/visualize_clusters.py
+python3 -m model.batch.train
+python3 -m model.batch.extract
+python3 -m model.batch.extract_canonical
+python3 -m model.stream.extract_online --bootstrap-user-id <userId>
+python3 -m model.batch.cluster
+python3 -m model.batch.visualize_clusters
 # add/run an explicit export step for data/clustering/user_clusters.parquet when using the dashboard with real data
 streamlit run dashboard/cluster_dashboard.py
 ```

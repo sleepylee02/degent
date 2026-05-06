@@ -33,6 +33,11 @@ data/**/raw/
         -> python3 -m model.batch.extract_canonical
         -> outputs/canonical_embeddings.npz
         -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> python3 -m model.stream.extract_online
+        -> outputs/stream/user_states/{user_id}.json
+        -> outputs/stream/online_embeddings.npz
+        -> outputs/stream/online_embedding_events.jsonl
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
 ```
 
 보조 장르 산출물 흐름:
@@ -128,6 +133,7 @@ python3 preprocess/process_rating/process_ratings_drop.py
 python3 -m model.batch.train
 python3 -m model.batch.extract
 python3 -m model.batch.extract_canonical
+python3 -m model.stream.extract_online
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 ```
@@ -138,6 +144,9 @@ python3 -m model.batch.visualize_clusters
 - `outputs/item2idx.json`
 - `outputs/embeddings.npz`
 - `outputs/canonical_embeddings.npz`
+- `outputs/stream/user_states/{user_id}.json`
+- `outputs/stream/online_embeddings.npz`
+- `outputs/stream/online_embedding_events.jsonl`
 - `outputs/user_interests.npz`
 - `outputs/viz/`
 - `outputs/logs/`
@@ -149,7 +158,7 @@ python3 -m model.batch.visualize_clusters
 
 모델 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 `experiments/model/<run_id>/`에 남긴다.
 
-`outputs/embeddings.npz`는 기존 overlap-window 추출 산출물이고, `outputs/canonical_embeddings.npz`는 streaming/replay 전환을 위해 event 하나당 embedding 하나를 보장하는 산출물이다. 현재 `batch/cluster.py`는 아직 legacy `embeddings.npz`를 입력으로 사용한다.
+`outputs/embeddings.npz`는 기존 overlap-window 추출 산출물이고, `outputs/canonical_embeddings.npz`는 streaming/replay 전환을 위해 event 하나당 embedding 하나를 보장하는 batch 산출물이다. `outputs/stream/online_embeddings.npz`는 raw rating을 모두 user state에 저장한 뒤 현재까지 관측된 positive projection에서 생성한 active online embedding이다. 현재 `batch/cluster.py`는 아직 legacy `embeddings.npz`를 입력으로 사용한다.
 
 ## 7. Dashboard input
 

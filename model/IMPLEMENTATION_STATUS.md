@@ -1,6 +1,6 @@
 # Model Implementation Status
 
-검토일: 2026-05-04
+검토일: 2026-05-06
 
 이 문서는 별도 파이프라인을 붙이기 전에 현재 model 파트의 구현 범위, 산출물 상태, 추후 보완 후보를 한곳에서 확인하기 위한 체크 파일이다.
 
@@ -24,6 +24,7 @@
 | 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, Recall@10/NDCG@10, checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler/early stopping, 튜닝 sweep는 없음 |
 | 히든스테이트 추출 | [~] | `batch/extract.py` | checkpoint/item2idx 재사용, train split 대상 hidden state 추출, `embeddings.npz` 저장, run metadata 기록 코드 | overlap window 중복 timepoint 처리 방침 결정 필요 |
 | canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록 | 아직 cluster/replay/dashboard downstream 입력으로 연결되지는 않음 |
+| online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
@@ -37,6 +38,9 @@
 - `outputs/item2idx.json`: 학습 vocabulary 존재. 로그 기준 item 수 55,726.
 - `outputs/embeddings.npz`: shape `(763772, 128)`, dtype `float32`, unique user 622.
 - `outputs/canonical_embeddings.npz`: 기본 출력 경로. Phase 2 smoke test에서는 `outputs/test_canonical_embeddings.npz`로 별도 저장해 검증했다.
+- `outputs/stream/user_states/{user_id}.json`: Phase 3 online state 기본 저장 경로. raw event와 positive projection을 함께 저장한다.
+- `outputs/stream/online_embeddings.npz`: Phase 3 online embedding 기본 출력 경로. active positive row만 저장한다.
+- `outputs/stream/online_embedding_events.jsonl`: Phase 3 online run summary event log.
 - `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, interest vector `(103, 128)`, `user_ids_list=[10202]`. 최신 로그가 `user_id=10202` 테스트 모드였으므로 전체 유저 클러스터링 산출물로 간주하면 안 된다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
@@ -100,6 +104,27 @@ Phase 2 smoke test:
 - max `history_len`: 100
 - invalid `context_start_idx`: 0
 - skipped unknown item: 0
+
+## Online Embedding / User State 흐름
+
+`stream/extract_online.py` 기준 흐름:
+
+1. `outputs/sasrec_cl.pt`와 `outputs/item2idx.json`을 로드한다.
+2. 필요하면 `ratings_drop_processed.jsonl`에서 특정 user를 bootstrap한다.
+3. 새 rating event는 평점과 무관하게 raw state에 저장한다.
+4. user의 현재 raw history 전체를 `ratedAt`, `movieId`, `rawEventId` 순서로 정렬한다.
+5. `ratings 수 < 3` 또는 rating 표준편차가 0이면 optimistic하게 positive로 둔다.
+6. 그 외에는 현재까지 관측된 user ratings 기준 `z > 0`을 positive로 둔다.
+7. positive event 중 `item2idx`에 있는 event만 active embedding 대상으로 삼는다.
+8. active positive sequence 전체를 Phase 2 canonical window와 같은 right-padding + `SASRecCL.get_last_hidden()` 방식으로 재계산한다.
+9. state JSON, online embedding NPZ, event log JSONL, run metadata를 저장한다.
+
+계약:
+
+- raw rating event는 모두 보존한다.
+- `rawEventId`는 user별 stable id다.
+- `eventIdx`는 positive projection 기준 derived id이며 재검증 후 바뀔 수 있다.
+- Phase 4는 `status == active`인 online embedding만 소비한다.
 
 ## 현재 정리 방향
 
