@@ -50,7 +50,7 @@ degent/
 │   │   ├── extract_online.py #    online rating ingest → user state + canonical embedding
 │   │   ├── interest_assign.py #   online interest assignment + refit request 기록
 │   │   ├── drift_detector.py #    refit trigger/drift detection 예정
-│   │   └── cluster_refit.py #     triggered cluster refit 예정
+│   │   └── cluster_refit.py #     triggered cluster refit backend
 │   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
 │   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
@@ -120,6 +120,7 @@ degent/
 - `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
 - `python3 -m model.stream.extract_online`은 raw rating event를 user state에 저장하고 active positive embedding을 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
+- `python3 -m model.stream.cluster_refit`은 refit request를 소비해 user별 interest state를 갱신한다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.
@@ -140,10 +141,14 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+- Python 패키지 설치/제거/업데이트는 반드시 프로젝트 루트의 repo-local `.venv`에서만 수행한다.
+- 시스템 Python, `sudo pip`, OS package manager, 전역 CUDA/toolkit 설치 같은 system-level 환경 변경은 이 프로젝트 작업 범위에서 금지한다.
+- GPU 의존성은 현재 `torch==2.5.1+cu121`과 RAPIDS/cuML `25.10.0` 계열을 기준으로 고정한다. 관련 결정과 재검토 조건은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`에 기록한다.
+
 ### 패키지 추가
 - 새 패키지를 설치하면 반드시 `requirements.txt`에 반영한다.
   ```bash
-  pip install <패키지> && pip freeze > requirements.txt
+  .venv/bin/pip install <패키지> && .venv/bin/pip freeze > requirements.txt
   ```
 - 불필요한 패키지는 설치하지 않는다. 기존 의존성으로 해결 가능한지 먼저 확인한다.
 

@@ -1,0 +1,213 @@
+{
+  "created_at": "2026-05-06T13:29:55+09:00",
+  "run_id": "phase4_1_cluster_refit_auto_gpu_smoke_final",
+  "git": {
+    "commit": "b001cf0250c063e6a56421852c4e360c92f871ff",
+    "branch": "jy_experimentlab",
+    "dirty": true,
+    "status_short": [
+      "M PROJECT_GUIDE.md",
+      " M README.md",
+      " M docs/artifacts.md",
+      " M docs/data-flow.md",
+      " M model/IMPLEMENTATION_STATUS.md",
+      " M model/README.md",
+      " M model/stream/cluster_refit.py",
+      " M outputs/readme.md",
+      " M todo.md",
+      "?? experiments/model/phase4_1_cluster_refit_auto_gpu_smoke/",
+      "?? experiments/model/phase4_1_cluster_refit_auto_gpu_smoke_final/",
+      "?? experiments/model/phase4_1_cluster_refit_gpu_smoke/",
+      "?? experiments/model/phase4_1_cluster_refit_smoke/",
+      "?? outputs/logs/cluster_refit_20260506_123541.log",
+      "?? outputs/logs/cluster_refit_20260506_123727.log",
+      "?? outputs/logs/cluster_refit_20260506_125615.log",
+      "?? outputs/logs/cluster_refit_20260506_130519.log",
+      "?? outputs/logs/cluster_refit_20260506_130538.log",
+      "?? outputs/logs/cluster_refit_20260506_132954.log",
+      "?? plan/active/streaming_pipeline_phase4_1_gpu_refit_backend.md"
+    ]
+  },
+  "stages": {
+    "cluster_refit": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/cluster_refit.py --run-id phase4_1_cluster_refit_auto_gpu_smoke_final --embeddings outputs/stream/test_online_embeddings.npz --refit-requests outputs/stream/test_refit_requests_no_interest.jsonl --interest-state-dir outputs/stream/test_interest_states_auto_gpu_final --refit-events outputs/stream/test_refit_events_auto_gpu_final.jsonl --cluster-backend auto --refit-min-events 20 --min-cluster-size 10 --cluster-dim 10 --user-id 28",
+      "log": {
+        "path": "outputs/logs/cluster_refit_20260506_132954.log",
+        "exists": true,
+        "size_bytes": 1026,
+        "mtime_ns": 1778041795798566924
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/test_online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 1063642,
+          "mtime_ns": 1778032210212482579
+        },
+        "refit_requests": {
+          "path": "outputs/stream/test_refit_requests_no_interest.jsonl",
+          "exists": true,
+          "size_bytes": 322,
+          "mtime_ns": 1778035683160513232
+        }
+      },
+      "refit_config": {
+        "interest_state_dir": "outputs/stream/test_interest_states_auto_gpu_final",
+        "refit_events": "outputs/stream/test_refit_events_auto_gpu_final.jsonl",
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "refit_min_events": 20,
+        "min_cluster_size": 10,
+        "cluster_dim": 10,
+        "random_state": 42,
+        "user_id": 28,
+        "limit_users": null
+      },
+      "data_summary": {
+        "active_embedding_rows": 1579,
+        "active_embedding_users": 1,
+        "user_summaries": [
+          {
+            "recordedAt": "2026-05-06T13:29:56+09:00",
+            "runId": "phase4_1_cluster_refit_auto_gpu_smoke_final",
+            "userId": 28,
+            "request": {
+              "recordedAt": "2026-05-06T11:48:03+09:00",
+              "runId": "phase4_interest_assign_smoke",
+              "userId": 28,
+              "status": "open",
+              "reasons": [
+                "no_interest_pending_events"
+              ],
+              "pendingRawEventCount": 1579,
+              "assignedSinceLastRefit": 0,
+              "outlierSinceLastRefit": 0,
+              "refitMinEvents": 20,
+              "assignTriggerCount": 50,
+              "outlierTriggerCount": 10
+            },
+            "statePath": "outputs/stream/test_interest_states_auto_gpu_final/28.json",
+            "backendRequested": "auto",
+            "backendSelected": "gpu",
+            "backendFallbackReason": null,
+            "activeEmbeddingRows": 1579,
+            "status": "closed",
+            "refitElapsedSec": 0.2557244300842285,
+            "interestCount": 33,
+            "processedRawEventCount": 1579,
+            "clusterSummary": {
+              "nClusters": 33,
+              "interestCount": 33,
+              "noiseCount": 124,
+              "fallbackUsed": false,
+              "labelCounts": {
+                "-1": 124,
+                "0": 40,
+                "1": 49,
+                "2": 73,
+                "3": 35,
+                "4": 91,
+                "5": 93,
+                "6": 21,
+                "7": 17,
+                "8": 57,
+                "9": 58,
+                "10": 77,
+                "11": 48,
+                "12": 29,
+                "13": 86,
+                "14": 24,
+                "15": 29,
+                "16": 20,
+                "17": 76,
+                "18": 18,
+                "19": 32,
+                "20": 14,
+                "21": 121,
+                "22": 13,
+                "23": 84,
+                "24": 29,
+                "25": 32,
+                "26": 17,
+                "27": 40,
+                "28": 31,
+                "29": 35,
+                "30": 13,
+                "31": 25,
+                "32": 28
+              },
+              "clusterSizes": {
+                "0": 40,
+                "1": 49,
+                "2": 73,
+                "3": 35,
+                "4": 91,
+                "5": 93,
+                "6": 21,
+                "7": 17,
+                "8": 57,
+                "9": 58,
+                "10": 77,
+                "11": 48,
+                "12": 29,
+                "13": 86,
+                "14": 24,
+                "15": 29,
+                "16": 20,
+                "17": 76,
+                "18": 18,
+                "19": 32,
+                "20": 14,
+                "21": 121,
+                "22": 13,
+                "23": 84,
+                "24": 29,
+                "25": 32,
+                "26": 17,
+                "27": 40,
+                "28": 31,
+                "29": 35,
+                "30": 13,
+                "31": 25,
+                "32": 28
+              },
+              "backend": "gpu",
+              "reducedDim": 10,
+              "nNeighbors": 15
+            }
+          }
+        ]
+      },
+      "outputs": {
+        "refit_events": {
+          "path": "outputs/stream/test_refit_events_auto_gpu_final.jsonl",
+          "exists": true,
+          "size_bytes": 1591,
+          "mtime_ns": 1778041796648557216,
+          "sha256": "0ce766b56587b3a3f713f447ca53a254e5a1c3190a8aadb9bce869098c4dec9e"
+        },
+        "metrics": {
+          "path": "experiments/model/phase4_1_cluster_refit_auto_gpu_smoke_final/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 315,
+          "mtime_ns": 1778041796648557216,
+          "sha256": "183ba5468009c5ed118ff313f13f297502ede686cce48886c3aa58bf3ac2306a"
+        }
+      },
+      "summary_metrics": {
+        "stage": "cluster_refit",
+        "open_requests": 1,
+        "selected_requests": 1,
+        "refit_count": 1,
+        "skipped_count": 0,
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "elapsed_sec": 0.2596428394317627,
+        "embedding_dim": 128
+      }
+    }
+  },
+  "updated_at": "2026-05-06T13:29:56+09:00"
+}

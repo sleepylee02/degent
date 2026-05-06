@@ -170,15 +170,18 @@ model/
 
 ### Phase 4-1. GPU-first Clustering/Refit Backend
 
+- 상태: 완료. 세부 계획은 `plan/done/streaming_pipeline_phase4_1_gpu_refit_backend.md`.
 - batch 전체 clustering과 trigger-based refit에 GPU-first backend를 추가한다.
 - 기존 CPU `umap-learn` + `hdbscan` 경로는 fallback과 baseline 비교용으로 유지한다.
 - GPU 경로는 RAPIDS cuML UMAP/HDBSCAN을 우선 후보로 둔다.
 - backend 선택은 `cpu|gpu|auto` 형태로 명시 가능하게 한다.
 - `auto`는 CUDA/cuML 사용 가능 시 GPU를 사용하고, 불가능하면 CPU로 fallback한다.
 - CPU/GPU 결과 비교는 label 완전 일치가 아니라 runtime, K 분포, noise ratio, interest vector 안정성, downstream 추천 지표를 기준으로 한다.
+- 로컬 `.venv`에서는 `torch==2.5.1+cu121` + RAPIDS/cuML `25.10.0` 조합으로 `auto` GPU smoke가 통과했다. GPU dependency 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 
 ### Phase 5. C++ Replay Engine
 
+- 상태: 다음 세부 계획 작성 대상.
 - ML-32M timestamp를 기준으로 rating event stream을 replay한다.
 - 배속 기능을 지원한다.
 - replay clock, throughput, latency, refit trigger 발생 횟수를 기록한다.

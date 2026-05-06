@@ -84,7 +84,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-주요 의존성은 `polars`, `matplotlib`, `numpy`, `PyYAML`, `streamlit`, `plotly`, `pandas`다.
+패키지 설치와 제거는 프로젝트 루트의 repo-local `.venv`에서만 수행한다. 시스템 Python, `sudo pip`, OS package manager, 전역 CUDA/toolkit 설치는 프로젝트 작업 범위에서 사용하지 않는다.
+
+주요 의존성은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `polars`, `matplotlib`, `numpy`, `PyYAML`, `pandas`, `umap-learn`, `hdbscan`, `streamlit`, `plotly`다. GPU dependency 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 
 ## 전처리 파이프라인
 
@@ -269,6 +271,8 @@ streamlit run dashboard/cluster_dashboard.py
 `python3 -m model.stream.extract_online`은 raw rating event를 user state에 모두 저장하고, 현재까지 관측된 history 기준 positive projection에서 active online embedding을 만든다. 기본 출력은 `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl`이다.
 
 `python3 -m model.stream.interest_assign`은 active online embedding을 user별 interest state에 연결한다. interest vector가 없으면 pending buffer와 refit request를 남기고, interest vector가 있으면 cosine similarity로 assign한다. 기본 출력은 `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`이다.
+
+`python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML이 있으면 GPU, 없으면 CPU `umap-learn + hdbscan` fallback을 사용한다. 현재 `.venv`에서는 RAPIDS/cuML `25.10.0` 조합으로 GPU smoke가 통과했다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
 
 가벼운 기록:
 

@@ -18,6 +18,11 @@
 
 ## Done
 
+- Streaming Pipeline Phase 4-1: GPU-first Clustering/Refit Backend
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_pipeline_phase4_1_gpu_refit_backend.md`
+  - files: `model/stream/cluster_refit.py`, `requirements.txt`, `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `docs/artifacts.md`, `outputs/readme.md`, `README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: Phase 4 refit request를 소비해 user별 active online embeddings 전체를 refit하고 interest state를 갱신하는 backend 구현 완료. CPU fallback smoke에서 user 28 active 1579 → interest 21, small fixture mean fallback 1 확인. 최종 `.venv` GPU 조합은 `torch==2.5.1+cu121` + RAPIDS/cuML `25.10.0`; `auto` GPU smoke에서 user 28 active 1579 → interest 33, elapsed 약 0.26초 확인
 - Streaming Pipeline Phase 4: Interest Assign / Refit Trigger
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase4_interest_assign_refit_trigger.md`

@@ -43,6 +43,10 @@ data/**/raw/
         -> outputs/stream/interest_assignments.jsonl
         -> outputs/stream/refit_requests.jsonl
         -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> python3 -m model.stream.cluster_refit
+        -> outputs/stream/refit_events.jsonl
+        -> outputs/stream/interest_states/{user_id}.json
+        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
 ```
 
 보조 장르 산출물 흐름:
@@ -140,6 +144,7 @@ python3 -m model.batch.extract
 python3 -m model.batch.extract_canonical
 python3 -m model.stream.extract_online
 python3 -m model.stream.interest_assign
+python3 -m model.stream.cluster_refit
 python3 -m model.batch.cluster
 python3 -m model.batch.visualize_clusters
 ```
@@ -156,6 +161,7 @@ python3 -m model.batch.visualize_clusters
 - `outputs/stream/interest_states/{user_id}.json`
 - `outputs/stream/interest_assignments.jsonl`
 - `outputs/stream/refit_requests.jsonl`
+- `outputs/stream/refit_events.jsonl`
 - `outputs/user_interests.npz`
 - `outputs/viz/`
 - `outputs/logs/`
@@ -170,6 +176,8 @@ python3 -m model.batch.visualize_clusters
 `outputs/embeddings.npz`는 기존 overlap-window 추출 산출물이고, `outputs/canonical_embeddings.npz`는 streaming/replay 전환을 위해 event 하나당 embedding 하나를 보장하는 batch 산출물이다. `outputs/stream/online_embeddings.npz`는 raw rating을 모두 user state에 저장한 뒤 현재까지 관측된 positive projection에서 생성한 active online embedding이다. 현재 `batch/cluster.py`는 아직 legacy `embeddings.npz`를 입력으로 사용한다.
 
 `outputs/stream/interest_assignments.jsonl`과 `outputs/stream/refit_requests.jsonl`은 active online embedding을 interest state에 연결하기 위한 stream 산출물이다. Phase 4는 refit request만 기록하고 실제 UMAP/HDBSCAN refit은 실행하지 않는다.
+
+`outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 `interest_states/{user_id}.json`의 interest vectors를 replace한다. `--cluster-backend auto`는 현재 `.venv`의 RAPIDS/cuML `25.10.0` 조합에서 GPU smoke가 통과했으며, cuML을 사용할 수 없는 환경에서는 CPU `umap-learn + hdbscan` fallback을 사용한다.
 
 ## 7. Dashboard input
 

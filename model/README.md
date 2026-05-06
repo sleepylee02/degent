@@ -16,6 +16,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
      python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
        ↓
      python3 -m model.stream.interest_assign → interest assignment + refit request 기록
+       ↓
+     python3 -m model.stream.cluster_refit → refit request 소비 + interest state replace
 ```
 
 ---
@@ -37,7 +39,7 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 
 | `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/drift_detector.py` | Phase 4 refit trigger placeholder |
-| `stream/cluster_refit.py` | Phase 4 triggered refit placeholder |
+| `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
 ---
@@ -66,6 +68,12 @@ python3 -m model.stream.extract_online --bootstrap-user-id 28 --output outputs/s
 # 2-4. online interest assignment/refit trigger smoke test
 python3 -m model.stream.interest_assign --embeddings outputs/stream/test_online_embeddings.npz
 
+# 2-5. triggered cluster refit smoke test
+python3 -m model.stream.cluster_refit --embeddings outputs/stream/test_online_embeddings.npz
+
+# 2-6. triggered cluster refit GPU/auto smoke test
+python3 -m model.stream.cluster_refit --embeddings outputs/stream/test_online_embeddings.npz --cluster-backend auto
+
 # 3. 클러스터링 (전체 유저)
 python3 -m model.batch.cluster
 
@@ -86,6 +94,8 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `batch/train.py`, `batch/extract.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
 - `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
+- `stream/cluster_refit.py`의 `auto` backend는 cuML import가 가능하면 GPU를 사용하고, 아니면 CPU `umap-learn + hdbscan`으로 fallback한다.
+- 현재 GPU 검증된 `.venv` 조합은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2`다. 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
 
 ---
@@ -142,6 +152,9 @@ git diff <old_commit>..<new_commit> -- model/
 | interest_assign: refit_min_events | 20 | no-interest/pending event 기반 refit request 최소 이벤트 수 |
 | interest_assign: assign_trigger_count | 50 | refit 이후 assign 누적 수 기반 refit request 기준 |
 | interest_assign: outlier_trigger_count | 10 | outlier 누적 수 기반 refit request 기준 |
+| cluster_refit: cluster_backend | `auto` | cuML 사용 가능 시 GPU, 아니면 CPU fallback |
+| cluster_refit: refit_min_events | 20 | refit 실행 최소 active embedding 수 |
+| cluster_refit: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
@@ -164,6 +177,7 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/interest_states/{user_id}.json` | user별 interest vectors, pending raw event ids, assignment/refit trigger state |
 | `outputs/stream/interest_assignments.jsonl` | online embedding별 assignment/pending/outlier 결과 log |
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
+| `outputs/stream/refit_events.jsonl` | refit request 소비/skip/close 결과 log |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |

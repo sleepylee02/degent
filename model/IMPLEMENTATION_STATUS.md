@@ -26,6 +26,7 @@
 | canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록 | 아직 cluster/replay/dashboard downstream 입력으로 연결되지는 않음 |
 | online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | interest assign / refit trigger | [x] | `stream/interest_assign.py` | active online embedding을 user별 interest state에 cosine nearest-interest로 assign하고, no-interest/pending/outlier/event-count 기준 refit request를 기록 | 실제 refit은 Phase 4-1 이후 범위 |
+| triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | 로컬 `.venv`는 RAPIDS/cuML `25.10.0` 조합에서 GPU smoke 통과 |
 | 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
@@ -45,6 +46,7 @@
 - `outputs/stream/interest_states/{user_id}.json`: Phase 4 interest assignment/refit trigger state.
 - `outputs/stream/interest_assignments.jsonl`: Phase 4 assignment/pending/outlier 결과 log.
 - `outputs/stream/refit_requests.jsonl`: Phase 4-1 이후 refit backend가 소비할 request log.
+- `outputs/stream/refit_events.jsonl`: Phase 4-1 refit request close/skip event log.
 - `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, interest vector `(103, 128)`, `user_ids_list=[10202]`. 최신 로그가 `user_id=10202` 테스트 모드였으므로 전체 유저 클러스터링 산출물로 간주하면 안 된다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
@@ -147,6 +149,37 @@ Phase 2 smoke test:
 - Phase 4는 UMAP/HDBSCAN refit을 실행하지 않는다.
 - `interest_assignments.jsonl`은 assignment/pending/outlier 결과 log다.
 - `refit_requests.jsonl`은 Phase 4-1 이후 refit backend 입력 후보로 둔다.
+
+## Triggered Cluster Refit 흐름
+
+`stream/cluster_refit.py` 기준 흐름:
+
+1. `outputs/stream/refit_requests.jsonl`에서 open request를 읽는다.
+2. `outputs/stream/online_embeddings.npz`에서 request user의 active embedding 전체를 모은다.
+3. `--cluster-backend auto|gpu|cpu`로 backend를 선택한다.
+4. `auto`는 cuML import가 가능하면 GPU, 아니면 CPU fallback을 사용한다.
+5. CPU fallback은 `umap-learn + hdbscan`이다.
+6. user별 active embedding 전체를 UMAP + HDBSCAN으로 clustering한다.
+7. noise label `-1`은 interest vector에서 제외한다.
+8. 전부 noise거나 샘플이 부족하면 전체 embedding mean fallback interest 1개를 만든다.
+9. 기존 interest vectors를 replace하고 pending/refit flags를 clear한다.
+10. `outputs/stream/refit_events.jsonl`에 request close/skip event를 기록한다.
+
+Phase 4-1 CPU fallback smoke:
+
+- `--cluster-backend auto`는 로컬에서 `cuml` 미설치로 CPU fallback을 선택했다.
+- user 28 active embedding 1,579개를 refit해 interest 21개를 생성했다.
+- noise row 43개는 interest vector에서 제외했다.
+- refit 후 pending 0, processed 1,579, `refitRequired=false`, `refitRequestOpen=false`를 확인했다.
+- 작은 fixture에서는 insufficient/all-noise case가 mean fallback interest 1개로 처리됐다.
+
+Phase 4-1 GPU dependency/smoke:
+
+- `cuml-cu12==26.4.0`은 CUDA 12.9 runtime wheel을 설치해 기존 `torch==2.5.1+cu121` 의존성과 충돌했고, 로컬 driver `535.288.01` / CUDA `12.2` 환경에서 CuPy kernel과 cuML UMAP이 `CUDA_ERROR_INVALID_IMAGE`로 실패했다.
+- 최종 `.venv`는 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2` 조합으로 고정했다.
+- `pip check`, PyTorch CUDA import, CuPy kernel, cuML/cudf import를 확인했다.
+- `phase4_1_cluster_refit_auto_gpu_smoke_final`에서 `--cluster-backend auto`가 GPU를 선택했고, user 28 active embedding 1,579개를 refit해 interest 33개를 생성했다. elapsed는 약 0.26초, noise row는 124개였다.
+- GPU dependency 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`에 기록했다.
 
 ## 현재 정리 방향
 

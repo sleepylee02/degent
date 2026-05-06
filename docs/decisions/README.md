@@ -9,6 +9,12 @@
 - `0003-keep-generated-data-out-of-git.md`
 - `0004-change-processed-rating-schema.md`
 
+## 현재 결정 목록
+
+- `0001-track-project-ai-assistant-configs.md`
+- `0002-track-model-history-with-git-and-experiments.md`
+- `0003-pin-rapids-cuml-gpu-dependencies.md`
+
 ## 템플릿
 
 ```md

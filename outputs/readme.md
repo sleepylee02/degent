@@ -17,3 +17,4 @@ Streaming Phase 3 산출물은 `outputs/stream/` 아래에 둔다.
 - `outputs/stream/interest_states/{user_id}.json`: user별 interest vectors, pending ids, assignment/refit trigger state
 - `outputs/stream/interest_assignments.jsonl`: assignment/pending/outlier 결과 로그
 - `outputs/stream/refit_requests.jsonl`: triggered refit backend가 소비할 refit 요청 로그
+- `outputs/stream/refit_events.jsonl`: triggered refit backend의 close/skip 결과 로그
