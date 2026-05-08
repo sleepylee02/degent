@@ -1,0 +1,9 @@
+2026-05-08 11:32:42 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/interest_assign_20260508_113242.log
+2026-05-08 11:32:42 | INFO | Experiment run id: phase5_replay_smoke
+2026-05-08 11:32:42 | INFO | Experiment metadata directory: /home/sleepylee/Desktop/1proj/a.live/degent/experiments/model/phase5_replay_smoke
+2026-05-08 11:32:42 | INFO | Online embeddings input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz
+2026-05-08 11:32:42 | INFO | Interest state directory: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states
+2026-05-08 11:32:42 | INFO | Assignments output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_assignments.jsonl
+2026-05-08 11:32:42 | INFO | Refit requests output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/refit_requests.jsonl
+2026-05-08 11:32:42 | INFO | Loaded active online embedding rows: 12 users=1 dim=128
+2026-05-08 11:32:42 | INFO | Processed interest state: {'userId': 28, 'inputRows': 12, 'interestCount': 2, 'pendingBefore': 0, 'pendingAfter': 0, 'processedBefore': 7, 'processedAfter': 12, 'refitRequired': True, 'refitReasons': ['assigned_since_last_refit'], 'statuses': {'already_processed': 7, 'assigned': 5}, 'statePath': 'outputs/stream/replay_demo/interest_states/28.json'}

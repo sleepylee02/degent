@@ -2,75 +2,59 @@
   "created_at": "2026-05-06T14:13:21+09:00",
   "run_id": "phase5_replay_smoke",
   "git": {
-    "commit": "65026ef0ed4fd9883b6f30ca8cec4bb6464cc9a2",
-    "branch": "jy_experimentlab",
+    "commit": "25a69d120bd8255f29143f988411cd2bb73f4240",
+    "branch": "streaming",
     "dirty": true,
     "status_short": [
-      "M README.md",
-      " M dashboard/README.md",
-      " M dashboard/cluster_dashboard.py",
-      " M docs/artifacts.md",
-      " M docs/data-flow.md",
-      " M outputs/readme.md",
-      " M plan/active/streaming_pipeline.md",
-      " M todo.md",
-      "?? docs/streaming-replay-dashboard-contract.md",
-      "?? experiments/model/phase5_replay_smoke/",
-      "?? model/stream/replay_pipeline.py",
-      "?? outputs/logs/cluster_refit_20260506_141324.log",
-      "?? outputs/logs/cluster_refit_20260506_141330.log",
-      "?? outputs/logs/cluster_refit_20260506_141804.log",
-      "?? outputs/logs/cluster_refit_20260506_141809.log",
-      "?? outputs/logs/extract_online_20260506_141321.log",
-      "?? outputs/logs/extract_online_20260506_141327.log",
-      "?? outputs/logs/extract_online_20260506_141800.log",
-      "?? outputs/logs/extract_online_20260506_141806.log",
-      "?? outputs/logs/interest_assign_20260506_141324.log",
-      "?? outputs/logs/interest_assign_20260506_141329.log",
-      "?? outputs/logs/interest_assign_20260506_141803.log",
-      "?? outputs/logs/interest_assign_20260506_141809.log",
-      "?? outputs/logs/replay_pipeline_20260506_141320.log",
-      "?? outputs/logs/replay_pipeline_20260506_141759.log",
-      "?? plan/active/streaming_pipeline_phase5_replay_engine.md",
-      "?? plan/active/streaming_pipeline_phase6_replay_dashboard.md",
-      "?? plan/expired/streaming_pipeline_phase5_6_replay_dashboard_demo.md",
-      "?? replay/"
+      "M experiments/model/phase5_replay_smoke/manifest.json",
+      " M experiments/model/phase5_replay_smoke/metrics.jsonl",
+      "?? outputs/logs/cluster_refit_20260508_113215.log",
+      "?? outputs/logs/cluster_refit_20260508_113245.log",
+      "?? outputs/logs/cluster_refit_20260508_114951.log",
+      "?? outputs/logs/extract_online_20260508_113208.log",
+      "?? outputs/logs/extract_online_20260508_113237.log",
+      "?? outputs/logs/extract_online_20260508_114943.log",
+      "?? outputs/logs/interest_assign_20260508_113213.log",
+      "?? outputs/logs/interest_assign_20260508_113242.log",
+      "?? outputs/logs/interest_assign_20260508_114949.log",
+      "?? outputs/logs/replay_pipeline_20260508_113204.log",
+      "?? outputs/logs/replay_pipeline_20260508_114941.log"
     ]
   },
   "stages": {
     "extract_online": {
-      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/extract_online.py --run-id phase5_replay_smoke --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --checkpoint /home/hungrylee/Desktop/0proj/degent/outputs/sasrec_cl.pt --item2idx /home/hungrylee/Desktop/0proj/degent/outputs/item2idx.json --state-dir /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/user_states --output /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embeddings.npz --event-log /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embedding_events.jsonl --event-jsonl /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/batches/batch_000001.jsonl --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256",
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/extract_online.py --run-id phase5_replay_smoke --movies /home/sleepylee/Desktop/1proj/a.live/degent/data/movies_processed_drop.csv --checkpoint /home/sleepylee/Desktop/1proj/a.live/degent/outputs/sasrec_cl.pt --item2idx /home/sleepylee/Desktop/1proj/a.live/degent/outputs/item2idx.json --state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/user_states --output /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz --event-log /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embedding_events.jsonl --event-jsonl /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/batches/batch_000000.jsonl --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256",
       "log": {
-        "path": "outputs/logs/extract_online_20260506_141806.log",
+        "path": "outputs/logs/extract_online_20260508_114943.log",
         "exists": true,
-        "size_bytes": 730,
-        "mtime_ns": 1778044686550937035
+        "size_bytes": 765,
+        "mtime_ns": 1778208583744876428
       },
       "inputs": {
         "movies": {
           "path": "data/movies_processed_drop.csv",
           "exists": true,
           "size_bytes": 24901018,
-          "mtime_ns": 1775374862000000000
+          "mtime_ns": 1775374862056883703
         },
         "ratings": {
           "path": "data/ratings_drop_processed.jsonl",
           "exists": true,
           "size_bytes": 2233410097,
-          "mtime_ns": 1775374962000000000
+          "mtime_ns": 1775374962957207895
         },
         "checkpoint": {
           "path": "outputs/sasrec_cl.pt",
           "exists": true,
           "size_bytes": 30324286,
-          "mtime_ns": 1775609561305994691,
+          "mtime_ns": 1775609561000000000,
           "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
         },
         "item2idx": {
           "path": "outputs/item2idx.json",
           "exists": true,
           "size_bytes": 908573,
-          "mtime_ns": 1777951465096547396,
+          "mtime_ns": 1775667841000000000,
           "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
         }
       },
@@ -79,7 +63,7 @@
           "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
           "exists": true,
           "size_bytes": 2431,
-          "mtime_ns": 1775554755050862757,
+          "mtime_ns": 1775374126342616514,
           "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
           "version": "v2"
         },
@@ -87,7 +71,7 @@
           "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
           "exists": true,
           "size_bytes": 1212,
-          "mtime_ns": 1775554755050862757,
+          "mtime_ns": 1775374185724340667,
           "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
           "version": "v1"
         }
@@ -105,14 +89,14 @@
         "output": "outputs/stream/replay_demo/online_embeddings.npz",
         "event_log": "outputs/stream/replay_demo/online_embedding_events.jsonl",
         "bootstrap_user_id": null,
-        "event_jsonl": "/home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/batches/batch_000001.jsonl",
+        "event_jsonl": "/home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/batches/batch_000000.jsonl",
         "min_ratings_for_zscore": 3,
         "z_threshold": 0.0,
         "batch_size": 256
       },
       "runtime": {
-        "device": "cuda:0",
-        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "device": "cpu",
+        "device_label": "cpu",
         "torch_version": "2.5.1+cu121"
       },
       "data_summary": {
@@ -124,13 +108,13 @@
           {
             "userId": 28,
             "statePath": "outputs/stream/replay_demo/user_states/28.json",
-            "rawEventCount": 30,
-            "positiveEventCount": 12,
-            "activeEventCount": 12,
-            "droppedEventCount": 18,
+            "rawEventCount": 15,
+            "positiveEventCount": 7,
+            "activeEventCount": 7,
+            "droppedEventCount": 8,
             "skippedUnknownItems": 0,
-            "ratingMean": 3.2333333333333334,
-            "ratingStd": 1.1455226851626388,
+            "ratingMean": 3.4,
+            "ratingStd": 1.1430952132988166,
             "positiveReason": "zscore",
             "positivePolicy": {
               "name": "observed_user_zscore_v1",
@@ -138,7 +122,7 @@
               "zThreshold": 0.0,
               "optimisticColdStart": true
             },
-            "embeddingRows": 12
+            "embeddingRows": 7
           }
         ]
       },
@@ -146,54 +130,54 @@
         "online_embeddings": {
           "path": "outputs/stream/replay_demo/online_embeddings.npz",
           "exists": true,
-          "size_bytes": 10618,
-          "mtime_ns": 1778044688133929506,
-          "sha256": "3784340820dedad063389f589ccdb85d69cf45103487b9a2710da79040ce8e5c"
+          "size_bytes": 7258,
+          "mtime_ns": 1778208586900207533,
+          "sha256": "ce3fc17492ed581b4b1b7f4da344fd50d7fe139e181dc15b58b66483b626be13"
         },
         "event_log": {
           "path": "outputs/stream/replay_demo/online_embedding_events.jsonl",
           "exists": true,
-          "size_bytes": 1694,
-          "mtime_ns": 1778044688133929506,
-          "sha256": "24d17b5c08d9b9fef4979eac7cce0e61f0bb1b097d17a3f85d7725b2a8f3c294"
+          "size_bytes": 836,
+          "mtime_ns": 1778208586901207510,
+          "sha256": "750ad6b87d70a55c46e9bec9f0525e557e45b7443798c80cc87793e8275077ae"
         },
         "metrics": {
           "path": "experiments/model/phase5_replay_smoke/metrics.jsonl",
           "exists": true,
-          "size_bytes": 3916,
-          "mtime_ns": 1778044688133929506,
-          "sha256": "838b51d17dd64b04d43a029d9b356fa394cec1a86bb21755d6181d032a3fc12b"
+          "size_bytes": 8557,
+          "mtime_ns": 1778208586901207510,
+          "sha256": "6c5219ccbcc27ba256d553c07f5301865a04a209ea0ba1502c848f4f3ec48a91"
         }
       },
       "summary_metrics": {
         "stage": "extract_online",
         "processed_users": 1,
         "input_events": 15,
-        "embedding_rows": 12,
+        "embedding_rows": 7,
         "embedding_dim": 128,
         "unique_users": 1,
-        "row_count": 12,
+        "row_count": 7,
         "nan_embedding_rows": 0,
-        "max_history_len": 12,
+        "max_history_len": 7,
         "invalid_history_rows": 0,
         "invalid_context_rows": 0,
         "all_rows_active": true
       }
     },
     "interest_assign": {
-      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/interest_assign.py --run-id phase5_replay_smoke --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embeddings.npz --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/interest_states --assignments /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/interest_assignments.jsonl --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3",
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/interest_assign.py --run-id phase5_replay_smoke --embeddings /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz --interest-state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states --assignments /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_assignments.jsonl --refit-requests /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3",
       "log": {
-        "path": "outputs/logs/interest_assign_20260506_141809.log",
+        "path": "outputs/logs/interest_assign_20260508_114949.log",
         "exists": true,
-        "size_bytes": 880,
-        "mtime_ns": 1778044689040925191
+        "size_bytes": 922,
+        "mtime_ns": 1778208589314200427
       },
       "inputs": {
         "online_embeddings": {
           "path": "outputs/stream/replay_demo/online_embeddings.npz",
           "exists": true,
-          "size_bytes": 10618,
-          "mtime_ns": 1778044688133929506
+          "size_bytes": 7258,
+          "mtime_ns": 1778208586900207533
         }
       },
       "assignment_config": {
@@ -206,24 +190,24 @@
         "outlier_trigger_count": 3
       },
       "data_summary": {
-        "active_embedding_rows": 12,
+        "active_embedding_rows": 7,
         "processed_users": 1,
         "user_summaries": [
           {
             "userId": 28,
-            "inputRows": 12,
-            "interestCount": 1,
+            "inputRows": 7,
+            "interestCount": 0,
             "pendingBefore": 0,
-            "pendingAfter": 0,
-            "processedBefore": 7,
-            "processedAfter": 12,
+            "pendingAfter": 7,
+            "processedBefore": 0,
+            "processedAfter": 0,
             "refitRequired": true,
             "refitReasons": [
-              "assigned_since_last_refit"
+              "no_interest_pending_events"
             ],
             "statuses": {
-              "already_processed": 7,
-              "assigned": 5
+              "pending_no_interest": 2,
+              "pending_refit_required": 5
             },
             "statePath": "outputs/stream/replay_demo/interest_states/28.json"
           }
@@ -233,30 +217,30 @@
         "assignments": {
           "path": "outputs/stream/replay_demo/interest_assignments.jsonl",
           "exists": true,
-          "size_bytes": 5620,
-          "mtime_ns": 1778044689052925134,
-          "sha256": "4a48d74e1c7c845c81e84899ddd2ba5d721e7d8b29869ac84239bb361a0c980b"
+          "size_bytes": 2292,
+          "mtime_ns": 1778208589345339466,
+          "sha256": "c93a735cc21833d75a9bcf33f917e5f81805ce9a0b47ae1c65fc2b23b899e28b"
         },
         "refit_requests": {
           "path": "outputs/stream/replay_demo/refit_requests.jsonl",
           "exists": true,
-          "size_bytes": 613,
-          "mtime_ns": 1778044689052925134,
-          "sha256": "b188242a16f57bb9f540520a29aee075800d18c2ad10bc4211c9e06427a76320"
+          "size_bytes": 307,
+          "mtime_ns": 1778208589345427117,
+          "sha256": "817f2c56a186a0b0040e96c241836a48c5b812272d060d5e847900e865c6d214"
         },
         "metrics": {
           "path": "experiments/model/phase5_replay_smoke/metrics.jsonl",
           "exists": true,
-          "size_bytes": 4156,
-          "mtime_ns": 1778044689052925134,
-          "sha256": "c62918c091e8f21e67dd158c2a6c1540a961e86eb75e1dc8771e956c221107da"
+          "size_bytes": 8811,
+          "mtime_ns": 1778208589345427117,
+          "sha256": "124cd987f5b7a24ad66bd41f5bafcf022c991c768f86f9adac4d897c60c3c828"
         }
       },
       "summary_metrics": {
         "stage": "interest_assign",
-        "input_rows": 12,
+        "input_rows": 7,
         "processed_users": 1,
-        "assignment_records": 12,
+        "assignment_records": 7,
         "refit_requests": 1,
         "status_counts": {
           "pending_no_interest": 2,
@@ -268,25 +252,25 @@
       }
     },
     "cluster_refit": {
-      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/cluster_refit.py --run-id phase5_replay_smoke --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/online_embeddings.npz --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/refit_requests.jsonl --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/interest_states --refit-events /home/hungrylee/Desktop/0proj/degent/outputs/stream/replay_demo/refit_events.jsonl --cluster-backend auto --refit-min-events 3 --min-cluster-size 2 --cluster-dim 3 --user-id 28",
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/cluster_refit.py --run-id phase5_replay_smoke --embeddings /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz --refit-requests /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/refit_requests.jsonl --interest-state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states --refit-events /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/refit_events.jsonl --cluster-backend auto --refit-min-events 3 --min-cluster-size 2 --cluster-dim 3 --user-id 28",
       "log": {
-        "path": "outputs/logs/cluster_refit_20260506_141809.log",
+        "path": "outputs/logs/cluster_refit_20260508_114951.log",
         "exists": true,
-        "size_bytes": 964,
-        "mtime_ns": 1778044690777916924
+        "size_bytes": 1006,
+        "mtime_ns": 1778208594292039574
       },
       "inputs": {
         "online_embeddings": {
           "path": "outputs/stream/replay_demo/online_embeddings.npz",
           "exists": true,
-          "size_bytes": 10618,
-          "mtime_ns": 1778044688133929506
+          "size_bytes": 7258,
+          "mtime_ns": 1778208586900207533
         },
         "refit_requests": {
           "path": "outputs/stream/replay_demo/refit_requests.jsonl",
           "exists": true,
-          "size_bytes": 613,
-          "mtime_ns": 1778044689052925134
+          "size_bytes": 307,
+          "mtime_ns": 1778208589345427117
         }
       },
       "refit_config": {
@@ -307,11 +291,11 @@
         "active_embedding_users": 1,
         "user_summaries": [
           {
-            "recordedAt": "2026-05-06T14:18:10+09:00",
+            "recordedAt": "2026-05-08T11:32:45+09:00",
             "runId": "phase5_replay_smoke",
             "userId": 28,
             "request": {
-              "recordedAt": "2026-05-06T14:18:09+09:00",
+              "recordedAt": "2026-05-08T11:32:42+09:00",
               "runId": "phase5_replay_smoke",
               "userId": 28,
               "status": "open",
@@ -327,27 +311,28 @@
             },
             "statePath": "outputs/stream/replay_demo/interest_states/28.json",
             "backendRequested": "auto",
-            "backendSelected": "gpu",
-            "backendFallbackReason": null,
+            "backendSelected": "cpu",
+            "backendFallbackReason": "cuml_unavailable: ModuleNotFoundError: No module named 'cuml'",
             "activeEmbeddingRows": 12,
             "status": "closed",
-            "refitElapsedSec": 0.18547511100769043,
+            "refitElapsedSec": 17.63978362083435,
             "interestCount": 2,
             "processedRawEventCount": 12,
             "clusterSummary": {
               "nClusters": 2,
               "interestCount": 2,
-              "noiseCount": 0,
+              "noiseCount": 1,
               "fallbackUsed": false,
               "labelCounts": {
-                "0": 5,
+                "-1": 1,
+                "0": 4,
                 "1": 7
               },
               "clusterSizes": {
-                "0": 5,
+                "0": 4,
                 "1": 7
               },
-              "backend": "gpu",
+              "backend": "cpu",
               "reducedDim": 3,
               "nNeighbors": 11
             }
@@ -358,16 +343,16 @@
         "refit_events": {
           "path": "outputs/stream/replay_demo/refit_events.jsonl",
           "exists": true,
-          "size_bytes": 1802,
-          "mtime_ns": 1778044690973915991,
-          "sha256": "dbdb336f22d6c92cdbde1a65d565e6787b71ebbd69443a312945434e4f1cc95b"
+          "size_bytes": 1957,
+          "mtime_ns": 1778207582699098902,
+          "sha256": "1e0b798ec0d834416eca408ae5842bc850cc68bc8c2d87f19d9d7f9eff59654b"
         },
         "metrics": {
           "path": "experiments/model/phase5_replay_smoke/metrics.jsonl",
           "exists": true,
-          "size_bytes": 4472,
-          "mtime_ns": 1778044690973915991,
-          "sha256": "0c14b3de7cadcc8b747ce5cf28e3f2d9efbc92d159f252c24c00ba2b3014886b"
+          "size_bytes": 7296,
+          "mtime_ns": 1778207582699098902,
+          "sha256": "54c64b7038db6b6750c9c5f66948cedd9a3e3bab158bcce5ed5e019eaf96d979"
         }
       },
       "summary_metrics": {
@@ -377,26 +362,26 @@
         "refit_count": 1,
         "skipped_count": 0,
         "cluster_backend_requested": "auto",
-        "cluster_backend_selected": "gpu",
-        "backend_fallback_reason": null,
-        "elapsed_sec": 0.18615436553955078,
+        "cluster_backend_selected": "cpu",
+        "backend_fallback_reason": "cuml_unavailable: ModuleNotFoundError: No module named 'cuml'",
+        "elapsed_sec": 17.641499519348145,
         "embedding_dim": 128
       }
     },
     "replay_pipeline": {
-      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/replay_pipeline.py --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke",
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/replay_pipeline.py --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke",
       "log": {
-        "path": "outputs/logs/replay_pipeline_20260506_141759.log",
+        "path": "outputs/logs/replay_pipeline_20260508_113204.log",
         "exists": true,
-        "size_bytes": 5008,
-        "mtime_ns": 1778044689189924482
+        "size_bytes": 5302,
+        "mtime_ns": 1778207563129106809
       },
       "inputs": {
         "replay_input_events": {
           "path": "outputs/stream/replay_demo/replay_input_events.jsonl",
           "exists": true,
           "size_bytes": 6038,
-          "mtime_ns": 1778044680193967234,
+          "mtime_ns": 1778207526255307541,
           "sha256": "ba31e9daec2ae235efee2dd47036f03ca7f4e839ff861fb4be14af4b83f5377b"
         }
       },
@@ -405,24 +390,24 @@
           "path": "outputs/stream/replay_demo/replay_summary.json",
           "exists": true,
           "size_bytes": 951,
-          "mtime_ns": 1778044691374914081,
-          "sha256": "1636e2e3eb6e5ab30e865418384e522c58e2952f891cc527ca01aa0e7be740af"
+          "mtime_ns": 1778207584890471928,
+          "sha256": "1a8f525e08af4e609f26b9463f1b063a4222cd43f4b8b1bb7291fb8ace56af88"
         },
         "replay_events": {
           "path": "outputs/stream/replay_demo/replay_events.jsonl",
           "exists": true,
-          "size_bytes": 1520,
-          "mtime_ns": 1778044691374914081,
-          "sha256": "527e8890ec1f492651790602792c69546de02fbc9655d54362e21c22d4b6ee46"
+          "size_bytes": 1523,
+          "mtime_ns": 1778207584890471928,
+          "sha256": "3496d77abc779673e95e519be95242c1966bf1d37e842ec781435461ed9fbaa3"
         }
       },
       "summary_metrics": {
         "version": "stream_replay_summary.v1",
         "runId": "phase5_replay_smoke",
         "status": "completed",
-        "startedAt": "2026-05-06T14:18:00+09:00",
-        "endedAt": "2026-05-06T14:18:11+09:00",
-        "elapsedSec": 11.179348945617676,
+        "startedAt": "2026-05-08T11:32:06+09:00",
+        "endedAt": "2026-05-08T11:33:04+09:00",
+        "elapsedSec": 58.630855321884155,
         "inputEvents": 30,
         "processedEvents": 30,
         "uniqueUsers": 1,
@@ -446,5 +431,5 @@
       }
     }
   },
-  "updated_at": "2026-05-06T14:18:11+09:00"
+  "updated_at": "2026-05-08T11:49:54+09:00"
 }
