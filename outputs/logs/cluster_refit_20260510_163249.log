@@ -1,0 +1,11 @@
+2026-05-10 16:32:49 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/cluster_refit_20260510_163249.log
+2026-05-10 16:32:49 | INFO | Experiment run id: phase5_replay_cpu_check_20260510
+2026-05-10 16:32:49 | INFO | Experiment metadata directory: /home/sleepylee/Desktop/1proj/a.live/degent/experiments/model/phase5_replay_cpu_check_20260510
+2026-05-10 16:32:49 | INFO | Online embeddings input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/online_embeddings.npz
+2026-05-10 16:32:49 | INFO | Refit requests input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl
+2026-05-10 16:32:49 | INFO | Interest state directory: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/interest_states
+2026-05-10 16:32:49 | INFO | Refit events output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/refit_events.jsonl
+2026-05-10 16:32:49 | INFO | Cluster backend requested=cpu selected=cpu fallback_reason=None
+2026-05-10 16:32:49 | INFO | Open refit requests: 1 selected=1
+2026-05-10 16:32:49 | INFO | Loaded active online embedding rows: 7 users=1 dim=128
+2026-05-10 16:33:02 | INFO | Closed refit request: {'recordedAt': '2026-05-10T16:32:49+09:00', 'runId': 'phase5_replay_cpu_check_20260510', 'userId': 28, 'request': {'recordedAt': '2026-05-10T16:32:47+09:00', 'runId': 'phase5_replay_cpu_check_20260510', 'userId': 28, 'status': 'open', 'reasons': ['no_interest_pending_events'], 'pendingRawEventCount': 7, 'assignedSinceLastRefit': 0, 'outlierSinceLastRefit': 0, 'refitMinEvents': 3, 'assignTriggerCount': 3, 'outlierTriggerCount': 3}, 'statePath': 'outputs/stream/replay_check_cpu_20260510/interest_states/28.json', 'backendRequested': 'cpu', 'backendSelected': 'cpu', 'backendFallbackReason': None, 'activeEmbeddingRows': 7, 'status': 'closed', 'refitElapsedSec': 13.55243992805481, 'interestCount': 2, 'processedRawEventCount': 7, 'clusterSummary': {'nClusters': 2, 'interestCount': 2, 'noiseCount': 3, 'fallbackUsed': False, 'labelCounts': {'-1': 3, '0': 2, '1': 2}, 'clusterSizes': {'0': 2, '1': 2}, 'backend': 'cpu', 'reducedDim': 3, 'nNeighbors': 6}}
