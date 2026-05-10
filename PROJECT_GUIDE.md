@@ -40,7 +40,7 @@ degent/
 ├── dashboard/               # 클러스터링 결과 시각화 대시보드
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
 │   ├── batch/               #   batch 모델 파이프라인 실행 entrypoint
-│   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + item2idx.json
+│   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json
 │   │   ├── extract.py       #     히든스테이트 추출 → embeddings.npz
 │   │   ├── extract_canonical.py #  event당 canonical 히든스테이트 추출 → canonical_embeddings.npz
 │   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz

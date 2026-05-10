@@ -2,7 +2,7 @@
 
 이 문서는 여러 명이 작업을 나눌 때 각 파트가 어떤 파일을 맡고, 무엇을 입력으로 받아서, 무엇을 출력해야 하는지 정리한 협업용 계약표다.
 
-프로젝트 전체 규칙은 `PROJECT_GUIDE.md`를 따른다. 컬럼 단위 스키마 변경은 `schemas/`를 먼저 수정한다.
+프로젝트 전체 규칙은 `PROJECT_GUIDE.md`를 따른다. 컬럼 단위 스키마 변경은 `schemas/`를 먼저 수정한다. Streaming replay e2e 실행과 단계별 데이터 전달 설명은 `docs/streaming-e2e-pipeline.md`를 참고한다.
 
 ## 읽는 법
 
@@ -218,4 +218,3 @@ Known issue:
 - 기존 output을 대체하면 이전 consumer가 깨지지 않게 migration 기준을 남긴다.
 - dashboard는 replay/stream 내부 함수에 의존하지 않고 artifact만 읽는다.
 - replay demo output은 `outputs/stream/replay_demo/` 아래에만 쓴다.
-

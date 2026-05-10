@@ -1,6 +1,6 @@
 # Data Flow
 
-이 문서는 원본 데이터에서 대시보드까지 이어지는 흐름을 빠르게 파악하기 위한 보조 문서다. 프로젝트 운영 규칙의 정본은 `PROJECT_GUIDE.md`다. 파트별 담당 파일, input, output, endpoint는 `docs/part-contracts.md`를 따른다.
+이 문서는 원본 데이터에서 대시보드까지 이어지는 흐름을 빠르게 파악하기 위한 보조 문서다. 프로젝트 운영 규칙의 정본은 `PROJECT_GUIDE.md`다. 파트별 담당 파일, input, output, endpoint는 `docs/part-contracts.md`를 따른다. Streaming replay e2e를 직접 실행하고 단계별 artifact를 확인하려면 `docs/streaming-e2e-pipeline.md`를 먼저 본다.
 
 ## 전체 흐름
 
@@ -202,7 +202,7 @@ python3 -m model.batch.visualize_clusters
 
 `outputs/stream/interest_assignments.jsonl`과 `outputs/stream/refit_requests.jsonl`은 active online embedding을 interest state에 연결하기 위한 stream 산출물이다. Phase 4는 refit request만 기록하고 실제 UMAP/HDBSCAN refit은 실행하지 않는다.
 
-`outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 `interest_states/{user_id}.json`의 interest vectors를 replace한다. `--cluster-backend auto`는 현재 `.venv`의 RAPIDS/cuML `25.10.0` 조합에서 GPU smoke가 통과했으며, cuML을 사용할 수 없는 환경에서는 CPU `umap-learn + hdbscan` fallback을 사용한다.
+`outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 `interest_states/{user_id}.json`의 interest vectors를 replace한다. `--cluster-backend auto`는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 
 Phase 5 replay demo artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline`은 이 입력을 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출한다. Phase 6 dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths`가 있으면 해당 경로를 우선 사용한다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 

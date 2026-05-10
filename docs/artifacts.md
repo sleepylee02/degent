@@ -34,6 +34,7 @@
 | `preprocess/process_rating/validation_report.json` | validation artifact | `python3 preprocess/process_rating/process_ratings_drop.py` | regenerate |
 | `preprocess/process_rating/bad_rows.csv` | validation artifact | `python3 preprocess/process_rating/process_ratings_drop.py` | regenerate |
 | `outputs/sasrec_cl.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
+| `outputs/sasrec_cl_best.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
 | `outputs/item2idx.json` | model artifact | `python3 -m model.batch.train` | regenerate |
 | `outputs/embeddings.npz` | model artifact | `python3 -m model.batch.extract` | regenerate |
 | `outputs/canonical_embeddings.npz` | model artifact | `python3 -m model.batch.extract_canonical` | regenerate |

@@ -277,7 +277,7 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 
 `python3 -m model.stream.interest_assign`은 active online embedding을 user별 interest state에 연결한다. interest vector가 없으면 pending buffer와 refit request를 남기고, interest vector가 있으면 cosine similarity로 assign한다. 기본 출력은 `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`이다.
 
-`python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML이 있으면 GPU, 없으면 CPU `umap-learn + hdbscan` fallback을 사용한다. 현재 `.venv`에서는 RAPIDS/cuML `25.10.0` 조합으로 GPU smoke가 통과했다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
+`python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
 
 `make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `outputs/stream/replay_demo/` 아래에 `replay_summary.json`, `replay_events.jsonl`, replay-scoped state/log/embedding을 기록한다. 기본 `--replay-speed 0`은 wall-clock pacing 없이 빠르게 처리하고, 양수 값은 timestamp gap을 배속으로 압축한다.
 

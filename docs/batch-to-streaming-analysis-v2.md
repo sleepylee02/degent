@@ -7,12 +7,13 @@
 ```text
 이 브랜치의 답:
   모델 학습은 batch로 유지한다.
+  full online training은 이번 범위에서 deferred로 둔다.
   새 rating event 처리는 streaming inference와 online state로 처리한다.
   interest update는 online assignment와 trigger-based refit으로 나눈다.
   전체 흐름은 timestamp replay와 dashboard artifact로 검증한다.
 ```
 
-따라서 이 브랜치는 full online training 시스템이 아니다. 더 정확히는 **batch-trained SASRec+CL을 기반으로 한 hybrid streaming inference/refit pipeline**이다.
+따라서 full online training은 이번 브랜치 범위에서 deferred이고, 이 브랜치는 **batch-trained SASRec+CL을 기반으로 한 hybrid streaming inference/refit pipeline**이다.
 
 ---
 
@@ -70,7 +71,7 @@ data/ratings_drop_processed.jsonl
 `plan/done/streaming_pipeline.md`의 핵심 결정은 두 가지다.
 
 ```text
-full streaming training이 아니라 hybrid streaming pipeline으로 간다.
+full streaming training은 deferred로 두고 hybrid streaming pipeline으로 간다.
 streaming 단위는 individual user가 아니라 system-level rating event stream이다.
 ```
 
@@ -953,7 +954,7 @@ Streaming end-to-end가 됐다고 해서 모든 추천 serving 기능이 완성�
 
 | 항목 | 상태 |
 |---|---|
-| full online training | 하지 않음 |
+| full online training | deferred |
 | 매 event UMAP/HDBSCAN | 하지 않음 |
 | `u_k` 기반 recommendation scoring | 아직 없음 |
 | downstream Recall/NDCG 평가 | 아직 없음 |
@@ -1015,10 +1016,9 @@ heavy path:
 결론:
 
 ```text
-전환의 본질은 streaming training이 아니다.
+streaming training은 이번 범위에서 deferred다.
 전환의 본질은 batch-trained representation을
 event-level canonical contract와 online state/refit pipeline으로 감싼 것이다.
 ```
 
 이 브랜치는 기존 batch의 모델 자산을 유지하면서, 서비스형 event stream에 필요한 state transition과 observability를 새로 만든 브랜치다.
-

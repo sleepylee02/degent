@@ -4,8 +4,10 @@ SASRec + Contrastive Loss 기반 적응형 다중 관심사 추천 시스템 구
 
 ## 전체 흐름
 
+Streaming replay e2e를 실행하거나 다른 파트에 넘길 artifact를 확인할 때는 `docs/streaming-e2e-pipeline.md`를 함께 본다.
+
 ```
-python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + item2idx.json 저장
+python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json 저장
   ├─ python3 -m model.batch.extract → legacy overlap 히든스테이트 추출 → embeddings.npz 저장
   │    ↓
   │  python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
@@ -103,7 +105,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `batch/train.py`, `batch/extract.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
 - `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
-- `stream/cluster_refit.py`의 `auto` backend는 cuML import가 가능하면 GPU를 사용하고, 아니면 CPU `umap-learn + hdbscan`으로 fallback한다.
+- `stream/cluster_refit.py`의 `auto` backend는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 - `stream/replay_pipeline.py`의 `--replay-speed 0` 기본값은 wall-clock pacing 없이 가능한 한 빠르게 처리한다. 양수 값을 주면 timestamp gap을 speed multiplier로 나눠 micro-batch 사이를 대기하며, `--max-sleep-sec`로 sleep 상한을 둔다.
 - 현재 GPU 검증된 `.venv` 조합은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2`다. 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
@@ -149,6 +151,9 @@ git diff <old_commit>..<new_commit> -- model/
 | seq_len | 100 | 시퀀스 길이 |
 | d_model | 128 | 임베딩 차원 |
 | cl_lambda | 0.1 | Contrastive Loss 가중치 (0.05/0.1/0.2 튜닝 필요) |
+| train: epochs | 100 | 최대 학습 epoch 수 |
+| train: eval_every | 5 | validation 평가 주기 |
+| train: patience | 10 | Recall@10 기준 early stopping patience (평가 횟수 기준) |
 | train: min_interactions | 200 | 학습 유저 필터링 기준 |
 | train: stride | 50 | 학습용 슬라이딩 윈도우 간격 |
 | extract: min_interactions | 1000 | 클러스터링 대상 유저 필터링 기준 |
@@ -163,7 +168,7 @@ git diff <old_commit>..<new_commit> -- model/
 | interest_assign: refit_min_events | 20 | no-interest/pending event 기반 refit request 최소 이벤트 수 |
 | interest_assign: assign_trigger_count | 50 | refit 이후 assign 누적 수 기반 refit request 기준 |
 | interest_assign: outlier_trigger_count | 10 | outlier 누적 수 기반 refit request 기준 |
-| cluster_refit: cluster_backend | `auto` | cuML 사용 가능 시 GPU, 아니면 CPU fallback |
+| cluster_refit: cluster_backend | `auto` | cuML/CUDA runtime 사용 가능 시 GPU, 아니면 CPU fallback |
 | cluster_refit: refit_min_events | 20 | refit 실행 최소 active embedding 수 |
 | cluster_refit: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
 | replay: output_root | `outputs/stream/replay_demo` | Phase 5/6 demo 산출물 격리 경로 |
@@ -181,7 +186,8 @@ git diff <old_commit>..<new_commit> -- model/
 
 | 파일 | 설명 |
 |---|---|
-| `outputs/sasrec_cl.pt` | 학습된 모델 가중치 |
+| `outputs/sasrec_cl.pt` | 마지막 epoch 모델 가중치 |
+| `outputs/sasrec_cl_best.pt` | validation Recall@10 기준 best 모델 가중치 |
 | `outputs/item2idx.json` | 아이템 ID → 인덱스 매핑 (학습 vocabulary) |
 | `outputs/embeddings.npz` | 시점별 히든스테이트 `embeddings(N,128)`, `user_ids(N,)`, `timepoint_idx(N,)` |
 | `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |

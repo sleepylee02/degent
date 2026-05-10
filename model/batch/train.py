@@ -38,10 +38,11 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Max file size for SHA256 hashing. Use -1 for no limit.",
     )
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--eval-every", type=int, default=5)
+    parser.add_argument("--patience", type=int, default=10, help="Early stopping patience in validation checks.")
     parser.add_argument("--seq-len", type=int, default=100)
     parser.add_argument("--stride", type=int, default=50)
     parser.add_argument("--min-interactions", type=int, default=200)
@@ -61,15 +62,19 @@ def parse_args() -> argparse.Namespace:
 # =====================
 
 class Trainer:
-    def __init__(self, model, lr=1e-3, cl_lambda=0.1, device='cuda'):
-        self.model     = model.to(device)
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        self.cl_lambda = cl_lambda
-        self.device    = device
+    def __init__(self, model, lr=1e-3, cl_lambda=0.1, device='cuda', patience=10):
+        self.model       = model.to(device)
+        self.optimizer   = torch.optim.Adam(model.parameters(), lr=lr)
+        self.cl_lambda   = cl_lambda
+        self.device      = device
+        self.patience    = patience
+        self.best_recall = float("-inf")
+        self.no_improve  = 0
+        self.best_epoch  = 0
 
     def train_epoch(self, dataloader):
         self.model.train()
-        total_loss = 0
+        total_loss, total_ce, total_cl = 0, 0, 0
 
         pbar = tqdm(dataloader, desc="train", leave=False)
         for batch in pbar:
@@ -103,9 +108,12 @@ class Trainer:
             self.optimizer.step()
 
             total_loss += loss.item()
+            total_ce   += ce_loss.item()
+            total_cl   += cl.item()
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-        return total_loss / len(dataloader)
+        n = len(dataloader)
+        return total_loss / n, total_ce / n, total_cl / n
 
     @torch.no_grad()
     def evaluate(self, dataloader, k=10):
@@ -140,6 +148,18 @@ class Trainer:
             f"Recall@{k}": np.mean(recalls),
             f"NDCG@{k}":   np.mean(ndcgs)
         }
+
+    def check_early_stop(self, recall, epoch, best_path):
+        """Save the best checkpoint by Recall@10 and report whether training should stop."""
+        if recall > self.best_recall:
+            self.best_recall = recall
+            self.best_epoch = epoch
+            self.no_improve = 0
+            torch.save(self.model.state_dict(), best_path)
+            return False
+
+        self.no_improve += 1
+        return self.no_improve >= self.patience
 
 
 # =====================
@@ -219,6 +239,7 @@ if __name__ == "__main__":
                         "batch_size": batch_size,
                         "num_workers": num_workers,
                         "eval_every": eval_every,
+                        "patience": args.patience,
                         "seq_len": args.seq_len,
                         "stride": args.stride,
                         "min_interactions": args.min_interactions,
@@ -306,15 +327,16 @@ if __name__ == "__main__":
         max_len    = args.seq_len
     )
 
-    trainer = Trainer(model, lr=args.lr, cl_lambda=args.cl_lambda, device=device)
+    trainer = Trainer(model, lr=args.lr, cl_lambda=args.cl_lambda, device=device, patience=args.patience)
     logger.info(
-        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f lr=%.6f",
+        "Training config | epochs=%d batch_size=%d seq_len=%d stride=%d cl_lambda=%.3f lr=%.6f patience=%d",
         num_epochs,
         batch_size,
         args.seq_len,
         args.stride,
         args.cl_lambda,
         args.lr,
+        args.patience,
     )
 
     update_experiment_manifest(
@@ -347,37 +369,67 @@ if __name__ == "__main__":
 
     # 학습
     final_metrics = {}
+    best_path = OUTPUTS_DIR / 'sasrec_cl_best.pt'
+    stopped_early = False
     for epoch in range(num_epochs):
-        loss = trainer.train_epoch(train_loader)
-        logger.info("Epoch %02d/%02d | loss=%.4f", epoch + 1, num_epochs, loss)
+        loss, ce, cl = trainer.train_epoch(train_loader)
+        logger.info(
+            "Epoch %02d/%02d | loss=%.4f ce=%.4f cl=%.4f",
+            epoch + 1,
+            num_epochs,
+            loss,
+            ce,
+            cl,
+        )
         metric_record = {
             "stage": "train",
             "epoch": epoch + 1,
             "loss": float(loss),
+            "ce_loss": float(ce),
+            "contrastive_loss": float(cl),
         }
 
         if (epoch + 1) % eval_every == 0:
             metrics = trainer.evaluate(val_loader, k=10)
+            recall = metrics["Recall@10"]
             logger.info(
                 "Validation | epoch=%02d Recall@10=%.4f NDCG@10=%.4f",
                 epoch + 1,
-                metrics["Recall@10"],
+                recall,
                 metrics["NDCG@10"],
             )
+            stop = trainer.check_early_stop(recall, epoch + 1, best_path)
             metric_record.update(
                 {
-                    "recall_at_10": float(metrics["Recall@10"]),
+                    "recall_at_10": float(recall),
                     "ndcg_at_10": float(metrics["NDCG@10"]),
+                    "best_recall_at_10": float(trainer.best_recall),
+                    "best_epoch": int(trainer.best_epoch),
+                    "no_improve": int(trainer.no_improve),
+                    "early_stop": bool(stop),
                 }
             )
+            if stop:
+                stopped_early = True
+                logger.info(
+                    "Early stopping | best_epoch=%d best_Recall@10=%.4f",
+                    trainer.best_epoch,
+                    trainer.best_recall,
+                )
 
         append_metric(run_dir, metric_record)
         final_metrics = metric_record
+        if stopped_early:
+            break
 
     # 모델 저장
     out_path = OUTPUTS_DIR / 'sasrec_cl.pt'
     torch.save(model.state_dict(), out_path)
-    logger.info("Saved model checkpoint: %s", out_path)
+    logger.info("Saved last checkpoint: %s", out_path)
+    if trainer.best_epoch > 0 and best_path.exists():
+        logger.info("Saved best checkpoint: %s", best_path)
+    else:
+        logger.info("Best checkpoint was not saved because validation did not run.")
 
     # item2idx 저장 (extract.py에서 동일 vocabulary 재사용)
     item2idx_path = OUTPUTS_DIR / 'item2idx.json'
@@ -385,30 +437,48 @@ if __name__ == "__main__":
         json.dump({str(k): v for k, v in item2idx.items()}, f)
     logger.info("Saved item2idx: %s (%d items)", item2idx_path, len(item2idx))
 
+    output_metadata = {
+        "checkpoint": file_metadata(
+            out_path,
+            root=ROOT,
+            include_sha256=True,
+            sha256_limit_bytes=hash_limit_bytes,
+        ),
+        "item2idx": file_metadata(
+            item2idx_path,
+            root=ROOT,
+            include_sha256=True,
+            sha256_limit_bytes=hash_limit_bytes,
+        ),
+        "metrics": file_metadata(
+            run_dir / "metrics.jsonl",
+            root=ROOT,
+            include_sha256=True,
+            sha256_limit_bytes=hash_limit_bytes,
+        ),
+    }
+    if trainer.best_epoch > 0 and best_path.exists():
+        output_metadata["best_checkpoint"] = file_metadata(
+            best_path,
+            root=ROOT,
+            include_sha256=True,
+            sha256_limit_bytes=hash_limit_bytes,
+        )
+
     update_experiment_manifest(
         run_dir,
         {
             "stages": {
                 "train": {
-                    "outputs": {
-                        "checkpoint": file_metadata(
-                            out_path,
-                            root=ROOT,
-                            include_sha256=True,
-                            sha256_limit_bytes=hash_limit_bytes,
-                        ),
-                        "item2idx": file_metadata(
-                            item2idx_path,
-                            root=ROOT,
-                            include_sha256=True,
-                            sha256_limit_bytes=hash_limit_bytes,
-                        ),
-                        "metrics": file_metadata(
-                            run_dir / "metrics.jsonl",
-                            root=ROOT,
-                            include_sha256=True,
-                            sha256_limit_bytes=hash_limit_bytes,
-                        ),
+                    "outputs": output_metadata,
+                    "early_stopping": {
+                        "monitor": "Recall@10",
+                        "patience": int(args.patience),
+                        "best_epoch": int(trainer.best_epoch),
+                        "best_recall_at_10": None
+                        if trainer.best_epoch == 0
+                        else float(trainer.best_recall),
+                        "stopped_early": bool(stopped_early),
                     },
                     "final_metrics": final_metrics,
                 }

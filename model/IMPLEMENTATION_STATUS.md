@@ -1,6 +1,6 @@
 # Model Implementation Status
 
-검토일: 2026-05-06
+검토일: 2026-05-10
 
 이 문서는 별도 파이프라인을 붙이기 전에 현재 model 파트의 구현 범위, 산출물 상태, 추후 보완 후보를 한곳에서 확인하기 위한 체크 파일이다.
 
@@ -21,12 +21,12 @@
 | 입력 데이터 로드/필터링 | [~] | `common/dataset.py` | `movies_processed_drop.csv`, `ratings_drop_processed.jsonl` 로드, rating z-score 기반 positive 필터링, 활동 기간/상호작용 수 필터링 | 실제 파일과 스키마 일치 검증 로직은 별도 없음 |
 | 시계열 split/Dataset | [~] | `common/dataset.py` | global timestamp split, sliding window 샘플 생성, padding, 장르 multi-hot tensor 생성 | 평가 프로토콜이 next-item last label 중심이라 negative sampling/후보군 정의 확인 필요 |
 | SASRec + Contrastive Loss | [x] | `common/sasrec.py` | item/genre/position embedding, causal Transformer encoder, weight tying score, item masking augmentation, InfoNCE loss | 모델 구조 자체는 구현됨 |
-| 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, Recall@10/NDCG@10, checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler/early stopping, 튜닝 sweep는 없음 |
+| 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, loss/CE/CL 분리 기록, Recall@10 기준 early stopping, 마지막/best checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler, 튜닝 sweep는 없음 |
 | 히든스테이트 추출 | [~] | `batch/extract.py` | checkpoint/item2idx 재사용, train split 대상 hidden state 추출, `embeddings.npz` 저장, run metadata 기록 코드 | overlap window 중복 timepoint 처리 방침 결정 필요 |
 | canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록 | 아직 cluster/replay/dashboard downstream 입력으로 연결되지는 않음 |
 | online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | interest assign / refit trigger | [x] | `stream/interest_assign.py` | active online embedding을 user별 interest state에 cosine nearest-interest로 assign하고, no-interest/pending/outlier/event-count 기준 refit request를 기록 | 실제 refit은 Phase 4-1 이후 범위 |
-| triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | 로컬 `.venv`는 RAPIDS/cuML `25.10.0` 조합에서 GPU smoke 통과 |
+| triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | `auto`는 cuML/CUDA runtime 가능 시 GPU, 불가하거나 auto GPU refit 실패 시 CPU fallback |
 | replay engine / closed-loop demo | [x] | `replay/cpp/rating_replay.cpp`, `stream/replay_pipeline.py` | ML-32M user history를 timestamp-sorted replay input으로 만들고, Phase 3~4-1 CLI를 micro-batch로 호출해 `outputs/stream/replay_demo/`에 격리된 artifact를 기록 | Phase 6 dashboard는 내부 구현이 아니라 `docs/streaming-replay-dashboard-contract.md`와 summary/JSONL artifact만 읽는다 |
 | 유저별 클러스터링 | [~] | `batch/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz` 저장 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
@@ -38,6 +38,7 @@
 ## 현재 산출물 확인
 
 - `outputs/sasrec_cl.pt`: 학습 checkpoint 존재. 로그 기준 2026-04-08 09:34:52부터 20 epoch 학습, epoch 20 validation `Recall@10=0.0406`, `NDCG@10=0.0197`.
+- `outputs/sasrec_cl_best.pt`: 최신 `batch/train.py`는 validation `Recall@10`이 개선될 때 best checkpoint를 저장한다. 기존 산출물 존재 여부는 최신 코드로 재학습 후 확인한다.
 - `outputs/item2idx.json`: 학습 vocabulary 존재. 로그 기준 item 수 55,726.
 - `outputs/embeddings.npz`: shape `(763772, 128)`, dtype `float32`, unique user 622.
 - `outputs/canonical_embeddings.npz`: 기본 출력 경로. Phase 2 smoke test에서는 `outputs/test_canonical_embeddings.npz`로 별도 저장해 검증했다.
@@ -159,7 +160,7 @@ Phase 2 smoke test:
 1. `outputs/stream/refit_requests.jsonl`에서 open request를 읽는다.
 2. `outputs/stream/online_embeddings.npz`에서 request user의 active embedding 전체를 모은다.
 3. `--cluster-backend auto|gpu|cpu`로 backend를 선택한다.
-4. `auto`는 cuML import가 가능하면 GPU, 아니면 CPU fallback을 사용한다.
+4. `auto`는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용하고, GPU가 불가하거나 auto GPU refit 실행이 실패하면 CPU fallback을 사용한다.
 5. CPU fallback은 `umap-learn + hdbscan`이다.
 6. user별 active embedding 전체를 UMAP + HDBSCAN으로 clustering한다.
 7. noise label `-1`은 interest vector에서 제외한다.
@@ -169,7 +170,7 @@ Phase 2 smoke test:
 
 Phase 4-1 CPU fallback smoke:
 
-- `--cluster-backend auto`는 로컬에서 `cuml` 미설치로 CPU fallback을 선택했다.
+- 초기 CPU fallback smoke에서는 `cuml` 미설치 환경에서 `--cluster-backend auto`가 CPU fallback을 선택했다.
 - user 28 active embedding 1,579개를 refit해 interest 21개를 생성했다.
 - noise row 43개는 interest vector에서 제외했다.
 - refit 후 pending 0, processed 1,579, `refitRequired=false`, `refitRequestOpen=false`를 확인했다.
@@ -206,6 +207,18 @@ Phase 5 smoke:
 - refit requests opened/closed: 2 / 2
 - backend selected by refit events: GPU
 - elapsed: 약 11.18초
+
+2026-05-10 E2E smoke 재검증:
+
+- command: `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id e2e_streaming_smoke_auto_fallback`
+- status: completed
+- input/processed events: 30 / 30
+- unique users: 1
+- micro-batches: 2
+- assignment records: 19
+- refit requests opened/closed/skipped: 2 / 2 / 0
+- backend selected by refit events: CPU fallback (`cudaErrorInsufficientDriver`)
+- elapsed: 약 32.40초
 
 ## 현재 정리 방향
 

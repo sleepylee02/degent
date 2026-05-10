@@ -13,6 +13,16 @@
 
 ## Done
 
+- Streaming E2E Handoff Doc
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_e2e_handoff_doc.md`
+  - files: `docs/streaming-e2e-pipeline.md`, `docs/data-flow.md`, `docs/part-contracts.md`, `model/README.md`, `todo.md`
+  - status: e2e smoke 실행 방법, 현재 검증 결과, 단계별 데이터 전달, artifact map, 기능 확장 지점을 `docs/streaming-e2e-pipeline.md`에 문서화
+- Streaming E2E Smoke Stabilization
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_e2e_smoke_stabilization.md`
+  - files: `model/stream/cluster_refit.py`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `todo.md`
+  - status: `--cluster-backend auto`가 CUDA runtime/refit 실패 시 CPU fallback으로 진행되도록 보완. `e2e_streaming_smoke_auto_fallback` replay smoke에서 30/30 events, micro-batch 2개, refit open/closed 2/2, summary completed 확인
 - 파트별 협업 계약 문서화
   - owner: sleepylee / LLM
   - files: `docs/part-contracts.md`, `docs/data-flow.md`, `PROJECT_GUIDE.md`, `todo.md`

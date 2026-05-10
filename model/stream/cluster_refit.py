@@ -96,18 +96,27 @@ def load_open_refit_requests(path: Path, *, user_id: int | None = None) -> dict[
     return open_requests
 
 
+def probe_gpu_backend() -> None:
+    import cuml  # noqa: F401
+    import cupy as cp
+
+    device_count = int(cp.cuda.runtime.getDeviceCount())
+    if device_count <= 0:
+        raise RuntimeError("No CUDA devices are visible.")
+
+
 def choose_backend(requested: str) -> tuple[str, str | None]:
     if requested == "cpu":
         return "cpu", None
 
     try:
-        import cuml  # noqa: F401
-
+        probe_gpu_backend()
         return "gpu", None
     except Exception as exc:
+        reason = f"gpu_unavailable: {exc.__class__.__name__}: {exc}"
         if requested == "gpu":
-            raise RuntimeError("Requested GPU backend, but RAPIDS cuML is not importable.") from exc
-        return "cpu", f"cuml_unavailable: {exc.__class__.__name__}: {exc}"
+            raise RuntimeError("Requested GPU backend, but RAPIDS cuML or CUDA runtime is unavailable.") from exc
+        return "cpu", reason
 
 
 def to_numpy(value: Any) -> np.ndarray:
@@ -269,6 +278,43 @@ def run_refit(
     )
 
 
+def run_refit_with_auto_fallback(
+    embeddings: np.ndarray,
+    *,
+    requested_backend: str,
+    selected_backend: str,
+    fallback_reason: str | None,
+    min_cluster_size: int,
+    cluster_dim: int,
+    random_state: int,
+    logger: Any,
+) -> tuple[list[Interest], dict[str, Any], str, str | None]:
+    try:
+        interests, summary = run_refit(
+            embeddings,
+            backend=selected_backend,
+            min_cluster_size=min_cluster_size,
+            cluster_dim=cluster_dim,
+            random_state=random_state,
+        )
+        return interests, summary, selected_backend, fallback_reason
+    except Exception as exc:
+        if requested_backend != "auto" or selected_backend != "gpu":
+            raise
+
+        runtime_fallback_reason = f"gpu_refit_failed: {exc.__class__.__name__}: {exc}"
+        logger.warning("GPU refit failed under auto backend; falling back to CPU: %s", runtime_fallback_reason)
+        interests, summary = run_refit(
+            embeddings,
+            backend="cpu",
+            min_cluster_size=min_cluster_size,
+            cluster_dim=cluster_dim,
+            random_state=random_state,
+        )
+        summary["autoFallbackReason"] = runtime_fallback_reason
+        return interests, summary, "cpu", runtime_fallback_reason
+
+
 def update_state_after_refit(
     state: InterestState,
     *,
@@ -406,13 +452,20 @@ if __name__ == "__main__":
         user_embeddings = np.stack([row["embedding"] for row in user_rows]).astype(np.float32)
         active_raw_event_ids = [int(row["rawEventId"]) for row in user_rows]
         user_start = time.time()
-        interests, cluster_summary = run_refit(
+        interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit_with_auto_fallback(
             user_embeddings,
-            backend=selected_backend,
+            requested_backend=args.cluster_backend,
+            selected_backend=selected_backend,
+            fallback_reason=fallback_reason,
             min_cluster_size=args.min_cluster_size,
             cluster_dim=args.cluster_dim,
             random_state=args.random_state,
+            logger=logger,
         )
+        selected_backend = actual_backend
+        fallback_reason = actual_fallback_reason
+        base_event["backendSelected"] = selected_backend
+        base_event["backendFallbackReason"] = fallback_reason
         elapsed = time.time() - user_start
         update_state_after_refit(state, interests=interests, active_raw_event_ids=active_raw_event_ids)
         save_interest_state(state, state_path)
