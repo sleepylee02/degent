@@ -1,0 +1,2 @@
+"""Batch model pipeline entrypoints."""
+

@@ -1,0 +1,10 @@
+2026-05-06 12:56:15 | INFO | Log file: /home/hungrylee/Desktop/0proj/degent/outputs/logs/cluster_refit_20260506_125615.log
+2026-05-06 12:56:16 | INFO | Experiment run id: phase4_1_cluster_refit_gpu_smoke
+2026-05-06 12:56:16 | INFO | Experiment metadata directory: /home/hungrylee/Desktop/0proj/degent/experiments/model/phase4_1_cluster_refit_gpu_smoke
+2026-05-06 12:56:16 | INFO | Online embeddings input: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_online_embeddings.npz
+2026-05-06 12:56:16 | INFO | Refit requests input: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_refit_requests_no_interest.jsonl
+2026-05-06 12:56:16 | INFO | Interest state directory: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_interest_states_gpu
+2026-05-06 12:56:16 | INFO | Refit events output: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_refit_events_gpu.jsonl
+2026-05-06 12:56:16 | INFO | Cluster backend requested=gpu selected=gpu fallback_reason=None
+2026-05-06 12:56:16 | INFO | Open refit requests: 1 selected=1
+2026-05-06 12:56:17 | INFO | Loaded active online embedding rows: 1579 users=1 dim=128

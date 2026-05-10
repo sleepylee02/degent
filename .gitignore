@@ -1,4 +1,4 @@
-# Local AI assistant files
+# Local AI assistant scratch/config
 .codex
 .codex/
 .claude/
@@ -24,6 +24,9 @@ __pycache__/
 .venv/
 *.log
 
+# Local build outputs
+replay/bin/
+
 # Local dataset payloads
 data/**/raw/**
 
@@ -41,6 +44,3 @@ outputs/*
 !outputs/readme.md
 !outputs/logs/
 !outputs/logs/**
-
-# Temporal Module
-build_item2idx.py

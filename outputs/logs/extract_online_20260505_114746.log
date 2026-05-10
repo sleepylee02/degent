@@ -1,0 +1,11 @@
+2026-05-05 11:47:46 | INFO | Log file: /home/hungrylee/Desktop/0proj/degent/outputs/logs/extract_online_20260505_114746.log
+2026-05-05 11:47:46 | INFO | Experiment run id: phase3_online_smoke
+2026-05-05 11:47:46 | INFO | Experiment metadata directory: /home/hungrylee/Desktop/0proj/degent/experiments/model/phase3_online_smoke
+2026-05-05 11:47:46 | INFO | State directory: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_user_states
+2026-05-05 11:47:46 | INFO | Online embedding output: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_online_embeddings.npz
+2026-05-05 11:47:46 | INFO | Event log output: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_online_embedding_events.jsonl
+2026-05-05 11:47:46 | INFO | Selected torch device: cuda:0 (NVIDIA GeForce RTX 3090)
+2026-05-05 11:47:46 | INFO | PyTorch version: 2.5.1+cu121
+2026-05-05 11:47:46 | INFO | CUDA device count: 1
+2026-05-05 11:47:46 | INFO | CUDA current device index: 0
+2026-05-05 11:47:47 | INFO | Loaded movies: 77647 | unique genres: 19

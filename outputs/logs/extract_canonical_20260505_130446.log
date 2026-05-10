@@ -1,0 +1,19 @@
+2026-05-05 13:04:46 | INFO | Log file: /home/hungrylee/Desktop/0proj/degent/outputs/logs/extract_canonical_20260505_130446.log
+2026-05-05 13:04:46 | INFO | Experiment run id: phase3_online_smoke
+2026-05-05 13:04:46 | INFO | Experiment metadata directory: /home/hungrylee/Desktop/0proj/degent/experiments/model/phase3_online_smoke
+2026-05-05 13:04:46 | INFO | Outputs directory: /home/hungrylee/Desktop/0proj/degent/outputs
+2026-05-05 13:04:46 | INFO | Movies input: /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv
+2026-05-05 13:04:46 | INFO | Ratings input: /home/hungrylee/Desktop/0proj/degent/data/ratings_drop_processed.jsonl
+2026-05-05 13:04:46 | INFO | Checkpoint input: /home/hungrylee/Desktop/0proj/degent/outputs/sasrec_cl.pt
+2026-05-05 13:04:46 | INFO | item2idx input: /home/hungrylee/Desktop/0proj/degent/outputs/item2idx.json
+2026-05-05 13:04:46 | INFO | Canonical output: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_canonical_user28.npz
+2026-05-05 13:04:46 | INFO | Selected torch device: cuda:0 (NVIDIA GeForce RTX 3090)
+2026-05-05 13:04:46 | INFO | PyTorch version: 2.5.1+cu121
+2026-05-05 13:04:46 | INFO | CUDA device count: 1
+2026-05-05 13:04:46 | INFO | CUDA current device index: 0
+2026-05-05 13:04:48 | INFO | Loaded movies: 77647 | unique genres: 19
+2026-05-05 13:04:48 | INFO | Loaded item2idx: 55726 items
+2026-05-05 13:04:48 | INFO | Canonical load stats: {'users_seen': 28, 'filtered_users': 1, 'kept_users': 1, 'total_positive_events': 1579, 'kept_events': 1579, 'skipped_unknown_items': 0, 'skipped_unknown_item_users': 0}
+2026-05-05 13:04:48 | INFO | Canonical dataset | users=1 samples=1579 batches=50 items=55726
+2026-05-05 13:04:48 | INFO | Loaded checkpoint onto cuda:0 (NVIDIA GeForce RTX 3090)
+2026-05-05 13:04:49 | INFO | Saved canonical embeddings: /home/hungrylee/Desktop/0proj/degent/outputs/stream/test_canonical_user28.npz

@@ -1,0 +1,11 @@
+2026-05-10 16:43:17 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/cluster_refit_20260510_164317.log
+2026-05-10 16:43:17 | INFO | Experiment run id: phase5_replay_multiuser_cpu_check_20260510
+2026-05-10 16:43:17 | INFO | Experiment metadata directory: /home/sleepylee/Desktop/1proj/a.live/degent/experiments/model/phase5_replay_multiuser_cpu_check_20260510
+2026-05-10 16:43:17 | INFO | Online embeddings input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/online_embeddings.npz
+2026-05-10 16:43:17 | INFO | Refit requests input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/refit_requests.jsonl
+2026-05-10 16:43:17 | INFO | Interest state directory: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/interest_states
+2026-05-10 16:43:17 | INFO | Refit events output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/refit_events.jsonl
+2026-05-10 16:43:17 | INFO | Cluster backend requested=cpu selected=cpu fallback_reason=None
+2026-05-10 16:43:17 | INFO | Open refit requests: 1 selected=1
+2026-05-10 16:43:17 | INFO | Loaded active online embedding rows: 35 users=2 dim=128
+2026-05-10 16:43:26 | INFO | Closed refit request: {'recordedAt': '2026-05-10T16:43:17+09:00', 'runId': 'phase5_replay_multiuser_cpu_check_20260510', 'userId': 1, 'request': {'recordedAt': '2026-05-10T16:43:16+09:00', 'runId': 'phase5_replay_multiuser_cpu_check_20260510', 'userId': 1, 'status': 'open', 'reasons': ['no_interest_pending_events'], 'pendingRawEventCount': 4, 'assignedSinceLastRefit': 0, 'outlierSinceLastRefit': 0, 'refitMinEvents': 3, 'assignTriggerCount': 3, 'outlierTriggerCount': 3}, 'statePath': 'outputs/stream/replay_multiuser_check_20260510/interest_states/1.json', 'backendRequested': 'cpu', 'backendSelected': 'cpu', 'backendFallbackReason': None, 'activeEmbeddingRows': 4, 'status': 'closed', 'refitElapsedSec': 9.068083763122559, 'interestCount': 1, 'processedRawEventCount': 4, 'clusterSummary': {'nClusters': 0, 'interestCount': 1, 'noiseCount': 4, 'fallbackUsed': True, 'labelCounts': {'-1': 4}, 'clusterSizes': {}, 'backend': 'cpu', 'reducedDim': 2, 'nNeighbors': 3}}

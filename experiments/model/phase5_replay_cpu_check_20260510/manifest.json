@@ -1,0 +1,432 @@
+{
+  "created_at": "2026-05-10T16:32:43+09:00",
+  "run_id": "phase5_replay_cpu_check_20260510",
+  "git": {
+    "commit": "26c1471e1b7ffbc31344ceed0a5afa37fb985ded",
+    "branch": "streaming",
+    "dirty": true,
+    "status_short": [
+      "M experiments/model/phase5_replay_smoke/manifest.json",
+      "?? experiments/model/phase5_replay_cpu_check_20260510/",
+      "?? outputs/logs/cluster_refit_20260510_163213.log",
+      "?? outputs/logs/cluster_refit_20260510_163249.log",
+      "?? outputs/logs/cluster_refit_20260510_163311.log",
+      "?? outputs/logs/extract_online_20260510_163243.log",
+      "?? outputs/logs/extract_online_20260510_163306.log",
+      "?? outputs/logs/interest_assign_20260510_163247.log",
+      "?? outputs/logs/interest_assign_20260510_163310.log",
+      "?? outputs/logs/replay_pipeline_20260510_163240.log"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/extract_online.py --run-id phase5_replay_cpu_check_20260510 --movies /home/sleepylee/Desktop/1proj/a.live/degent/data/movies_processed_drop.csv --checkpoint /home/sleepylee/Desktop/1proj/a.live/degent/outputs/sasrec_cl.pt --item2idx /home/sleepylee/Desktop/1proj/a.live/degent/outputs/item2idx.json --state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/user_states --output /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/online_embeddings.npz --event-log /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/online_embedding_events.jsonl --event-jsonl /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/batches/batch_000001.jsonl --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256",
+      "log": {
+        "path": "outputs/logs/extract_online_20260510_163306.log",
+        "exists": true,
+        "size_bytes": 833,
+        "mtime_ns": 1778398386328811130
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862056883703
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962957207895
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775609561000000000,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1775667841000000000,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775374126342616514,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775374185724340667,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/stream/replay_check_cpu_20260510/user_states",
+        "output": "outputs/stream/replay_check_cpu_20260510/online_embeddings.npz",
+        "event_log": "outputs/stream/replay_check_cpu_20260510/online_embedding_events.jsonl",
+        "bootstrap_user_id": null,
+        "event_jsonl": "/home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/batches/batch_000001.jsonl",
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 256
+      },
+      "runtime": {
+        "device": "cpu",
+        "device_label": "cpu",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 28,
+            "statePath": "outputs/stream/replay_check_cpu_20260510/user_states/28.json",
+            "rawEventCount": 30,
+            "positiveEventCount": 12,
+            "activeEventCount": 12,
+            "droppedEventCount": 18,
+            "skippedUnknownItems": 0,
+            "ratingMean": 3.2333333333333334,
+            "ratingStd": 1.1455226851626388,
+            "positiveReason": "zscore",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 12
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_check_cpu_20260510/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 10618,
+          "mtime_ns": 1778398388313683002,
+          "sha256": "6d9c678ca4bdfeae5a6226beaae3a3ed29d75c81e71b489075cb8c435cced511"
+        },
+        "event_log": {
+          "path": "outputs/stream/replay_check_cpu_20260510/online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 1748,
+          "mtime_ns": 1778398388313683002,
+          "sha256": "5c8a4d03ba8a4833b23f668bd92824058409c87b99dd39a11b191baa7631529d"
+        },
+        "metrics": {
+          "path": "experiments/model/phase5_replay_cpu_check_20260510/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 1206,
+          "mtime_ns": 1778398388313683002,
+          "sha256": "eb7aa5d5d23444a8e1baa11b0d41a3f1f2715c0e7ab37d3790a8026066307382"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 15,
+        "embedding_rows": 12,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 12,
+        "nan_embedding_rows": 0,
+        "max_history_len": 12,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true
+      }
+    },
+    "interest_assign": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/interest_assign.py --run-id phase5_replay_cpu_check_20260510 --embeddings /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/online_embeddings.npz --interest-state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/interest_states --assignments /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/interest_assignments.jsonl --refit-requests /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3",
+      "log": {
+        "path": "outputs/logs/interest_assign_20260510_163310.log",
+        "exists": true,
+        "size_bytes": 1004,
+        "mtime_ns": 1778398390312893742
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_check_cpu_20260510/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 10618,
+          "mtime_ns": 1778398388313683002
+        }
+      },
+      "assignment_config": {
+        "interest_state_dir": "outputs/stream/replay_check_cpu_20260510/interest_states",
+        "assignments": "outputs/stream/replay_check_cpu_20260510/interest_assignments.jsonl",
+        "refit_requests": "outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl",
+        "similarity_threshold": 0.2,
+        "refit_min_events": 3,
+        "assign_trigger_count": 3,
+        "outlier_trigger_count": 3
+      },
+      "data_summary": {
+        "active_embedding_rows": 12,
+        "processed_users": 1,
+        "user_summaries": [
+          {
+            "userId": 28,
+            "inputRows": 12,
+            "interestCount": 2,
+            "pendingBefore": 0,
+            "pendingAfter": 0,
+            "processedBefore": 7,
+            "processedAfter": 12,
+            "refitRequired": true,
+            "refitReasons": [
+              "assigned_since_last_refit"
+            ],
+            "statuses": {
+              "already_processed": 7,
+              "assigned": 5
+            },
+            "statePath": "outputs/stream/replay_check_cpu_20260510/interest_states/28.json"
+          }
+        ]
+      },
+      "outputs": {
+        "assignments": {
+          "path": "outputs/stream/replay_check_cpu_20260510/interest_assignments.jsonl",
+          "exists": true,
+          "size_bytes": 5868,
+          "mtime_ns": 1778398390339574585,
+          "sha256": "62f2f59e001457376f16d37abf4fe626f20d92244cb13147043601f1826dbbf8"
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 639,
+          "mtime_ns": 1778398390339574585,
+          "sha256": "5e39e440e98ec6e694e93f9bce5ed9593392fdb2c8cb1fe71e590089e96b6d50"
+        },
+        "metrics": {
+          "path": "experiments/model/phase5_replay_cpu_check_20260510/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 1446,
+          "mtime_ns": 1778398390339574585,
+          "sha256": "6c79472a95384cbc7cde9aeca98c3777974a1c67b18eecc827ef64d494400d4a"
+        }
+      },
+      "summary_metrics": {
+        "stage": "interest_assign",
+        "input_rows": 12,
+        "processed_users": 1,
+        "assignment_records": 12,
+        "refit_requests": 1,
+        "status_counts": {
+          "pending_no_interest": 2,
+          "pending_refit_required": 5,
+          "already_processed": 7,
+          "assigned": 5
+        },
+        "embedding_dim": 128
+      }
+    },
+    "cluster_refit": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/cluster_refit.py --run-id phase5_replay_cpu_check_20260510 --embeddings /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/online_embeddings.npz --refit-requests /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl --interest-state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/interest_states --refit-events /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_check_cpu_20260510/refit_events.jsonl --cluster-backend cpu --refit-min-events 3 --min-cluster-size 2 --cluster-dim 3 --user-id 28",
+      "log": {
+        "path": "outputs/logs/cluster_refit_20260510_163311.log",
+        "exists": true,
+        "size_bytes": 1087,
+        "mtime_ns": 1778398391912109794
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_check_cpu_20260510/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 10618,
+          "mtime_ns": 1778398388313683002
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 639,
+          "mtime_ns": 1778398390339574585
+        }
+      },
+      "refit_config": {
+        "interest_state_dir": "outputs/stream/replay_check_cpu_20260510/interest_states",
+        "refit_events": "outputs/stream/replay_check_cpu_20260510/refit_events.jsonl",
+        "cluster_backend_requested": "cpu",
+        "cluster_backend_selected": "cpu",
+        "backend_fallback_reason": null,
+        "refit_min_events": 3,
+        "min_cluster_size": 2,
+        "cluster_dim": 3,
+        "random_state": 42,
+        "user_id": 28,
+        "limit_users": null
+      },
+      "data_summary": {
+        "active_embedding_rows": 12,
+        "active_embedding_users": 1,
+        "user_summaries": [
+          {
+            "recordedAt": "2026-05-10T16:33:11+09:00",
+            "runId": "phase5_replay_cpu_check_20260510",
+            "userId": 28,
+            "request": {
+              "recordedAt": "2026-05-10T16:33:10+09:00",
+              "runId": "phase5_replay_cpu_check_20260510",
+              "userId": 28,
+              "status": "open",
+              "reasons": [
+                "assigned_since_last_refit"
+              ],
+              "pendingRawEventCount": 0,
+              "assignedSinceLastRefit": 5,
+              "outlierSinceLastRefit": 0,
+              "refitMinEvents": 3,
+              "assignTriggerCount": 3,
+              "outlierTriggerCount": 3
+            },
+            "statePath": "outputs/stream/replay_check_cpu_20260510/interest_states/28.json",
+            "backendRequested": "cpu",
+            "backendSelected": "cpu",
+            "backendFallbackReason": null,
+            "activeEmbeddingRows": 12,
+            "status": "closed",
+            "refitElapsedSec": 9.669817209243774,
+            "interestCount": 2,
+            "processedRawEventCount": 12,
+            "clusterSummary": {
+              "nClusters": 2,
+              "interestCount": 2,
+              "noiseCount": 1,
+              "fallbackUsed": false,
+              "labelCounts": {
+                "-1": 1,
+                "0": 4,
+                "1": 7
+              },
+              "clusterSizes": {
+                "0": 4,
+                "1": 7
+              },
+              "backend": "cpu",
+              "reducedDim": 3,
+              "nNeighbors": 11
+            }
+          }
+        ]
+      },
+      "outputs": {
+        "refit_events": {
+          "path": "outputs/stream/replay_check_cpu_20260510/refit_events.jsonl",
+          "exists": true,
+          "size_bytes": 1916,
+          "mtime_ns": 1778398401619470443,
+          "sha256": "827e1e27b1e21e6860b337115488a143f2d1c1095f271fdc4ef06e767b043531"
+        },
+        "metrics": {
+          "path": "experiments/model/phase5_replay_cpu_check_20260510/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 1759,
+          "mtime_ns": 1778398401619470443,
+          "sha256": "33d4e1a6d677b106776bd1ccdf0a3734ded369e4d45398a11e1c3691f0c77b8f"
+        }
+      },
+      "summary_metrics": {
+        "stage": "cluster_refit",
+        "open_requests": 1,
+        "selected_requests": 1,
+        "refit_count": 1,
+        "skipped_count": 0,
+        "cluster_backend_requested": "cpu",
+        "cluster_backend_selected": "cpu",
+        "backend_fallback_reason": null,
+        "elapsed_sec": 9.671204805374146,
+        "embedding_dim": 128
+      }
+    },
+    "replay_pipeline": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/replay_pipeline.py --reset-output --output-root outputs/stream/replay_check_cpu_20260510 --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --run-id phase5_replay_cpu_check_20260510",
+      "log": {
+        "path": "outputs/logs/replay_pipeline_20260510_163240.log",
+        "exists": true,
+        "size_bytes": 5769,
+        "mtime_ns": 1778398390868225435
+      },
+      "inputs": {
+        "replay_input_events": {
+          "path": "outputs/stream/replay_check_cpu_20260510/replay_input_events.jsonl",
+          "exists": true,
+          "size_bytes": 6038,
+          "mtime_ns": 1778398362548055044,
+          "sha256": "ba31e9daec2ae235efee2dd47036f03ca7f4e839ff861fb4be14af4b83f5377b"
+        }
+      },
+      "outputs": {
+        "replay_summary": {
+          "path": "outputs/stream/replay_check_cpu_20260510/replay_summary.json",
+          "exists": true,
+          "size_bytes": 1046,
+          "mtime_ns": 1778398403559549993,
+          "sha256": "8934e237ce981792fca9eea1e0ed56fa0622c189d39fcc526d1056de973e9b1d"
+        },
+        "replay_events": {
+          "path": "outputs/stream/replay_check_cpu_20260510/replay_events.jsonl",
+          "exists": true,
+          "size_bytes": 1574,
+          "mtime_ns": 1778398403559549993,
+          "sha256": "87b5884f4689cb1a5c59bbe6c38784a5ea973019339cf5e22d2b6264265ca9f0"
+        }
+      },
+      "summary_metrics": {
+        "version": "stream_replay_summary.v1",
+        "runId": "phase5_replay_cpu_check_20260510",
+        "status": "completed",
+        "startedAt": "2026-05-10T16:32:42+09:00",
+        "endedAt": "2026-05-10T16:33:23+09:00",
+        "elapsedSec": 41.00812244415283,
+        "inputEvents": 30,
+        "processedEvents": 30,
+        "uniqueUsers": 1,
+        "microBatchSize": 15,
+        "refitBackend": "cpu",
+        "totals": {
+          "activeEmbeddingRows": 19,
+          "assignmentRecords": 19,
+          "refitRequestsOpened": 2,
+          "refitClosed": 2,
+          "refitSkipped": 0
+        },
+        "paths": {
+          "replayEvents": "outputs/stream/replay_check_cpu_20260510/replay_events.jsonl",
+          "onlineEmbeddings": "outputs/stream/replay_check_cpu_20260510/online_embeddings.npz",
+          "interestAssignments": "outputs/stream/replay_check_cpu_20260510/interest_assignments.jsonl",
+          "refitRequests": "outputs/stream/replay_check_cpu_20260510/refit_requests.jsonl",
+          "refitEvents": "outputs/stream/replay_check_cpu_20260510/refit_events.jsonl",
+          "interestStateDir": "outputs/stream/replay_check_cpu_20260510/interest_states"
+        }
+      }
+    }
+  },
+  "updated_at": "2026-05-10T16:33:23+09:00"
+}

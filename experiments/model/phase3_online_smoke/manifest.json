@@ -1,0 +1,306 @@
+{
+  "created_at": "2026-05-05T11:47:46+09:00",
+  "run_id": "phase3_online_smoke",
+  "git": {
+    "commit": "3c00f9d42e29d067ad51673432d9e31d077decc2",
+    "branch": "jy_experimentlab",
+    "dirty": true,
+    "status_short": [
+      "M PROJECT_GUIDE.md",
+      " M README.md",
+      " M docs/artifacts.md",
+      " M docs/data-flow.md",
+      " M model/IMPLEMENTATION_STATUS.md",
+      " M model/README.md",
+      " M model/stream/extract_online.py",
+      " M outputs/readme.md",
+      " M todo.md",
+      "?? experiments/model/phase3_online_smoke/",
+      "?? model/stream/state.py",
+      "?? outputs/logs/extract_canonical_20260505_130446.log",
+      "?? outputs/logs/extract_online_20260505_114746.log",
+      "?? outputs/logs/extract_online_20260505_122435.log",
+      "?? outputs/logs/extract_online_20260506_104730.log",
+      "?? outputs/logs/extract_online_20260506_105007.log",
+      "?? plan/done/streaming_pipeline_phase3_online_embedding_state.md"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/extract_online.py --run-id phase3_online_smoke --bootstrap-user-id 28 --output outputs/stream/test_online_embeddings.npz --state-dir outputs/stream/test_user_states --event-log outputs/stream/test_online_embedding_events.jsonl --batch-size 32 --compare-canonical outputs/stream/test_canonical_user28.npz",
+      "log": {
+        "path": "outputs/logs/extract_online_20260506_105007.log",
+        "exists": true,
+        "size_bytes": 709,
+        "mtime_ns": 1778032207939497109
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862000000000
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775609561305994691,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1777951465096547396,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/stream/test_user_states",
+        "output": "outputs/stream/test_online_embeddings.npz",
+        "event_log": "outputs/stream/test_online_embedding_events.jsonl",
+        "bootstrap_user_id": 28,
+        "event_jsonl": null,
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 32
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 28,
+            "statePath": "outputs/stream/test_user_states/28.json",
+            "rawEventCount": 2835,
+            "positiveEventCount": 1579,
+            "activeEventCount": 1579,
+            "droppedEventCount": 1256,
+            "skippedUnknownItems": 0,
+            "ratingMean": 3.420458553791887,
+            "ratingStd": 0.9324283980113509,
+            "positiveReason": "zscore",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 1579
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/test_online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 1063642,
+          "mtime_ns": 1778032210212482579,
+          "sha256": "f4988bc814d5d8d4cc2f46858aa835a86b2c1cc5f9c89b46bbaee69fcf162cda"
+        },
+        "event_log": {
+          "path": "outputs/stream/test_online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 3076,
+          "mtime_ns": 1778032210985477639,
+          "sha256": "5e49d07f6a49ba6f31f9d2a772c95a4f825086a8ff741ea3b08043caabece439"
+        },
+        "metrics": {
+          "path": "experiments/model/phase3_online_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 1872,
+          "mtime_ns": 1778032210985477639,
+          "sha256": "603bba3a5d93b24b558c240361de1c6d25db929c45581c6b4f484554bfb7afe5"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 0,
+        "embedding_rows": 1579,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 1579,
+        "nan_embedding_rows": 0,
+        "max_history_len": 100,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true,
+        "canonical_compare": {
+          "canonicalPath": "/home/hungrylee/Desktop/0proj/degent/outputs/stream/test_canonical_user28.npz",
+          "matchedRows": 1579,
+          "allcloseRows": 1579,
+          "allMatchedRowsClose": true,
+          "maxAbsDiff": 0.0,
+          "atol": 1e-05,
+          "rtol": 1e-05
+        }
+      }
+    },
+    "extract_canonical": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/batch/extract_canonical.py --run-id phase3_online_smoke --limit-users 1 --batch-size 32 --num-workers 0 --output outputs/stream/test_canonical_user28.npz",
+      "log": {
+        "path": "outputs/logs/extract_canonical_20260505_130446.log",
+        "exists": true,
+        "size_bytes": 983,
+        "mtime_ns": 1777953886916182105
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862000000000
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775609561305994691,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1777951465096547396,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "extraction_config": {
+        "batch_size": 32,
+        "num_workers": 0,
+        "min_interactions": 1000,
+        "min_activity_days": 30,
+        "limit_users": 1,
+        "embedding_contract": "canonical_event_v1"
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "canonical_users": 1,
+        "samples": 1579,
+        "batches": 50,
+        "users_seen": 28,
+        "filtered_users": 1,
+        "kept_users": 1,
+        "total_positive_events": 1579,
+        "kept_events": 1579,
+        "skipped_unknown_items": 0,
+        "skipped_unknown_item_users": 0
+      },
+      "outputs": {
+        "canonical_embeddings": {
+          "path": "outputs/stream/test_canonical_user28.npz",
+          "exists": true,
+          "size_bytes": 1012612,
+          "mtime_ns": 1777953889158167932,
+          "sha256": "9801f54fa7883cfd4f7fc8cbb6f56e62f88f39b42ac0530fb2de5535c5ab7c08"
+        },
+        "metrics": {
+          "path": "experiments/model/phase3_online_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 738,
+          "mtime_ns": 1777953889158167932,
+          "sha256": "e61fc0934f09cafcd125ef9b47fba82134cd711fc48608ac0f9ab2100e8073c8"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_canonical",
+        "embedding_rows": 1579,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "unique_user_events": true,
+        "nan_embedding_rows": 0,
+        "max_history_len": 100,
+        "invalid_context_rows": 0,
+        "users_seen": 28,
+        "filtered_users": 1,
+        "kept_users": 1,
+        "total_positive_events": 1579,
+        "kept_events": 1579,
+        "skipped_unknown_items": 0,
+        "skipped_unknown_item_users": 0
+      }
+    }
+  },
+  "updated_at": "2026-05-06T10:50:10+09:00"
+}
