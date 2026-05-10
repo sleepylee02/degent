@@ -1,6 +1,6 @@
 # Data Flow
 
-이 문서는 원본 데이터에서 대시보드까지 이어지는 흐름을 빠르게 파악하기 위한 보조 문서다. 프로젝트 운영 규칙의 정본은 `PROJECT_GUIDE.md`다.
+이 문서는 원본 데이터에서 대시보드까지 이어지는 흐름을 빠르게 파악하기 위한 보조 문서다. 프로젝트 운영 규칙의 정본은 `PROJECT_GUIDE.md`다. 파트별 담당 파일, input, output, endpoint는 `docs/part-contracts.md`를 따른다.
 
 ## 전체 흐름
 

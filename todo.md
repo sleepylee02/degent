@@ -13,6 +13,10 @@
 
 ## Done
 
+- 파트별 협업 계약 문서화
+  - owner: sleepylee / LLM
+  - files: `docs/part-contracts.md`, `docs/data-flow.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: 별도 active plan 없이 문서 정리 작업으로 처리. A~G 파트별 담당 파일, input, output, endpoint, 다음 파트로 넘기는 기준을 정리
 - Streaming Hybrid Recommendation Pipeline 전환 master plan
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline.md`

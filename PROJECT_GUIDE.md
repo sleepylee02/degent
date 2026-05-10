@@ -70,6 +70,7 @@ degent/
 ├── docs/                    # LLM/사람이 함께 보는 보조 문서
 │   ├── data-flow.md         #   raw -> processed -> model -> dashboard 흐름
 │   ├── artifacts.md         #   원본/생성물 목록과 수정 가능 여부
+│   ├── part-contracts.md    #   협업용 파트별 담당 파일/input/output/endpoint 계약
 │   ├── streaming-replay-dashboard-contract.md # Phase 5/6 replay artifact 계약
 │   └── decisions/           #   중요한 설계 결정 기록
 ├── plan/                    # 작업 계획서
