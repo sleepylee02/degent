@@ -5,10 +5,13 @@ from typing import Any
 import argparse
 import json
 import time
-import warnings
-
 import numpy as np
 
+from model.common.cluster import (
+    choose_backend,
+    cluster_with_fallback,
+    compute_interest_vectors,
+)
 from model.common.runtime import (
     append_metric,
     command_line,
@@ -96,42 +99,6 @@ def load_open_refit_requests(path: Path, *, user_id: int | None = None) -> dict[
     return open_requests
 
 
-def probe_gpu_backend() -> None:
-    import cuml  # noqa: F401
-    import cupy as cp
-
-    device_count = int(cp.cuda.runtime.getDeviceCount())
-    if device_count <= 0:
-        raise RuntimeError("No CUDA devices are visible.")
-
-
-def choose_backend(requested: str) -> tuple[str, str | None]:
-    if requested == "cpu":
-        return "cpu", None
-
-    try:
-        probe_gpu_backend()
-        return "gpu", None
-    except Exception as exc:
-        reason = f"gpu_unavailable: {exc.__class__.__name__}: {exc}"
-        if requested == "gpu":
-            raise RuntimeError("Requested GPU backend, but RAPIDS cuML or CUDA runtime is unavailable.") from exc
-        return "cpu", reason
-
-
-def to_numpy(value: Any) -> np.ndarray:
-    if hasattr(value, "to_numpy"):
-        return np.asarray(value.to_numpy())
-    try:
-        import cupy as cp
-
-        if isinstance(value, cp.ndarray):
-            return cp.asnumpy(value)
-    except Exception:
-        pass
-    return np.asarray(value)
-
-
 def labels_to_interest_vectors(
     embeddings: np.ndarray,
     labels: np.ndarray,
@@ -186,99 +153,7 @@ def labels_to_interest_vectors(
     return interests, summary
 
 
-def refit_cpu(
-    embeddings: np.ndarray,
-    *,
-    min_cluster_size: int,
-    cluster_dim: int,
-    random_state: int,
-) -> tuple[list[Interest], dict[str, Any]]:
-    import hdbscan
-    import umap
-
-    n_samples = int(embeddings.shape[0])
-    if n_samples < max(2, min_cluster_size):
-        labels = np.full(n_samples, -1, dtype=np.int64)
-        interests, summary = labels_to_interest_vectors(embeddings, labels, backend="cpu")
-        summary.update({"backend": "cpu", "reducedDim": None, "reason": "insufficient_samples_mean_fallback"})
-        return interests, summary
-
-    reduced_dim = min(cluster_dim, max(2, n_samples - 2))
-    n_neighbors = min(15, max(2, n_samples - 1))
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="n_jobs value 1 overridden", category=UserWarning)
-        reducer = umap.UMAP(
-            n_components=reduced_dim,
-            n_neighbors=n_neighbors,
-            random_state=random_state,
-            verbose=False,
-        )
-        z_cluster = reducer.fit_transform(embeddings)
-
-    labels = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster)
-    interests, summary = labels_to_interest_vectors(embeddings, labels, backend="cpu")
-    summary.update({"backend": "cpu", "reducedDim": int(reduced_dim), "nNeighbors": int(n_neighbors)})
-    return interests, summary
-
-
-def refit_gpu(
-    embeddings: np.ndarray,
-    *,
-    min_cluster_size: int,
-    cluster_dim: int,
-    random_state: int,
-) -> tuple[list[Interest], dict[str, Any]]:
-    from cuml.cluster import HDBSCAN
-    from cuml.manifold import UMAP
-
-    n_samples = int(embeddings.shape[0])
-    if n_samples < max(2, min_cluster_size):
-        labels = np.full(n_samples, -1, dtype=np.int64)
-        interests, summary = labels_to_interest_vectors(embeddings, labels, backend="gpu")
-        summary.update({"backend": "gpu", "reducedDim": None, "reason": "insufficient_samples_mean_fallback"})
-        return interests, summary
-
-    reduced_dim = min(cluster_dim, max(2, n_samples - 2))
-    n_neighbors = min(15, max(2, n_samples - 1))
-    reducer = UMAP(
-        n_components=reduced_dim,
-        n_neighbors=n_neighbors,
-        random_state=random_state,
-        verbose=False,
-    )
-    z_cluster = reducer.fit_transform(embeddings)
-    labels = HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster)
-    labels_np = to_numpy(labels).astype(np.int64)
-    interests, summary = labels_to_interest_vectors(embeddings, labels_np, backend="gpu")
-    summary.update({"backend": "gpu", "reducedDim": int(reduced_dim), "nNeighbors": int(n_neighbors)})
-    return interests, summary
-
-
 def run_refit(
-    embeddings: np.ndarray,
-    *,
-    backend: str,
-    min_cluster_size: int,
-    cluster_dim: int,
-    random_state: int,
-) -> tuple[list[Interest], dict[str, Any]]:
-    if backend == "gpu":
-        return refit_gpu(
-            embeddings,
-            min_cluster_size=min_cluster_size,
-            cluster_dim=cluster_dim,
-            random_state=random_state,
-        )
-    return refit_cpu(
-        embeddings,
-        min_cluster_size=min_cluster_size,
-        cluster_dim=cluster_dim,
-        random_state=random_state,
-    )
-
-
-def run_refit_with_auto_fallback(
     embeddings: np.ndarray,
     *,
     requested_backend: str,
@@ -289,30 +164,24 @@ def run_refit_with_auto_fallback(
     random_state: int,
     logger: Any,
 ) -> tuple[list[Interest], dict[str, Any], str, str | None]:
-    try:
-        interests, summary = run_refit(
-            embeddings,
-            backend=selected_backend,
-            min_cluster_size=min_cluster_size,
-            cluster_dim=cluster_dim,
-            random_state=random_state,
-        )
-        return interests, summary, selected_backend, fallback_reason
-    except Exception as exc:
-        if requested_backend != "auto" or selected_backend != "gpu":
-            raise
-
-        runtime_fallback_reason = f"gpu_refit_failed: {exc.__class__.__name__}: {exc}"
-        logger.warning("GPU refit failed under auto backend; falling back to CPU: %s", runtime_fallback_reason)
-        interests, summary = run_refit(
-            embeddings,
-            backend="cpu",
-            min_cluster_size=min_cluster_size,
-            cluster_dim=cluster_dim,
-            random_state=random_state,
-        )
-        summary["autoFallbackReason"] = runtime_fallback_reason
-        return interests, summary, "cpu", runtime_fallback_reason
+    result, actual_backend, actual_fallback = cluster_with_fallback(
+        embeddings,
+        requested_backend=requested_backend,
+        selected_backend=selected_backend,
+        fallback_reason=fallback_reason,
+        min_cluster_size=min_cluster_size,
+        cluster_dim=cluster_dim,
+        random_state=random_state,
+        logger=logger,
+    )
+    interests, summary = labels_to_interest_vectors(embeddings, result.labels,
+                                                    backend=actual_backend)
+    summary.update({
+        "reducedDim": result.reduced_dim,
+        "nNeighbors": result.n_neighbors,
+        **({"autoFallbackReason": actual_fallback} if actual_fallback != fallback_reason else {}),
+    })
+    return interests, summary, actual_backend, actual_fallback
 
 
 def update_state_after_refit(
@@ -452,7 +321,7 @@ if __name__ == "__main__":
         user_embeddings = np.stack([row["embedding"] for row in user_rows]).astype(np.float32)
         active_raw_event_ids = [int(row["rawEventId"]) for row in user_rows]
         user_start = time.time()
-        interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit_with_auto_fallback(
+        interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit(
             user_embeddings,
             requested_backend=args.cluster_backend,
             selected_backend=selected_backend,
