@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import json
+import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,220 @@ REPLAY_PATH_KEYS = {
     "refitEvents": "refit_events.jsonl",
     "interestStateDir": "interest_states",
 }
+
+MOVIE_METADATA_PATH = REPO_ROOT / "data" / "movies_processed.csv"
+DEFAULT_WINDOW_SIZE = 120
+
+
+def parse_list_value(value: Any) -> list[str]:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed if item is not None]
+        except (ValueError, TypeError):
+            pass
+        return [text]
+    return [str(value)]
+
+
+def top_n_items(values: list[str], n: int = 5) -> list[str]:
+    if not values:
+        return []
+    counts = Counter(values)
+    return [item for item, _ in counts.most_common(n)]
+
+
+def load_movie_metadata() -> pd.DataFrame | None:
+    if not MOVIE_METADATA_PATH.exists():
+        return None
+    try:
+        movies = pd.read_csv(MOVIE_METADATA_PATH)
+        if "movieId" in movies.columns:
+            movies["movieId"] = pd.to_numeric(movies["movieId"], errors="coerce").astype("Int64")
+        return movies
+    except Exception:
+        return None
+
+
+def enrich_frame_with_movie_metadata(frame: pd.DataFrame, movies: pd.DataFrame | None) -> pd.DataFrame:
+    if movies is None or "movieId" not in frame.columns:
+        return frame
+    result = frame.copy()
+    movie_index = movies.set_index("movieId")
+    if "title" not in result.columns and "title" in movie_index.columns:
+        result["title"] = result["movieId"].map(movie_index["title"])
+    if "genres" not in result.columns and "genres" in movie_index.columns:
+        result["genres"] = result["movieId"].map(movie_index["genres"])
+    if "tag" not in result.columns and "tag" in movie_index.columns:
+        result["tag"] = result["movieId"].map(movie_index["tag"])
+    if "ratingAvg" not in result.columns and "ratingAvg" in movie_index.columns:
+        result["ratingAvg"] = result["movieId"].map(movie_index["ratingAvg"])
+    return result
+
+
+def build_time_series(frame: pd.DataFrame) -> pd.DataFrame:
+    if frame.empty or "timepoint" not in frame.columns:
+        return pd.DataFrame()
+    series = (
+        frame.groupby("timepoint", dropna=False)
+        .agg(
+            activeClusters=("clusterLabel", lambda values: int(values[values != NOISE_LABEL].nunique())),
+            pointCount=("userId", "count"),
+        )
+        .reset_index()
+        .sort_values("timepoint")
+    )
+    return series
+
+
+def render_user_control_panel(frame: pd.DataFrame) -> tuple[pd.DataFrame, int | None, int | None, int | None]:
+    st.sidebar.header("User control panel")
+    selected_user = None
+    filtered_frame = frame
+    if "userId" in frame.columns:
+        user_ids = sorted(frame["userId"].dropna().astype(str).unique(), key=lambda value: int(value) if value.isdigit() else value)
+        user_choice = st.sidebar.selectbox("User", ["All users"] + user_ids, index=0)
+        if user_choice != "All users":
+            selected_user = int(user_choice) if user_choice.isdigit() else user_choice
+            filtered_frame = frame[frame["userId"] == selected_user]
+
+    timepoint_exists = "timepoint" in filtered_frame.columns
+    current_time = None
+    window_size = None
+    if timepoint_exists and not filtered_frame.empty:
+        min_time = int(filtered_frame["timepoint"].min())
+        max_time = int(filtered_frame["timepoint"].max())
+        if "dashboard_timepoint" not in st.session_state:
+            st.session_state.dashboard_timepoint = min_time
+        if "dashboard_playing" not in st.session_state:
+            st.session_state.dashboard_playing = False
+
+        control_left, control_right = st.sidebar.columns([1, 1])
+        if control_left.button("◀ Previous"):
+            st.session_state.dashboard_timepoint = max(min_time, st.session_state.dashboard_timepoint - 1)
+        if control_right.button("Next ▶"):
+            st.session_state.dashboard_timepoint = min(max_time, st.session_state.dashboard_timepoint + 1)
+
+        play_toggle = st.sidebar.checkbox("Stream time", value=st.session_state.dashboard_playing)
+        st.session_state.dashboard_playing = play_toggle
+        current_time = st.sidebar.slider("Timepoint", min_time, max_time, value=st.session_state.dashboard_timepoint, step=1)
+        st.session_state.dashboard_timepoint = current_time
+        window_size = st.sidebar.slider(
+            "Window size",
+            min_value=1,
+            max_value=max(max_time - min_time + 1, 1),
+            value=min(DEFAULT_WINDOW_SIZE, max(max_time - min_time + 1, 1)),
+            step=1,
+        )
+
+        if st.session_state.dashboard_playing and current_time < max_time:
+            time.sleep(0.18)
+            st.session_state.dashboard_timepoint = current_time + 1
+            st.experimental_rerun()
+    else:
+        st.sidebar.info("No timepoint data available for streaming controls.")
+
+    return filtered_frame, selected_user, current_time, window_size
+
+
+def render_interest_metadata_panel(frame: pd.DataFrame, movies: pd.DataFrame | None) -> None:
+    st.subheader("Interest metadata")
+    if frame.empty:
+        st.info("No active interest points in the current selection.")
+        return
+
+    active_clusters = sorted(frame[frame["clusterLabel"] != NOISE_LABEL]["clusterLabel"].unique())
+    genre_values = []
+    tag_values = []
+    if "genres" in frame.columns:
+        for value in frame["genres"].dropna().tolist():
+            genre_values.extend(parse_list_value(value))
+    if "tag" in frame.columns:
+        for value in frame["tag"].dropna().tolist():
+            tag_values.extend(parse_list_value(value))
+
+    top_genres = top_n_items(genre_values, n=6)
+    top_tags = top_n_items(tag_values, n=8)
+
+    col1, col2 = st.columns(2)
+    col1.metric("Active interests (K)", len(active_clusters))
+    col2.metric("Active points", len(frame))
+
+    if top_genres:
+        st.markdown("**Representative genres**")
+        st.write(", ".join(top_genres))
+    if top_tags:
+        st.markdown("**Representative tags**")
+        st.write(", ".join(top_tags))
+
+    if "movieId" in frame.columns:
+        recent_movies = frame.sort_values("timepoint" if "timepoint" in frame.columns else "userId", ascending=False)
+        recent_movies = recent_movies.dropna(subset=["movieId"])
+        recent_ids = recent_movies["movieId"].drop_duplicates().head(5).tolist()
+        if movies is not None and recent_ids:
+            movie_rows = movies[movies["movieId"].isin(recent_ids)].copy()
+            movie_rows["genres"] = movie_rows["genres"].fillna("[]")
+            st.markdown("**Recent interaction movies**")
+            for _, row in movie_rows.iterrows():
+                st.write(f"- {row['title']} ({row['releaseYear'] if 'releaseYear' in row else 'N/A'}) — {row['genres']}")
+        elif recent_ids:
+            st.markdown("**Recent interaction movie IDs**")
+            st.write(", ".join(str(mid) for mid in recent_ids))
+
+
+def render_recommendation_panel(frame: pd.DataFrame, movies: pd.DataFrame | None) -> None:
+    st.subheader("Recommendation panel")
+    if frame.empty:
+        st.info("No items available for recommendation preview.")
+        return
+
+    if "recommendedMovieId" in frame.columns:
+        candidate_ids = frame["recommendedMovieId"].dropna().astype(int).astype(object).tolist()
+    elif "movieId" in frame.columns:
+        candidate_ids = frame["movieId"].dropna().astype(int).value_counts().head(6).index.tolist()
+    else:
+        st.info("No recommendation item IDs found in the current dataset.")
+        return
+
+    if not candidate_ids:
+        st.info("No recommendation candidates available.")
+        return
+
+    if movies is not None:
+        movie_rows = movies[movies["movieId"].isin(candidate_ids)].copy()
+        if not movie_rows.empty:
+            movie_rows = movie_rows.drop_duplicates(subset=["movieId"]).head(6)
+            for _, row in movie_rows.iterrows():
+                title = row.get("title", str(row.get("movieId", "unknown")))
+                genres = row.get("genres", "[]")
+                st.markdown(f"**{title}**")
+                st.write(f"Genres: {genres}")
+                if "ratingAvg" in row:
+                    st.write(f"Average rating: {row.get('ratingAvg', '-')}")
+                st.write("---")
+            return
+
+    st.markdown("**Recommendation candidate IDs**")
+    st.write(", ".join(str(movie_id) for movie_id in candidate_ids[:6]))
+
+
+def render_cluster_evolution_chart(frame: pd.DataFrame) -> None:
+    if frame.empty or "timepoint" not in frame.columns:
+        return
+    series = build_time_series(frame)
+    if series.empty:
+        return
+    figure = px.line(series, x="timepoint", y="activeClusters", title="Interest count over time")
+    figure.update_layout(height=320, xaxis_title="Timepoint", yaxis_title="Cluster count")
+    st.sidebar.plotly_chart(figure, use_container_width=True)
 
 
 def infer_numeric_columns(frame: pd.DataFrame) -> list[str]:
@@ -176,12 +392,14 @@ def generate_demo_frame(
             outlier_score = float(np.clip(1.0 - probability + rng.normal(0.04, 0.03), 0.0, 1.0))
             sequence_length = int(np.clip(rng.normal(55 + cluster_label * 9, 18), 5, 200))
             embedding_norm = float(np.clip(rng.normal(10.0 + cluster_label * 0.35, 1.1), 6.0, 16.0))
+            timepoint = int(rng.integers(1, 21))  # Add timepoint for animation
             rows.append({
                 "userId": user_id,
                 "clusterLabel": cluster_label,
                 "x": float(point[0]),
                 "y": float(point[1]),
                 "z": float(point[2]),
+                "timepoint": timepoint,
                 "clusterProbability": probability,
                 "outlierScore": outlier_score,
                 "sequenceLength": sequence_length,
@@ -195,12 +413,14 @@ def generate_demo_frame(
         outlier_score = float(np.clip(rng.normal(0.81, 0.11), 0.2, 1.0))
         sequence_length = int(np.clip(rng.normal(18, 10), 1, 100))
         embedding_norm = float(np.clip(rng.normal(8.7, 1.4), 4.0, 14.0))
+        timepoint = int(rng.integers(1, 21))  # Add timepoint for animation
         rows.append({
             "userId": user_id,
             "clusterLabel": NOISE_LABEL,
             "x": float(point[0]),
             "y": float(point[1]),
             "z": float(point[2]),
+            "timepoint": timepoint,
             "clusterProbability": probability,
             "outlierScore": outlier_score,
             "sequenceLength": sequence_length,
@@ -282,6 +502,7 @@ def render_projection_chart(frame: pd.DataFrame, color_column: str) -> None:
         return
 
     has_3d = "z" in frame.columns
+    has_time = "timepoint" in frame.columns
     hover_data = [column for column in ["userId", "clusterLabel", "clusterProbability", "outlierScore", "sequenceLength"] if column in frame.columns]
 
     if has_3d:
@@ -294,6 +515,7 @@ def render_projection_chart(frame: pd.DataFrame, color_column: str) -> None:
             hover_data=hover_data,
             opacity=0.72,
             title="Reduced user-state embedding",
+            animation_frame="timepoint" if has_time else None,
         )
     else:
         figure = px.scatter(
@@ -304,6 +526,7 @@ def render_projection_chart(frame: pd.DataFrame, color_column: str) -> None:
             hover_data=hover_data,
             opacity=0.72,
             title="Reduced user-state embedding",
+            animation_frame="timepoint" if has_time else None,
         )
 
     figure.update_layout(height=640, legend_title_text=color_column)
@@ -371,15 +594,27 @@ def render_cluster_dashboard() -> None:
         st.stop()
 
     frame = add_display_columns(frame)
+    movies = load_movie_metadata()
+    frame = enrich_frame_with_movie_metadata(frame, movies)
 
-    numeric_columns = infer_numeric_columns(frame)
-    color_candidates = ["clusterDisplay"] + [column for column in ["clusterProbability", "outlierScore", "sequenceLength", "embeddingNorm"] if column in frame.columns]
-    distribution_candidates = [column for column in ["clusterProbability", "outlierScore", "sequenceLength", "embeddingNorm"] if column in frame.columns]
+    user_frame, selected_user, current_time, window_size = render_user_control_panel(frame)
+    render_cluster_evolution_chart(user_frame)
+    if current_time is not None and window_size is not None and "timepoint" in user_frame.columns:
+        min_time = int(user_frame["timepoint"].min())
+        window_start = max(min_time, current_time - window_size + 1)
+        user_frame = user_frame[(user_frame["timepoint"] >= window_start) & (user_frame["timepoint"] <= current_time)]
+        st.caption(f"Data source: `{data_source}` | User: {selected_user or 'All'} | Time window: {window_start} - {current_time}")
+    else:
+        st.caption(f"Data source: `{data_source}` | User: {selected_user or 'All'}")
+
+    numeric_columns = infer_numeric_columns(user_frame)
+    color_candidates = ["clusterDisplay"] + [column for column in ["clusterProbability", "outlierScore", "sequenceLength", "embeddingNorm"] if column in user_frame.columns]
+    distribution_candidates = [column for column in ["clusterProbability", "outlierScore", "sequenceLength", "embeddingNorm"] if column in user_frame.columns]
 
     with st.sidebar:
         st.header("Filters")
         include_noise = st.checkbox("Include noise (-1)", value=True)
-        available_clusters = sorted(frame["clusterLabel"].unique().tolist())
+        available_clusters = sorted(user_frame["clusterLabel"].unique().tolist())
         default_clusters = [label for label in available_clusters if include_noise or label != NOISE_LABEL]
         selected_clusters = st.multiselect("Visible clusters", available_clusters, default=default_clusters)
 
@@ -390,40 +625,29 @@ def render_cluster_dashboard() -> None:
             metric_column = st.selectbox("Distribution metric", distribution_candidates, index=0)
 
         for column in [name for name in ["sequenceLength", "clusterProbability", "outlierScore", "embeddingNorm"] if name in numeric_columns]:
-            col_min = float(frame[column].min())
-            col_max = float(frame[column].max())
+            col_min = float(user_frame[column].min())
+            col_max = float(user_frame[column].max())
             selected_min, selected_max = st.slider(
                 f"{column} range",
                 min_value=col_min,
                 max_value=col_max,
                 value=(col_min, col_max),
             )
-            frame = frame[(frame[column] >= selected_min) & (frame[column] <= selected_max)]
+            user_frame = user_frame[(user_frame[column] >= selected_min) & (user_frame[column] <= selected_max)]
 
-    filtered = filter_frame(frame, include_noise=include_noise, selected_clusters=selected_clusters)
+    filtered = filter_frame(user_frame, include_noise=include_noise, selected_clusters=selected_clusters)
     summary = build_cluster_summary(filtered)
 
-    st.caption(f"Data source: `{data_source}`")
     render_metric_cards(filtered)
 
-    left, right = st.columns([2, 1])
-    with left:
+    main_left, main_right = st.columns([3, 1])
+    with main_left:
         render_projection_chart(filtered, color_column=color_column)
-    with right:
-        render_cluster_size_chart(summary)
 
-    if metric_column is not None and not filtered.empty:
-        render_distribution_chart(filtered, metric_column)
-
-    st.subheader("Cluster summary")
-    st.dataframe(summary, use_container_width=True, hide_index=True)
-
-    st.subheader("Filtered records")
-    visible_columns = ["userId", "clusterLabel", "clusterDisplay", "x", "y"]
-    if "z" in filtered.columns:
-        visible_columns.append("z")
-    visible_columns.extend([column for column in ["clusterProbability", "outlierScore", "sequenceLength", "embeddingNorm"] if column in filtered.columns])
-    st.dataframe(filtered[visible_columns], use_container_width=True, hide_index=True)
+    with main_right:
+        render_interest_metadata_panel(filtered, movies)
+    render_recommendation_panel(filtered, movies)
+    render_cluster_size_chart(summary)
 
 
 def render_replay_summary(summary: dict[str, Any], paths: dict[str, Path]) -> None:
