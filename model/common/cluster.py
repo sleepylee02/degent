@@ -174,3 +174,18 @@ def compute_interest_vectors(embeddings: np.ndarray, labels: np.ndarray) -> np.n
     if not unique_clusters:
         return np.zeros((0, embeddings.shape[1]), dtype=np.float32)
     return np.stack([embeddings[labels == k].mean(axis=0) for k in unique_clusters])
+
+
+def top_genres_for_cluster(
+    movie_ids: np.ndarray,
+    genre_map_idx: dict[int, list[int]],
+    all_genres: list[str],
+    n: int = 5,
+) -> list[dict]:
+    """클러스터에 속한 movie_ids의 장르 빈도를 세어 상위 n개를 반환. returns [{"genre": str, "count": int}]."""
+    counts: dict[int, int] = {}
+    for mid in movie_ids:
+        for idx in genre_map_idx.get(int(mid), []):
+            counts[idx] = counts.get(idx, 0) + 1
+    top = sorted(counts, key=lambda k: counts[k], reverse=True)[:n]
+    return [{"genre": all_genres[i], "count": counts[i]} for i in top]
