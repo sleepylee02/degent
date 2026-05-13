@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 import argparse
@@ -32,6 +32,7 @@ class Interest:
     created_at: str = ""
     updated_at: str = ""
     source: str | None = None
+    top_genres: list[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         timestamp = local_timestamp()
@@ -48,6 +49,7 @@ class Interest:
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
             "source": self.source,
+            "topGenres": self.top_genres,
         }
 
     @classmethod
@@ -59,6 +61,7 @@ class Interest:
             created_at=str(item.get("createdAt", item.get("created_at", ""))),
             updated_at=str(item.get("updatedAt", item.get("updated_at", ""))),
             source=item.get("source"),
+            top_genres=list(item.get("topGenres", item.get("top_genres", []))),
         )
 
 

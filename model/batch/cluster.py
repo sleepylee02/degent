@@ -12,6 +12,7 @@ from model.common.cluster import (
     cluster_embeddings,
     cluster_with_fallback,
     compute_interest_vectors,
+    top_genres_for_cluster,
 )
 from model.common.runtime import (
     append_metric,
@@ -95,6 +96,7 @@ def cluster_user(h, *, backend, min_cluster_size=10, random_state=42,
 
 
 def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
+                            movie_ids_array=None,
                             backend="cpu",
                             min_cluster_size=10, stride=1,
                             window_size=100, window_step=10,
@@ -108,14 +110,19 @@ def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
         mask = user_ids == uid
         h = embeddings[mask]
         tp = timepoint_idx[mask]
+        uid_movie_ids = movie_ids_array[mask] if movie_ids_array is not None else None
 
         order = np.argsort(tp)
         h = h[order]
         tp = tp[order]
+        if uid_movie_ids is not None:
+            uid_movie_ids = uid_movie_ids[order]
 
         if stride > 1:
             h = h[::stride]
             tp = tp[::stride]
+            if uid_movie_ids is not None:
+                uid_movie_ids = uid_movie_ids[::stride]
 
         if len(h) < min_cluster_size * 2:
             skipped += 1
@@ -143,6 +150,7 @@ def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
             "n_clusters":       n_clusters,
             "win_centers":      win_tp_centers,
             "win_k":            win_k,
+            "movie_ids":        uid_movie_ids,
         }
 
     if logger:
@@ -155,7 +163,8 @@ def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
 # 저장
 # =====================
 
-def save_interest_states(results, state_dir, *, backend, logger=None):
+def save_interest_states(results, state_dir, *, backend,
+                         genre_map_idx=None, all_genres=None, logger=None):
     """
     유저별 interest vectors를 interest_states/{id}.json 으로 저장.
     stream/interest_assign.py의 InterestState 포맷과 호환.
@@ -164,19 +173,25 @@ def save_interest_states(results, state_dir, *, backend, logger=None):
     state_dir.mkdir(parents=True, exist_ok=True)
     timestamp = local_timestamp()
     saved = 0
+    has_genre_info = genre_map_idx is not None and all_genres is not None
 
     for uid, res in results.items():
-        interests = [
-            Interest(
+        uid_movie_ids = res.get("movie_ids")
+        interests = []
+        for k, vec in enumerate(res["interest_vectors"]):
+            mask = res["labels"] == k
+            genres = []
+            if has_genre_info and uid_movie_ids is not None:
+                genres = top_genres_for_cluster(uid_movie_ids[mask], genre_map_idx, all_genres)
+            interests.append(Interest(
                 interest_id=k,
                 vector=vec.astype(float).tolist(),
-                assigned_count=int((res["labels"] == k).sum()),
+                assigned_count=int(mask.sum()),
                 created_at=timestamp,
                 updated_at=timestamp,
                 source=f"batch_cluster:{backend}:cluster_{k}",
-            )
-            for k, vec in enumerate(res["interest_vectors"])
-        ]
+                top_genres=genres,
+            ))
 
         state = InterestState(
             user_id=int(uid),
@@ -252,6 +267,10 @@ if __name__ == "__main__":
     parser.add_argument("--run-id",           type=str,   default=None)
     parser.add_argument("--hash-inputs",      action="store_true")
     parser.add_argument("--hash-limit-mb",    type=int,   default=100)
+    parser.add_argument("--movies",           type=Path,  default=Path("data/movies_processed_drop.csv"),
+                        help="Movies metadata CSV for genre labeling.")
+    parser.add_argument("--embeddings",       type=Path,  default=Path("outputs/canonical_embeddings.npz"),
+                        help="Input embeddings npz (canonical_embeddings.npz or embeddings.npz).")
     args = parser.parse_args()
 
     ROOT        = Path(__file__).resolve().parents[2]
@@ -261,10 +280,22 @@ if __name__ == "__main__":
     run_dir = ensure_experiment_run(ROOT, run_id)
     logger, log_path = setup_run_logging("cluster", OUTPUTS_DIR)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
-    embeddings_path  = OUTPUTS_DIR / "embeddings.npz"
+    embeddings_path  = args.embeddings if args.embeddings.is_absolute() else ROOT / args.embeddings
     interest_state_dir = args.interest_state_dir if args.interest_state_dir.is_absolute() \
                          else ROOT / args.interest_state_dir
     viz_npz_path = OUTPUTS_DIR / "user_interests.npz"
+
+    genre_map_idx = None
+    all_genres = None
+    movies_path = args.movies if args.movies.is_absolute() else ROOT / args.movies
+    if movies_path.exists():
+        import pandas as pd
+        from model.common.dataset import build_genre_map
+        movies_df = pd.read_csv(movies_path)
+        genre_map_idx, all_genres = build_genre_map(movies_df)
+        logger.info("Loaded genre map: %d movies %d genres", len(genre_map_idx), len(all_genres))
+    else:
+        logger.warning("Movies file not found, genre labeling disabled: %s", movies_path)
 
     selected_backend, fallback_reason = choose_backend(args.cluster_backend)
     logger.info("Experiment run id: %s", run_id)
@@ -308,11 +339,15 @@ if __name__ == "__main__":
     data          = np.load(embeddings_path)
     embeddings    = data["embeddings"]      # (N, 128)
     user_ids      = data["user_ids"]        # (N,)
-    timepoint_idx = data["timepoint_idx"]   # (N,)
+    # canonical: event_idx / legacy embeddings.npz: timepoint_idx
+    timepoint_key = "event_idx" if "event_idx" in data.files else "timepoint_idx"
+    timepoint_idx = data[timepoint_key]     # (N,)
+    movie_ids_array = data["movie_ids"] if "movie_ids" in data.files else None
+    logger.info("Embeddings source: %s | timepoint_key=%s", embeddings_path.name, timepoint_key)
     initial_embedding_rows  = int(embeddings.shape[0])
     initial_unique_users    = int(len(np.unique(user_ids)))
-    logger.info("Loaded embeddings: %s | unique users: %d",
-                embeddings.shape, initial_unique_users)
+    logger.info("Loaded embeddings: %s | unique users: %d | movie_ids=%s",
+                embeddings.shape, initial_unique_users, movie_ids_array is not None)
 
     nan_mask = np.isnan(embeddings).any(axis=1)
     dropped_nan_rows = int(nan_mask.sum())
@@ -321,6 +356,8 @@ if __name__ == "__main__":
         embeddings    = embeddings[~nan_mask]
         user_ids      = user_ids[~nan_mask]
         timepoint_idx = timepoint_idx[~nan_mask]
+        if movie_ids_array is not None:
+            movie_ids_array = movie_ids_array[~nan_mask]
 
     if args.top_n is not None:
         counts    = {uid: (user_ids == uid).sum() for uid in np.unique(user_ids)}
@@ -329,6 +366,8 @@ if __name__ == "__main__":
         embeddings    = embeddings[mask]
         user_ids      = user_ids[mask]
         timepoint_idx = timepoint_idx[mask]
+        if movie_ids_array is not None:
+            movie_ids_array = movie_ids_array[mask]
         logger.info("Top-%d users selected", args.top_n)
 
     if args.user_id is not None:
@@ -339,6 +378,8 @@ if __name__ == "__main__":
         embeddings    = embeddings[mask]
         user_ids      = user_ids[mask]
         timepoint_idx = timepoint_idx[mask]
+        if movie_ids_array is not None:
+            movie_ids_array = movie_ids_array[mask]
         logger.info("Test mode: user_id=%d | timepoints=%d", args.user_id, mask.sum())
 
     logger.info(
@@ -350,6 +391,7 @@ if __name__ == "__main__":
     t0 = time.time()
     results = run_per_user_clustering(
         embeddings, user_ids, timepoint_idx,
+        movie_ids_array=movie_ids_array,
         backend=selected_backend,
         min_cluster_size=args.min_cluster_size,
         stride=args.stride,
@@ -379,7 +421,9 @@ if __name__ == "__main__":
         logger.warning("K distribution unavailable: no users clustered")
 
     save_interest_states(results, interest_state_dir,
-                         backend=selected_backend, logger=logger)
+                         backend=selected_backend,
+                         genre_map_idx=genre_map_idx, all_genres=all_genres,
+                         logger=logger)
     save_viz_npz(results, viz_npz_path, logger=logger)
 
     metric_record = {
