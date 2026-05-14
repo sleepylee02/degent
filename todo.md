@@ -13,6 +13,12 @@
 
 ## Done
 
+- Streaming Online Recommend
+  - owner: sleepylee / LLM
+  - plan: `plan/done/streaming_recommend_online.md`
+  - files: `model/stream/recommend_online.py`, `model/stream/replay_pipeline.py`, `model/IMPLEMENTATION_STATUS.md`
+  - status: `recommend_online.py` 신규 구현, `replay_pipeline.py --recommend` 통합 완료
+
 - Streaming E2E Handoff Doc
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_e2e_handoff_doc.md`

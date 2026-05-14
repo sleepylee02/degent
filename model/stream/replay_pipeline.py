@@ -77,6 +77,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-cluster-size", type=int, default=10)
     parser.add_argument("--cluster-dim", type=int, default=10)
     parser.add_argument("--skip-refit", action="store_true")
+    parser.add_argument("--recommend", action="store_true", help="Run online recommend after each micro-batch.")
+    parser.add_argument("--recommend-top-k", type=int, default=20)
+    parser.add_argument("--recommend-normalize", action="store_true")
     return parser.parse_args()
 
 
@@ -160,6 +163,7 @@ def generated_paths(output_root: Path) -> dict[str, Path]:
         "interest_assignments": output_root / "interest_assignments.jsonl",
         "refit_requests": output_root / "refit_requests.jsonl",
         "refit_events": output_root / "refit_events.jsonl",
+        "stream_recommendations": output_root / "stream_recommendations.jsonl",
         "batch_dir": output_root / "batches",
     }
 
@@ -254,6 +258,7 @@ def build_summary(
             "refitRequests": relative_or_absolute(root, paths["refit_requests"]),
             "refitEvents": relative_or_absolute(root, paths["refit_events"]),
             "interestStateDir": relative_or_absolute(root, paths["interest_state_dir"]),
+            "streamRecommendations": relative_or_absolute(root, paths["stream_recommendations"]),
         },
     }
 
@@ -301,6 +306,7 @@ def main() -> None:
         "refitRequestsOpened": 0,
         "refitClosed": 0,
         "refitSkipped": 0,
+        "recommendationRows": 0,
     }
     unique_users_seen: set[int] = set()
     processed_events = 0
@@ -439,7 +445,37 @@ def main() -> None:
                         logger=logger,
                     )
 
+            before_recommend_lines = count_jsonl(paths["stream_recommendations"])
+            if args.recommend:
+                recommend_cmd = [
+                    sys.executable,
+                    "-m",
+                    "model.stream.recommend_online",
+                    "--run-id",
+                    run_id,
+                    "--interest-state-dir",
+                    str(paths["interest_state_dir"]),
+                    "--user-state-dir",
+                    str(paths["user_state_dir"]),
+                    "--checkpoint",
+                    str(resolve_path(root, args.checkpoint)),
+                    "--item2idx",
+                    str(resolve_path(root, args.item2idx)),
+                    "--movies",
+                    str(resolve_path(root, args.movies)),
+                    "--output-jsonl",
+                    str(paths["stream_recommendations"]),
+                    "--top-k",
+                    str(args.recommend_top_k),
+                ]
+                for uid in sorted({int(item["userId"]) for item in batch}):
+                    recommend_cmd.extend(["--user-id", str(uid)])
+                if args.recommend_normalize:
+                    recommend_cmd.append("--normalize")
+                run_command(recommend_cmd, root=root, logger=logger)
+
             new_refit_events = read_jsonl_slice(paths["refit_events"], before_refit_event_lines)
+            new_recommend_rows = count_jsonl(paths["stream_recommendations"]) - before_recommend_lines
             assignment_status_counts = Counter(str(item.get("status", "unknown")) for item in new_assignment_records)
             refit_closed = sum(1 for item in new_refit_events if item.get("status") == "closed")
             refit_skipped = sum(1 for item in new_refit_events if item.get("status") == "skipped")
@@ -452,6 +488,7 @@ def main() -> None:
             totals["refitRequestsOpened"] += len(new_refit_requests)
             totals["refitClosed"] += refit_closed
             totals["refitSkipped"] += refit_skipped
+            totals["recommendationRows"] += new_recommend_rows
 
             append_jsonl(
                 paths["replay_events"],
@@ -474,6 +511,7 @@ def main() -> None:
                     "refitRequestsOpened": len(new_refit_requests),
                     "refitClosed": refit_closed,
                     "refitSkipped": refit_skipped,
+                    "recommendationRows": new_recommend_rows,
                     "latencySec": time.time() - batch_start,
                 },
             )
