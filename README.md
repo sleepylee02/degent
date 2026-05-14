@@ -246,7 +246,15 @@ Cluster explorer는 기본적으로 아래 결과 파일을 기대한다.
 
 - `data/clustering/user_clusters.parquet`
 
-현재 저장소에는 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트가 아직 없다. 실제 모델 결과를 대시보드에 연결하려면 이 변환 단계를 먼저 추가해야 한다.
+이제 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트가 `model/batch/export_clusters.py`에 추가되었습니다.
+
+사용법:
+
+```bash
+python3 -m model.batch.export_clusters \
+  --input outputs/user_interests.npz \
+  --output data/clustering/user_clusters.parquet
+```
 
 필수 컬럼:
 

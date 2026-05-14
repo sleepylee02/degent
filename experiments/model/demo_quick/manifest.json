@@ -1,0 +1,285 @@
+{
+  "created_at": "2026-05-13T19:04:47+09:00",
+  "run_id": "demo_quick",
+  "git": {
+    "commit": "75458ae6f867b2d81fddbd169c618a56376c0489",
+    "branch": "dashboard",
+    "dirty": true,
+    "status_short": [
+      "?? experiments/model/demo_quick/",
+      "?? outputs/logs/cluster_refit_20260513_190526.log",
+      "?? outputs/logs/cluster_refit_20260513_191355.log",
+      "?? outputs/logs/extract_online_20260513_190447.log",
+      "?? outputs/logs/extract_online_20260513_190518.log",
+      "?? outputs/logs/interest_assign_20260513_190525.log",
+      "?? outputs/logs/replay_pipeline_20260513_190415.log",
+      "?? outputs/logs/replay_pipeline_20260513_190506.log"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/extract_online.py' --run-id demo_quick --movies '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/data/movies_processed_drop.csv' --checkpoint '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/sasrec_cl.pt' --item2idx '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/item2idx.json' --state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/user_states' --output '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embeddings.npz' --event-log '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embedding_events.jsonl' --event-jsonl '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/batches/batch_000000.jsonl' --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256",
+      "log": {
+        "path": "outputs/logs/extract_online_20260513_190518.log",
+        "exists": true,
+        "size_bytes": 892,
+        "mtime_ns": 1778666718416513927
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775460355604372893
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775460502190749097
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775708669740557374,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1775708653190413963,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775450994584227300,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775450994584421548,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/stream/replay_demo/user_states",
+        "output": "outputs/stream/replay_demo/online_embeddings.npz",
+        "event_log": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+        "bootstrap_user_id": null,
+        "event_jsonl": "/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/batches/batch_000000.jsonl",
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 256
+      },
+      "runtime": {
+        "device": "mps",
+        "device_label": "mps (Apple Metal)",
+        "torch_version": "2.11.0"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 28,
+            "statePath": "outputs/stream/replay_demo/user_states/28.json",
+            "rawEventCount": 5,
+            "positiveEventCount": 3,
+            "activeEventCount": 3,
+            "droppedEventCount": 2,
+            "skippedUnknownItems": 0,
+            "ratingMean": 3.4,
+            "ratingStd": 1.3564659966250538,
+            "positiveReason": "zscore",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 3
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 4570,
+          "mtime_ns": 1778666723675118069,
+          "sha256": "2bb01edb68c3351aad925964ec64cd1c9d1fec0312b0faee9aaf8074fdac6d83"
+        },
+        "event_log": {
+          "path": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 825,
+          "mtime_ns": 1778666723675790399,
+          "sha256": "dcbf6eafdd1fa604b73fbb4e7d3b2e756671df24448952c34ee11fd5f2268c39"
+        },
+        "metrics": {
+          "path": "experiments/model/demo_quick/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 317,
+          "mtime_ns": 1778666723675985648,
+          "sha256": "8b00ae712f8d3982d4042b5e35a79971bde44254dc0ba406d988804b1e77abda"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 5,
+        "embedding_rows": 3,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 3,
+        "nan_embedding_rows": 0,
+        "max_history_len": 3,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true
+      }
+    },
+    "interest_assign": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/interest_assign.py' --run-id demo_quick --embeddings '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embeddings.npz' --interest-state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_states' --assignments '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_assignments.jsonl' --refit-requests '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/refit_requests.jsonl' --similarity-threshold 0.2 --refit-min-events 2 --assign-trigger-count 2 --outlier-trigger-count 2",
+      "log": {
+        "path": "outputs/logs/interest_assign_20260513_190525.log",
+        "exists": true,
+        "size_bytes": 1078,
+        "mtime_ns": 1778666725053926452
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 4570,
+          "mtime_ns": 1778666723675118069
+        }
+      },
+      "assignment_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "assignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+        "refit_requests": "outputs/stream/replay_demo/refit_requests.jsonl",
+        "similarity_threshold": 0.2,
+        "refit_min_events": 2,
+        "assign_trigger_count": 2,
+        "outlier_trigger_count": 2
+      },
+      "data_summary": {
+        "active_embedding_rows": 3,
+        "processed_users": 1,
+        "user_summaries": [
+          {
+            "userId": 28,
+            "inputRows": 3,
+            "interestCount": 0,
+            "pendingBefore": 0,
+            "pendingAfter": 3,
+            "processedBefore": 0,
+            "processedAfter": 0,
+            "refitRequired": true,
+            "refitReasons": [
+              "no_interest_pending_events"
+            ],
+            "statuses": {
+              "pending_no_interest": 1,
+              "pending_refit_required": 2
+            },
+            "statePath": "outputs/stream/replay_demo/interest_states/28.json"
+          }
+        ]
+      },
+      "outputs": {
+        "assignments": {
+          "path": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "exists": true,
+          "size_bytes": 954,
+          "mtime_ns": 1778666725131247180,
+          "sha256": "feecd5c66c0f31295923d667aac281f5765ee845ea03bd31837e34580436cb54"
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 298,
+          "mtime_ns": 1778666725131692053,
+          "sha256": "eb4f4ca34862f5339a21e1687ee23107596eaba36d200ebfece428864be6844c"
+        },
+        "metrics": {
+          "path": "experiments/model/demo_quick/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 571,
+          "mtime_ns": 1778666725131943594,
+          "sha256": "23a5f6fe2d0ec8e31d1ca614ea19625dc4890ad79f673588917e7dec30c3d037"
+        }
+      },
+      "summary_metrics": {
+        "stage": "interest_assign",
+        "input_rows": 3,
+        "processed_users": 1,
+        "assignment_records": 3,
+        "refit_requests": 1,
+        "status_counts": {
+          "pending_no_interest": 1,
+          "pending_refit_required": 2
+        },
+        "embedding_dim": 128
+      }
+    },
+    "cluster_refit": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/cluster_refit.py' --run-id demo_quick --embeddings outputs/stream/replay_demo/online_embeddings.npz --refit-requests outputs/stream/replay_demo/refit_requests.jsonl --interest-state-dir outputs/stream/replay_demo/interest_states --refit-events outputs/stream/replay_demo/refit_events.jsonl --cluster-backend cpu --refit-min-events 2 --min-cluster-size 2 --cluster-dim 3 --user-id 28",
+      "log": {
+        "path": "outputs/logs/cluster_refit_20260513_191355.log",
+        "exists": true,
+        "size_bytes": 1161,
+        "mtime_ns": 1778667235673435493
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 4570,
+          "mtime_ns": 1778666723675118069
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 298,
+          "mtime_ns": 1778666725131692053
+        }
+      },
+      "refit_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "refit_events": "outputs/stream/replay_demo/refit_events.jsonl",
+        "cluster_backend_requested": "cpu",
+        "cluster_backend_selected": "cpu",
+        "backend_fallback_reason": null,
+        "refit_min_events": 2,
+        "min_cluster_size": 2,
+        "cluster_dim": 3,
+        "random_state": 42,
+        "user_id": 28,
+        "limit_users": null
+      }
+    }
+  },
+  "updated_at": "2026-05-13T19:13:55+09:00"
+}

@@ -14,6 +14,14 @@ streamlit run dashboard/cluster_dashboard.py
 
 실제 cluster 결과 파일이 아직 없으면 앱에서 `Use demo data`를 켜서 synthetic 예시 데이터로 UI를 먼저 확인할 수 있다.
 
+대시보드 입력 파일 생성 예시:
+
+```bash
+python3 -m model.batch.export_clusters \
+  --input outputs/user_interests.npz \
+  --output data/clustering/user_clusters.parquet
+```
+
 ### 지원 포맷
 
 - `.csv`
