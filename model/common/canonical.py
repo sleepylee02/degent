@@ -53,6 +53,7 @@ def load_canonical_event_sequences(
     min_interactions: int = 1000,
     min_activity_days: int = 30,
     limit_users: int | None = None,
+    user_id: int | None = None,
 ) -> tuple[dict[int, list[CanonicalEvent]], CanonicalLoadStats]:
     stats = CanonicalLoadStats()
     user_events: dict[int, list[CanonicalEvent]] = {}
@@ -61,7 +62,9 @@ def load_canonical_event_sequences(
         for line in tqdm(handle, desc="load canonical users"):
             stats.users_seen += 1
             entry = json.loads(line)
-            user_id = int(entry["userId"])
+            entry_user_id = int(entry["userId"])
+            if user_id is not None and entry_user_id != user_id:
+                continue
             ratings = entry["ratings"]
 
             first_ts = parse_ts(entry["firstRatedAt"])
@@ -102,7 +105,7 @@ def load_canonical_event_sequences(
 
                 known_events.append(
                     CanonicalEvent(
-                        user_id=user_id,
+                        user_id=entry_user_id,
                         event_idx=event_idx,
                         movie_id=movie_id,
                         item_idx=int(item_idx),
@@ -117,7 +120,7 @@ def load_canonical_event_sequences(
             if not known_events:
                 continue
 
-            user_events[user_id] = known_events
+            user_events[entry_user_id] = known_events
             stats.kept_users += 1
             stats.kept_events += len(known_events)
 

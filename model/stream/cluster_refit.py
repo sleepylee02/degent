@@ -5,10 +5,14 @@ from typing import Any
 import argparse
 import json
 import time
-import warnings
-
 import numpy as np
 
+from model.common.cluster import (
+    choose_backend,
+    cluster_with_fallback,
+    compute_interest_vectors,
+    top_genres_for_cluster,
+)
 from model.common.runtime import (
     append_metric,
     command_line,
@@ -55,6 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--random-state", type=int, default=42)
     parser.add_argument("--user-id", type=int, default=None, help="Only process one user from open requests.")
     parser.add_argument("--limit-users", type=int, default=None, help="Process at most N users from open requests.")
+    parser.add_argument("--movies", type=Path, default=Path("data/movies_processed_drop.csv"),
+                        help="Movies metadata CSV for genre labeling. Skipped if file does not exist.")
     return parser.parse_args()
 
 
@@ -96,47 +102,14 @@ def load_open_refit_requests(path: Path, *, user_id: int | None = None) -> dict[
     return open_requests
 
 
-def probe_gpu_backend() -> None:
-    import cuml  # noqa: F401
-    import cupy as cp
-
-    device_count = int(cp.cuda.runtime.getDeviceCount())
-    if device_count <= 0:
-        raise RuntimeError("No CUDA devices are visible.")
-
-
-def choose_backend(requested: str) -> tuple[str, str | None]:
-    if requested == "cpu":
-        return "cpu", None
-
-    try:
-        probe_gpu_backend()
-        return "gpu", None
-    except Exception as exc:
-        reason = f"gpu_unavailable: {exc.__class__.__name__}: {exc}"
-        if requested == "gpu":
-            raise RuntimeError("Requested GPU backend, but RAPIDS cuML or CUDA runtime is unavailable.") from exc
-        return "cpu", reason
-
-
-def to_numpy(value: Any) -> np.ndarray:
-    if hasattr(value, "to_numpy"):
-        return np.asarray(value.to_numpy())
-    try:
-        import cupy as cp
-
-        if isinstance(value, cp.ndarray):
-            return cp.asnumpy(value)
-    except Exception:
-        pass
-    return np.asarray(value)
-
-
 def labels_to_interest_vectors(
     embeddings: np.ndarray,
     labels: np.ndarray,
     *,
     backend: str,
+    movie_ids: np.ndarray | None = None,
+    genre_map_idx: dict[int, list[int]] | None = None,
+    all_genres: list[str] | None = None,
 ) -> tuple[list[Interest], dict[str, Any]]:
     labels = labels.astype(np.int64)
     unique_clusters = sorted(set(labels.tolist()) - {-1})
@@ -144,10 +117,13 @@ def labels_to_interest_vectors(
 
     interests: list[Interest] = []
     cluster_sizes: dict[int, int] = {}
+    has_genre_info = movie_ids is not None and genre_map_idx is not None and all_genres is not None
+
     for new_interest_id, cluster_id in enumerate(unique_clusters):
         mask = labels == cluster_id
         cluster_sizes[int(cluster_id)] = int(mask.sum())
         vector = embeddings[mask].mean(axis=0).astype(float).tolist()
+        genres = top_genres_for_cluster(movie_ids[mask], genre_map_idx, all_genres) if has_genre_info else []
         interests.append(
             Interest(
                 interest_id=new_interest_id,
@@ -156,6 +132,7 @@ def labels_to_interest_vectors(
                 created_at=timestamp,
                 updated_at=timestamp,
                 source=f"cluster_refit:{backend}:cluster_{cluster_id}",
+                top_genres=genres,
             )
         )
 
@@ -163,6 +140,7 @@ def labels_to_interest_vectors(
     if not interests:
         fallback_used = True
         vector = embeddings.mean(axis=0).astype(float).tolist()
+        genres = top_genres_for_cluster(movie_ids, genre_map_idx, all_genres) if has_genre_info else []
         interests.append(
             Interest(
                 interest_id=0,
@@ -171,6 +149,7 @@ def labels_to_interest_vectors(
                 created_at=timestamp,
                 updated_at=timestamp,
                 source=f"cluster_refit:{backend}:mean_fallback_all_noise",
+                top_genres=genres,
             )
         )
 
@@ -186,99 +165,7 @@ def labels_to_interest_vectors(
     return interests, summary
 
 
-def refit_cpu(
-    embeddings: np.ndarray,
-    *,
-    min_cluster_size: int,
-    cluster_dim: int,
-    random_state: int,
-) -> tuple[list[Interest], dict[str, Any]]:
-    import hdbscan
-    import umap
-
-    n_samples = int(embeddings.shape[0])
-    if n_samples < max(2, min_cluster_size):
-        labels = np.full(n_samples, -1, dtype=np.int64)
-        interests, summary = labels_to_interest_vectors(embeddings, labels, backend="cpu")
-        summary.update({"backend": "cpu", "reducedDim": None, "reason": "insufficient_samples_mean_fallback"})
-        return interests, summary
-
-    reduced_dim = min(cluster_dim, max(2, n_samples - 2))
-    n_neighbors = min(15, max(2, n_samples - 1))
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="n_jobs value 1 overridden", category=UserWarning)
-        reducer = umap.UMAP(
-            n_components=reduced_dim,
-            n_neighbors=n_neighbors,
-            random_state=random_state,
-            verbose=False,
-        )
-        z_cluster = reducer.fit_transform(embeddings)
-
-    labels = hdbscan.HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster)
-    interests, summary = labels_to_interest_vectors(embeddings, labels, backend="cpu")
-    summary.update({"backend": "cpu", "reducedDim": int(reduced_dim), "nNeighbors": int(n_neighbors)})
-    return interests, summary
-
-
-def refit_gpu(
-    embeddings: np.ndarray,
-    *,
-    min_cluster_size: int,
-    cluster_dim: int,
-    random_state: int,
-) -> tuple[list[Interest], dict[str, Any]]:
-    from cuml.cluster import HDBSCAN
-    from cuml.manifold import UMAP
-
-    n_samples = int(embeddings.shape[0])
-    if n_samples < max(2, min_cluster_size):
-        labels = np.full(n_samples, -1, dtype=np.int64)
-        interests, summary = labels_to_interest_vectors(embeddings, labels, backend="gpu")
-        summary.update({"backend": "gpu", "reducedDim": None, "reason": "insufficient_samples_mean_fallback"})
-        return interests, summary
-
-    reduced_dim = min(cluster_dim, max(2, n_samples - 2))
-    n_neighbors = min(15, max(2, n_samples - 1))
-    reducer = UMAP(
-        n_components=reduced_dim,
-        n_neighbors=n_neighbors,
-        random_state=random_state,
-        verbose=False,
-    )
-    z_cluster = reducer.fit_transform(embeddings)
-    labels = HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster)
-    labels_np = to_numpy(labels).astype(np.int64)
-    interests, summary = labels_to_interest_vectors(embeddings, labels_np, backend="gpu")
-    summary.update({"backend": "gpu", "reducedDim": int(reduced_dim), "nNeighbors": int(n_neighbors)})
-    return interests, summary
-
-
 def run_refit(
-    embeddings: np.ndarray,
-    *,
-    backend: str,
-    min_cluster_size: int,
-    cluster_dim: int,
-    random_state: int,
-) -> tuple[list[Interest], dict[str, Any]]:
-    if backend == "gpu":
-        return refit_gpu(
-            embeddings,
-            min_cluster_size=min_cluster_size,
-            cluster_dim=cluster_dim,
-            random_state=random_state,
-        )
-    return refit_cpu(
-        embeddings,
-        min_cluster_size=min_cluster_size,
-        cluster_dim=cluster_dim,
-        random_state=random_state,
-    )
-
-
-def run_refit_with_auto_fallback(
     embeddings: np.ndarray,
     *,
     requested_backend: str,
@@ -287,32 +174,34 @@ def run_refit_with_auto_fallback(
     min_cluster_size: int,
     cluster_dim: int,
     random_state: int,
+    movie_ids: np.ndarray | None = None,
+    genre_map_idx: dict[int, list[int]] | None = None,
+    all_genres: list[str] | None = None,
     logger: Any,
 ) -> tuple[list[Interest], dict[str, Any], str, str | None]:
-    try:
-        interests, summary = run_refit(
-            embeddings,
-            backend=selected_backend,
-            min_cluster_size=min_cluster_size,
-            cluster_dim=cluster_dim,
-            random_state=random_state,
-        )
-        return interests, summary, selected_backend, fallback_reason
-    except Exception as exc:
-        if requested_backend != "auto" or selected_backend != "gpu":
-            raise
-
-        runtime_fallback_reason = f"gpu_refit_failed: {exc.__class__.__name__}: {exc}"
-        logger.warning("GPU refit failed under auto backend; falling back to CPU: %s", runtime_fallback_reason)
-        interests, summary = run_refit(
-            embeddings,
-            backend="cpu",
-            min_cluster_size=min_cluster_size,
-            cluster_dim=cluster_dim,
-            random_state=random_state,
-        )
-        summary["autoFallbackReason"] = runtime_fallback_reason
-        return interests, summary, "cpu", runtime_fallback_reason
+    result, actual_backend, actual_fallback = cluster_with_fallback(
+        embeddings,
+        requested_backend=requested_backend,
+        selected_backend=selected_backend,
+        fallback_reason=fallback_reason,
+        min_cluster_size=min_cluster_size,
+        cluster_dim=cluster_dim,
+        random_state=random_state,
+        logger=logger,
+    )
+    interests, summary = labels_to_interest_vectors(
+        embeddings, result.labels,
+        backend=actual_backend,
+        movie_ids=movie_ids,
+        genre_map_idx=genre_map_idx,
+        all_genres=all_genres,
+    )
+    summary.update({
+        "reducedDim": result.reduced_dim,
+        "nNeighbors": result.n_neighbors,
+        **({"autoFallbackReason": actual_fallback} if actual_fallback != fallback_reason else {}),
+    })
+    return interests, summary, actual_backend, actual_fallback
 
 
 def update_state_after_refit(
@@ -347,6 +236,18 @@ if __name__ == "__main__":
     interest_state_dir = resolve_path(ROOT, args.interest_state_dir)
     refit_events_path = resolve_path(ROOT, args.refit_events)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
+
+    genre_map_idx: dict[int, list[int]] | None = None
+    all_genres: list[str] | None = None
+    movies_path = resolve_path(ROOT, args.movies)
+    if movies_path.exists():
+        import pandas as pd
+        from model.common.dataset import build_genre_map
+        movies_df = pd.read_csv(movies_path)
+        genre_map_idx, all_genres = build_genre_map(movies_df)
+        logger.info("Loaded genre map: %d movies %d genres", len(genre_map_idx), len(all_genres))
+    else:
+        logger.warning("Movies file not found, genre labeling disabled: %s", movies_path)
 
     selected_backend, fallback_reason = choose_backend(args.cluster_backend)
     logger.info("Experiment run id: %s", run_id)
@@ -451,8 +352,9 @@ if __name__ == "__main__":
 
         user_embeddings = np.stack([row["embedding"] for row in user_rows]).astype(np.float32)
         active_raw_event_ids = [int(row["rawEventId"]) for row in user_rows]
+        user_movie_ids = np.array([int(row["movieId"]) for row in user_rows], dtype=np.int64)
         user_start = time.time()
-        interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit_with_auto_fallback(
+        interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit(
             user_embeddings,
             requested_backend=args.cluster_backend,
             selected_backend=selected_backend,
@@ -460,6 +362,9 @@ if __name__ == "__main__":
             min_cluster_size=args.min_cluster_size,
             cluster_dim=args.cluster_dim,
             random_state=args.random_state,
+            movie_ids=user_movie_ids,
+            genre_map_idx=genre_map_idx,
+            all_genres=all_genres,
             logger=logger,
         )
         selected_backend = actual_backend
