@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CLUSTER_PATH = REPO_ROOT / "data" / "clustering" / "user_clusters.parquet"
 DEFAULT_REPLAY_ROOT = REPO_ROOT / "outputs" / "stream" / "replay_demo"
 DEFAULT_REPLAY_SUMMARY_PATH = DEFAULT_REPLAY_ROOT / "replay_summary.json"
+DEFAULT_REPLAY_RECOMMENDATIONS_PATH = DEFAULT_REPLAY_ROOT / "stream_recommendations.jsonl"
 REQUIRED_COLUMNS = {"userId", "clusterLabel", "x", "y"}
 NOISE_LABEL = -1
 REPLAY_PATH_KEYS = {
@@ -28,6 +29,7 @@ REPLAY_PATH_KEYS = {
     "refitRequests": "refit_requests.jsonl",
     "refitEvents": "refit_events.jsonl",
     "interestStateDir": "interest_states",
+    "streamRecommendations": "stream_recommendations.jsonl",
 }
 
 MOVIE_METADATA_PATH = REPO_ROOT / "data" / "movies_processed.csv"
@@ -198,21 +200,41 @@ def render_interest_metadata_panel(frame: pd.DataFrame, movies: pd.DataFrame | N
             st.write(", ".join(str(mid) for mid in recent_ids))
 
 
-def render_recommendation_panel(frame: pd.DataFrame, movies: pd.DataFrame | None) -> None:
+def render_recommendation_panel(
+    frame: pd.DataFrame,
+    movies: pd.DataFrame | None,
+    recommendations: pd.DataFrame | None = None,
+    selected_user: int | None = None,
+) -> None:
     st.subheader("Recommendation panel")
-    if frame.empty:
-        st.info("No items available for recommendation preview.")
-        return
+    candidate_ids: list[int] = []
 
-    if "recommendedMovieId" in frame.columns:
-        candidate_ids = frame["recommendedMovieId"].dropna().astype(int).astype(object).tolist()
-    elif "movieId" in frame.columns:
-        candidate_ids = frame["movieId"].dropna().astype(int).value_counts().head(6).index.tolist()
-    else:
-        st.info("No recommendation item IDs found in the current dataset.")
-        return
+    recommendation_frame = pd.DataFrame()
+    if recommendations is not None and not recommendations.empty:
+        recommendation_frame = recommendations
+        if selected_user is not None and "userId" in recommendation_frame.columns:
+            recommendation_frame = recommendation_frame[recommendation_frame["userId"] == selected_user]
+        if "recommendedMovieId" in recommendation_frame.columns:
+            candidate_ids = recommendation_frame["recommendedMovieId"].dropna().astype(int).astype(object).tolist()
 
     if not candidate_ids:
+        if frame.empty:
+            st.info("No items available for recommendation preview.")
+            return
+        if "recommendedMovieId" in frame.columns:
+            candidate_ids = frame["recommendedMovieId"].dropna().astype(int).astype(object).tolist()
+        elif "movieId" in frame.columns:
+            candidate_ids = frame["movieId"].dropna().astype(int).value_counts().head(6).index.tolist()
+        else:
+            if recommendation_frame.empty:
+                st.info("No recommendation item IDs found in the current dataset.")
+                return
+            candidate_ids = []
+
+    if not candidate_ids:
+        if not recommendation_frame.empty:
+            st.info("No recommendations available for the selected user.")
+            return
         st.info("No recommendation candidates available.")
         return
 
@@ -261,6 +283,21 @@ def load_frame(path: Path) -> pd.DataFrame:
         frame = pl.read_parquet(path)
     elif suffix in {".jsonl", ".ndjson"}:
         frame = pl.read_ndjson(path)
+    elif suffix == ".npz":
+        data = np.load(path)
+        if not {"labels_user_ids", "labels", "umap_z"}.issubset(data.files):
+            raise ValueError("Unsupported NPZ cluster format: missing required arrays")
+        frame = pd.DataFrame({
+            "userId": data["labels_user_ids"],
+            "clusterLabel": data["labels"],
+            "x": data["umap_z"][:, 0],
+            "y": data["umap_z"][:, 1],
+        })
+        if data["umap_z"].shape[1] >= 3:
+            frame["z"] = data["umap_z"][:, 2]
+        if "labels_timepoints" in data.files:
+            frame["timepoint"] = data["labels_timepoints"]
+        return frame
     else:
         raise ValueError(f"Unsupported file format: {suffix}")
     return frame.to_pandas()
@@ -305,6 +342,18 @@ def records_to_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
     if not records:
         return pd.DataFrame()
     return pd.json_normalize(records)
+
+
+def load_replay_recommendations(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    records = load_jsonl_records(path)
+    if not records:
+        return pd.DataFrame()
+    recommendations = records_to_frame(records)
+    if "movieId" in recommendations.columns and "recommendedMovieId" not in recommendations.columns:
+        recommendations = recommendations.rename(columns={"movieId": "recommendedMovieId"})
+    return recommendations
 
 
 def replay_paths_from_summary(summary: dict[str, Any]) -> dict[str, Path]:
@@ -573,11 +622,14 @@ def render_cluster_dashboard() -> None:
     with st.sidebar:
         st.header("Cluster Data")
         default_path = st.text_input("Cluster result path", value=str(DEFAULT_CLUSTER_PATH))
+        default_rec_path = st.text_input("Replay recommendation path", value=str(DEFAULT_REPLAY_RECOMMENDATIONS_PATH))
         use_demo_data = st.toggle("Use demo data", value=not Path(default_path).exists())
+        load_replay_recommendations_flag = st.checkbox("Load replay recommendations", value=Path(default_rec_path).exists())
 
     if use_demo_data:
         frame = generate_demo_frame()
         data_source = "synthetic demo data"
+        recommendations = pd.DataFrame()
     else:
         cluster_path = Path(default_path).expanduser()
         try:
@@ -586,6 +638,8 @@ def render_cluster_dashboard() -> None:
             st.error(f"Failed to load cluster results: {exc}")
             st.stop()
         data_source = str(cluster_path)
+        recommendation_path = Path(default_rec_path).expanduser()
+        recommendations = load_replay_recommendations(recommendation_path) if load_replay_recommendations_flag else pd.DataFrame()
 
     try:
         validate_frame(frame)
@@ -646,7 +700,7 @@ def render_cluster_dashboard() -> None:
 
     with main_right:
         render_interest_metadata_panel(filtered, movies)
-    render_recommendation_panel(filtered, movies)
+    render_recommendation_panel(filtered, movies, recommendations=recommendations, selected_user=selected_user)
     render_cluster_size_chart(summary)
 
 
@@ -909,6 +963,44 @@ def render_interest_state_browser(state_dir: Path) -> None:
     st.dataframe(pd.DataFrame(interest_rows), use_container_width=True, hide_index=True)
 
 
+def render_recommendations_view(recommendations: pd.DataFrame, max_rows: int) -> None:
+    st.subheader("Recommendations")
+
+    if recommendations.empty:
+        st.info("No recommendation records found.")
+        return
+
+    # Rename movieId to recommendedMovieId for compatibility
+    if "movieId" in recommendations.columns:
+        recommendations = recommendations.rename(columns={"movieId": "recommendedMovieId"})
+
+    # Display metrics
+    total_recommendations = len(recommendations)
+    unique_users = recommendations["userId"].nunique() if "userId" in recommendations.columns else 0
+    unique_movies = recommendations["recommendedMovieId"].nunique() if "recommendedMovieId" in recommendations.columns else 0
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total recommendations", format_count(total_recommendations))
+    col2.metric("Unique users", format_count(unique_users))
+    col3.metric("Unique movies", format_count(unique_movies))
+
+    # Display recommendations table
+    preferred_columns = ["userId", "recommendedMovieId", "title", "score", "rank", "recordedAt"]
+    available_columns = [col for col in preferred_columns if col in recommendations.columns]
+
+    st.dataframe(
+        compact_columns(recommendations[available_columns].tail(max_rows), preferred_columns),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # Show top recommendations by score
+    if "score" in recommendations.columns:
+        st.subheader("Top Recommendations by Score")
+        top_recommendations = recommendations.nlargest(10, "score")[available_columns]
+        st.dataframe(top_recommendations, use_container_width=True, hide_index=True)
+
+
 def render_replay_dashboard() -> None:
     st.subheader("Replay Monitor")
     st.caption("Read-only monitor for Phase 5 replay artifacts under the streaming replay/dashboard contract.")
@@ -933,6 +1025,7 @@ def render_replay_dashboard() -> None:
         assignments = records_to_frame(load_jsonl_records(paths["interestAssignments"]))
         refit_requests = records_to_frame(load_jsonl_records(paths["refitRequests"]))
         refit_events = records_to_frame(load_jsonl_records(paths["refitEvents"]))
+        recommendations = records_to_frame(load_jsonl_records(paths["streamRecommendations"]))
     except Exception as exc:
         st.error(f"Failed to load replay artifacts: {exc}")
         st.stop()
@@ -940,6 +1033,7 @@ def render_replay_dashboard() -> None:
     render_replay_summary(summary, paths)
     render_replay_events(replay_events, int(max_rows))
     render_assignment_refit_view(assignments, refit_requests, refit_events, int(max_rows))
+    render_recommendations_view(recommendations, int(max_rows))
     render_interest_state_browser(paths["interestStateDir"])
 
 

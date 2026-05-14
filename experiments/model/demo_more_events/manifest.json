@@ -1,0 +1,550 @@
+{
+  "created_at": "2026-05-13T19:14:53+09:00",
+  "run_id": "demo_more_events",
+  "git": {
+    "commit": "75458ae6f867b2d81fddbd169c618a56376c0489",
+    "branch": "dashboard",
+    "dirty": true,
+    "status_short": [
+      "M dashboard/cluster_dashboard.py",
+      "?? experiments/model/demo_more_events/",
+      "?? experiments/model/demo_quick/",
+      "?? outputs/logs/cluster_20260513_192846.log",
+      "?? outputs/logs/cluster_refit_20260513_190526.log",
+      "?? outputs/logs/cluster_refit_20260513_191355.log",
+      "?? outputs/logs/cluster_refit_20260513_191459.log",
+      "?? outputs/logs/cluster_refit_20260513_191531.log",
+      "?? outputs/logs/cluster_refit_20260513_191553.log",
+      "?? outputs/logs/cluster_refit_20260513_191614.log",
+      "?? outputs/logs/extract_online_20260513_190447.log",
+      "?? outputs/logs/extract_online_20260513_190518.log",
+      "?? outputs/logs/extract_online_20260513_191453.log",
+      "?? outputs/logs/extract_online_20260513_191517.log",
+      "?? outputs/logs/extract_online_20260513_191525.log",
+      "?? outputs/logs/extract_online_20260513_191547.log",
+      "?? outputs/logs/extract_online_20260513_191609.log",
+      "?? outputs/logs/interest_assign_20260513_190525.log",
+      "?? outputs/logs/interest_assign_20260513_191458.log",
+      "?? outputs/logs/interest_assign_20260513_191522.log",
+      "?? outputs/logs/interest_assign_20260513_191530.log",
+      "?? outputs/logs/interest_assign_20260513_191552.log",
+      "?? outputs/logs/interest_assign_20260513_191613.log",
+      "?? outputs/logs/recommend_online_20260513_191515.log",
+      "?? outputs/logs/recommend_online_20260513_191523.log",
+      "?? outputs/logs/recommend_online_20260513_191545.log",
+      "?? outputs/logs/recommend_online_20260513_191607.log",
+      "?? outputs/logs/recommend_online_20260513_191629.log",
+      "?? outputs/logs/replay_pipeline_20260513_190415.log",
+      "?? outputs/logs/replay_pipeline_20260513_190506.log",
+      "?? outputs/logs/replay_pipeline_20260513_191441.log"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/extract_online.py' --run-id demo_more_events --movies '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/data/movies_processed_drop.csv' --checkpoint '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/sasrec_cl.pt' --item2idx '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/item2idx.json' --state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/user_states' --output '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embeddings.npz' --event-log '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embedding_events.jsonl' --event-jsonl '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/batches/batch_000004.jsonl' --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256",
+      "log": {
+        "path": "outputs/logs/extract_online_20260513_191609.log",
+        "exists": true,
+        "size_bytes": 904,
+        "mtime_ns": 1778667369700638632
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775460355604372893
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775460502190749097
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775708669740557374,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1775708653190413963,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775450994584227300,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775450994584421548,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/stream/replay_demo/user_states",
+        "output": "outputs/stream/replay_demo/online_embeddings.npz",
+        "event_log": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+        "bootstrap_user_id": null,
+        "event_jsonl": "/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/batches/batch_000004.jsonl",
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 256
+      },
+      "runtime": {
+        "device": "mps",
+        "device_label": "mps (Apple Metal)",
+        "torch_version": "2.11.0"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 28,
+            "statePath": "outputs/stream/replay_demo/user_states/28.json",
+            "rawEventCount": 50,
+            "positiveEventCount": 26,
+            "activeEventCount": 26,
+            "droppedEventCount": 24,
+            "skippedUnknownItems": 0,
+            "ratingMean": 3.38,
+            "ratingStd": 1.12942463227964,
+            "positiveReason": "zscore",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 26
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 20026,
+          "mtime_ns": 1778667372438448584,
+          "sha256": "79994b126be98ea34df717b8d052d43ec877d7a50f75baed74ce87e597c8b5d7"
+        },
+        "event_log": {
+          "path": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 4203,
+          "mtime_ns": 1778667372438859915,
+          "sha256": "856303e97f9853360a3ab371d7de217b9db29d6eb16f0267c9f707417d5d541f"
+        },
+        "metrics": {
+          "path": "experiments/model/demo_more_events/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 4617,
+          "mtime_ns": 1778667372439020748,
+          "sha256": "42d74f53e2d6e8b4bb09dc50303d6305a5567a1b476140b92ff0009d13e8f94f"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 10,
+        "embedding_rows": 26,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 26,
+        "nan_embedding_rows": 0,
+        "max_history_len": 26,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true
+      }
+    },
+    "interest_assign": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/interest_assign.py' --run-id demo_more_events --embeddings '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embeddings.npz' --interest-state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_states' --assignments '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_assignments.jsonl' --refit-requests '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/refit_requests.jsonl' --similarity-threshold 0.2 --refit-min-events 5 --assign-trigger-count 5 --outlier-trigger-count 5",
+      "log": {
+        "path": "outputs/logs/interest_assign_20260513_191613.log",
+        "exists": true,
+        "size_bytes": 1090,
+        "mtime_ns": 1778667373696720503
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 20026,
+          "mtime_ns": 1778667372438448584
+        }
+      },
+      "assignment_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "assignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+        "refit_requests": "outputs/stream/replay_demo/refit_requests.jsonl",
+        "similarity_threshold": 0.2,
+        "refit_min_events": 5,
+        "assign_trigger_count": 5,
+        "outlier_trigger_count": 5
+      },
+      "data_summary": {
+        "active_embedding_rows": 26,
+        "processed_users": 1,
+        "user_summaries": [
+          {
+            "userId": 28,
+            "inputRows": 26,
+            "interestCount": 2,
+            "pendingBefore": 0,
+            "pendingAfter": 0,
+            "processedBefore": 19,
+            "processedAfter": 26,
+            "refitRequired": true,
+            "refitReasons": [
+              "assigned_since_last_refit"
+            ],
+            "statuses": {
+              "already_processed": 19,
+              "assigned": 7
+            },
+            "statePath": "outputs/stream/replay_demo/interest_states/28.json"
+          }
+        ]
+      },
+      "outputs": {
+        "assignments": {
+          "path": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "exists": true,
+          "size_bytes": 19250,
+          "mtime_ns": 1778667373775966264,
+          "sha256": "d8c87462621bcd6fb491efd07141fbcdddea7fd944e9a81f421cc153f699dd81"
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 1213,
+          "mtime_ns": 1778667373776086971,
+          "sha256": "9806d41d07cca4295683874a1d40ded2b416c0e36c85d61510cc98cd8e67db87"
+        },
+        "metrics": {
+          "path": "experiments/model/demo_more_events/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 4858,
+          "mtime_ns": 1778667373776186012,
+          "sha256": "eedc8e6b506947ec7f5bcf02218afa57eedabcb98b6638cdf035039665e4b6f3"
+        }
+      },
+      "summary_metrics": {
+        "stage": "interest_assign",
+        "input_rows": 26,
+        "processed_users": 1,
+        "assignment_records": 26,
+        "refit_requests": 1,
+        "status_counts": {
+          "pending_no_interest": 4,
+          "pending_refit_required": 1,
+          "already_processed": 19,
+          "assigned": 7
+        },
+        "embedding_dim": 128
+      }
+    },
+    "cluster_refit": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/cluster_refit.py' --run-id demo_more_events --embeddings '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/online_embeddings.npz' --refit-requests '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/refit_requests.jsonl' --interest-state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_states' --refit-events '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/refit_events.jsonl' --cluster-backend cpu --refit-min-events 5 --min-cluster-size 3 --cluster-dim 3 --user-id 28",
+      "log": {
+        "path": "outputs/logs/cluster_refit_20260513_191614.log",
+        "exists": true,
+        "size_bytes": 1173,
+        "mtime_ns": 1778667374890653460
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 20026,
+          "mtime_ns": 1778667372438448584
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 1213,
+          "mtime_ns": 1778667373776086971
+        }
+      },
+      "refit_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "refit_events": "outputs/stream/replay_demo/refit_events.jsonl",
+        "cluster_backend_requested": "cpu",
+        "cluster_backend_selected": "cpu",
+        "backend_fallback_reason": null,
+        "refit_min_events": 5,
+        "min_cluster_size": 3,
+        "cluster_dim": 3,
+        "random_state": 42,
+        "user_id": 28,
+        "limit_users": null
+      },
+      "data_summary": {
+        "active_embedding_rows": 26,
+        "active_embedding_users": 1,
+        "user_summaries": [
+          {
+            "recordedAt": "2026-05-13T19:16:14+09:00",
+            "runId": "demo_more_events",
+            "userId": 28,
+            "request": {
+              "recordedAt": "2026-05-13T19:16:13+09:00",
+              "runId": "demo_more_events",
+              "userId": 28,
+              "status": "open",
+              "reasons": [
+                "assigned_since_last_refit"
+              ],
+              "pendingRawEventCount": 0,
+              "assignedSinceLastRefit": 7,
+              "outlierSinceLastRefit": 0,
+              "refitMinEvents": 5,
+              "assignTriggerCount": 5,
+              "outlierTriggerCount": 5
+            },
+            "statePath": "outputs/stream/replay_demo/interest_states/28.json",
+            "backendRequested": "cpu",
+            "backendSelected": "cpu",
+            "backendFallbackReason": null,
+            "activeEmbeddingRows": 26,
+            "status": "closed",
+            "refitElapsedSec": 12.218754768371582,
+            "interestCount": 2,
+            "processedRawEventCount": 26,
+            "clusterSummary": {
+              "nClusters": 2,
+              "interestCount": 2,
+              "noiseCount": 0,
+              "fallbackUsed": false,
+              "labelCounts": {
+                "0": 10,
+                "1": 16
+              },
+              "clusterSizes": {
+                "0": 10,
+                "1": 16
+              },
+              "backend": "cpu",
+              "reducedDim": 3,
+              "nNeighbors": 15
+            }
+          }
+        ]
+      },
+      "outputs": {
+        "refit_events": {
+          "path": "outputs/stream/replay_demo/refit_events.jsonl",
+          "exists": true,
+          "size_bytes": 3580,
+          "mtime_ns": 1778667387189883103,
+          "sha256": "9d17c5cea49fae76dc57c4bac297ea0d1c9f683d357c00f085150e18484494d5"
+        },
+        "metrics": {
+          "path": "experiments/model/demo_more_events/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 5172,
+          "mtime_ns": 1778667387190024561,
+          "sha256": "c78a27da2466db935359476121ca65628c710b5727a7192227af35112f475e6b"
+        }
+      },
+      "summary_metrics": {
+        "stage": "cluster_refit",
+        "open_requests": 1,
+        "selected_requests": 1,
+        "refit_count": 1,
+        "skipped_count": 0,
+        "cluster_backend_requested": "cpu",
+        "cluster_backend_selected": "cpu",
+        "backend_fallback_reason": null,
+        "elapsed_sec": 12.220698833465576,
+        "embedding_dim": 128
+      }
+    },
+    "recommend_online": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/recommend_online.py' --run-id demo_more_events --interest-state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_states' --user-state-dir '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/user_states' --checkpoint '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/sasrec_cl.pt' --item2idx '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/item2idx.json' --movies '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/data/movies_processed_drop.csv' --output-jsonl '/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/stream_recommendations.jsonl' --top-k 20 --user-id 28",
+      "log": {
+        "path": "outputs/logs/recommend_online_20260513_191629.log",
+        "exists": true,
+        "size_bytes": 162,
+        "mtime_ns": 1778667389134770499
+      },
+      "inputs": {
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775708669740557374
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1775708653190413963
+        }
+      },
+      "recommend_config": {
+        "interest_state_dir": "/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/interest_states",
+        "user_state_dir": "/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/user_states",
+        "output_jsonl": "/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/outputs/stream/replay_demo/stream_recommendations.jsonl",
+        "top_k": 20,
+        "user_ids": [
+          28
+        ],
+        "include_seen": false,
+        "normalize": false
+      },
+      "data_summary": {
+        "target_users": 1,
+        "eligible_users": 1,
+        "skipped_users": 0,
+        "skip_reasons": {}
+      },
+      "outputs": {
+        "stream_recommendations": {
+          "path": "outputs/stream/replay_demo/stream_recommendations.jsonl",
+          "exists": true,
+          "size_bytes": 42692,
+          "mtime_ns": 1778667389615425408,
+          "sha256": "46f47c148581698be8f7b7f146fd3b46bcc1f125f7475410e3c7ab7414c59463"
+        },
+        "metrics": {
+          "path": "experiments/model/demo_more_events/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 5448,
+          "mtime_ns": 1778667389615765490,
+          "sha256": "9ce4e5f93ff9bbe77b3133dd90f26f77636e9cd3ab3d9493d704ba18ef755e10"
+        }
+      },
+      "summary_metrics": {
+        "stage": "recommend_online",
+        "target_users": 1,
+        "eligible_users": 1,
+        "skipped_users": 0,
+        "users_with_recommendations": 1,
+        "recommendation_rows": 20,
+        "candidate_items": 55726,
+        "top_k": 20,
+        "include_seen": false,
+        "normalize": false
+      }
+    },
+    "replay_pipeline": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/stream/replay_pipeline.py' --reset-output --generate-events --replay-user-id 28 --limit-events 50 --micro-batch-size 10 --refit-min-events 5 --assign-trigger-count 5 --outlier-trigger-count 5 --min-cluster-size 3 --cluster-dim 3 --cluster-backend cpu --recommend --recommend-top-k 20 --run-id demo_more_events",
+      "log": {
+        "path": "outputs/logs/replay_pipeline_20260513_191441.log",
+        "exists": true,
+        "size_bytes": 18715,
+        "mtime_ns": 1778667387870947650
+      },
+      "inputs": {
+        "replay_input_events": {
+          "path": "outputs/stream/replay_demo/replay_input_events.jsonl",
+          "exists": true,
+          "size_bytes": 10075,
+          "mtime_ns": 1778667292028315419,
+          "sha256": "e99a8aac8f4b42b5c140eef99ca46bffe7eb0fa365ca723fc96987ac56f3347f"
+        }
+      },
+      "outputs": {
+        "replay_summary": {
+          "path": "outputs/stream/replay_demo/replay_summary.json",
+          "exists": true,
+          "size_bytes": 1065,
+          "mtime_ns": 1778667389899155702,
+          "sha256": "abb4babd2fa0e78a24b9179800b793cacbbfd87ada0514946039cb24044ff1e1"
+        },
+        "replay_events": {
+          "path": "outputs/stream/replay_demo/replay_events.jsonl",
+          "exists": true,
+          "size_bytes": 3254,
+          "mtime_ns": 1778667389899254535,
+          "sha256": "b7affe180e0c4a3d098cfdb75cced21955efa013e30de6d8746023d0adf8be73"
+        }
+      },
+      "summary_metrics": {
+        "version": "stream_replay_summary.v1",
+        "runId": "demo_more_events",
+        "status": "completed",
+        "startedAt": "2026-05-13T19:14:52+09:00",
+        "endedAt": "2026-05-13T19:16:29+09:00",
+        "elapsedSec": 97.86771821975708,
+        "inputEvents": 50,
+        "processedEvents": 50,
+        "uniqueUsers": 1,
+        "microBatchSize": 10,
+        "refitBackend": "cpu",
+        "totals": {
+          "activeEmbeddingRows": 71,
+          "assignmentRecords": 71,
+          "refitRequestsOpened": 4,
+          "refitClosed": 4,
+          "refitSkipped": 0,
+          "recommendationRows": 100
+        },
+        "paths": {
+          "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
+          "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
+          "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "refitEvents": "outputs/stream/replay_demo/refit_events.jsonl",
+          "interestStateDir": "outputs/stream/replay_demo/interest_states",
+          "streamRecommendations": "outputs/stream/replay_demo/stream_recommendations.jsonl"
+        }
+      }
+    },
+    "cluster": {
+      "command": "'/Users/kimseojeong/Desktop/Yonsei 4-1/인종설/degent/model/batch/cluster.py'",
+      "log": {
+        "path": "outputs/logs/cluster_20260513_192846.log",
+        "exists": true,
+        "size_bytes": 515,
+        "mtime_ns": 1778668126897669274
+      },
+      "inputs": {
+        "embeddings": {
+          "path": "outputs/embeddings.npz",
+          "exists": true,
+          "size_bytes": 403272396,
+          "mtime_ns": 1775708723295627591
+        }
+      },
+      "clustering_config": {
+        "user_id": null,
+        "top_n": null,
+        "stride": 1,
+        "window_size": 100,
+        "window_step": 10,
+        "min_cluster_size": 10,
+        "cluster_n_components": 10,
+        "viz_n_components": 3,
+        "random_state": 42
+      }
+    }
+  },
+  "updated_at": "2026-05-13T19:28:46+09:00"
+}

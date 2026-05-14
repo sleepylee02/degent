@@ -63,7 +63,7 @@
 | `experiments/model/<run_id>/metrics.jsonl` | experiment metrics | model scripts | append |
 | `experiments/model/<run_id>/notes.md` | experiment notes | model scripts / manual note | edit |
 | `requirements.txt` | Python dependency lock | repo-local `.venv` / `.venv/bin/pip freeze` | edit/regenerate |
-| `data/clustering/user_clusters.parquet` | dashboard input | export step from clustering/model result, not implemented yet | regenerate |
+| `data/clustering/user_clusters.parquet` | dashboard input | `python3 -m model.batch.export_clusters` | regenerate |
 | `eda/eda_outputs/` | raw EDA artifacts | `python3 -m eda.raw.eda_overview --source all` | regenerate |
 | `eda/raw/outputs/` | legacy raw EDA artifacts | previous raw EDA workflow | no new writes |
 | `eda/processed/outputs/` | processed EDA artifacts | `python3 eda/processed/eda_processed.py` | regenerate |
@@ -85,7 +85,7 @@ python3 -m model.stream.cluster_refit
 make -C replay
 python3 -m model.stream.replay_pipeline --generate-events
 python3 -m model.batch.cluster
+python3 -m model.batch.export_clusters
 python3 -m model.batch.visualize_clusters
-# add/run an explicit export step for data/clustering/user_clusters.parquet when using the dashboard with real data
 streamlit run dashboard/cluster_dashboard.py
 ```

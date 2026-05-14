@@ -12,6 +12,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best
   │    ↓
   │  python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
   │    ↓
+  │  python3 -m model.batch.export_clusters → dashboard 입력 테이블 생성 → data/clustering/user_clusters.parquet 저장
+  │    ↓
   │  python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
        ↓
