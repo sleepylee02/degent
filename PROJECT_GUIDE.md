@@ -57,7 +57,8 @@ degent/
 │   │   ├── interest_assign.py #   online interest assignment + refit request 기록
 │   │   ├── cluster_refit.py #     triggered cluster refit backend (genre labeling 포함)
 │   │   ├── recommend_online.py #  streaming interest state 기반 top-K 추천 산출
-│   │   └── replay_pipeline.py #   replay event micro-batch orchestrator
+│   │   ├── trace_replay.py #     N배속 trace-clock replay runner
+│   │   └── replay_pipeline.py #   trace replay 공식 entrypoint 호환 래퍼
 │   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
 │   └── README.md            #   모델 파이프라인 설명
 ├── eda/                     # 탐색적 데이터 분석 (EDA)
@@ -135,7 +136,7 @@ degent/
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.cluster_refit`은 refit request를 소비해 user별 interest state를 갱신한다.
 - `python3 -m model.stream.recommend_online`은 streaming interest state와 item embedding으로 top-K 추천을 만들고 `outputs/stream/stream_recommendations.jsonl`에 기록한다.
-- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 micro-batch로 소비해 Phase 3~4-1 closed-loop 산출물을 `outputs/stream/replay_demo/` 아래에 격리해 기록한다. `--recommend`를 주면 micro-batch마다 `recommend_online`도 호출해 `outputs/stream/replay_demo/stream_recommendations.jsonl`을 남긴다.
+- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 timestamp trace로 읽고, `--speed N` 기준 virtual clock에 맞춰 event를 주입한다. replay 산출물은 `outputs/stream/replay_demo/` 아래에 격리하며, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`에 schedule/lag/throughput metric을 남긴다. `--recommend`를 주면 event 처리 후 `recommend_online`도 호출해 `outputs/stream/replay_demo/stream_recommendations.jsonl`을 남긴다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.

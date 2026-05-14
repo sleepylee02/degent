@@ -92,7 +92,7 @@ streaming 단위는 individual user가 아니라 system-level rating event strea
 | online embedding | streaming inference | `model/stream/extract_online.py` | 새 event를 state에 반영하고 active embedding을 만든다 |
 | interest assignment | online | `model/stream/interest_assign.py` | cosine nearest-interest만 계산한다 |
 | cluster refit | trigger-based batch | `model/stream/cluster_refit.py` | UMAP/HDBSCAN은 필요할 때만 수행한다 |
-| replay | micro-batch simulation | `replay/cpp/rating_replay.cpp`, `model/stream/replay_pipeline.py` | historical ratings를 event stream처럼 재생한다 |
+| replay | trace-clock simulation | `replay/cpp/rating_replay.cpp`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py` | historical ratings를 `--speed N` virtual clock으로 재생한다 |
 | dashboard | read-only monitor | `dashboard/cluster_dashboard.py` | replay artifact를 관찰한다 |
 
 즉 이 브랜치가 낸 답은 다음이다.
@@ -696,7 +696,8 @@ C++ generator
 
 Python orchestrator
   replay_input_events.jsonl
-    -> micro-batch
+    -> --speed N trace clock
+    -> ingress_events.jsonl
     -> extract_online
     -> interest_assign
     -> cluster_refit
@@ -735,15 +736,17 @@ eventId
 
 ### 11-2. Python `replay_pipeline`
 
-`model/stream/replay_pipeline.py`는 replay input을 micro-batch로 나누고, 각 batch마다 Phase 3~4-1 CLI를 subprocess로 호출한다.
+`model/stream/replay_pipeline.py`는 `model/stream/trace_replay.py` entrypoint로 동작한다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, 각 event마다 Phase 3~4-1 CLI를 subprocess로 호출한다.
 
 ```text
-for each micro-batch:
-  batch jsonl 작성
+for each replay event:
+  scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed
+  due time까지 sleep하거나 behind schedule 기록
+  ingress_events.jsonl에 emit record append
   extract_online 실행
   interest_assign 실행
   새 open request user별 cluster_refit 실행
-  replay_events.jsonl에 progress append
+  replay_events.jsonl에 trace_event progress/lag append
 
 end:
   replay_summary.json 작성
@@ -761,6 +764,7 @@ Subprocess 체인을 택한 이유:
 
 ```text
 outputs/stream/replay_demo/replay_input_events.jsonl
+outputs/stream/replay_demo/ingress_events.jsonl
 outputs/stream/replay_demo/replay_events.jsonl
 outputs/stream/replay_demo/replay_summary.json
 outputs/stream/replay_demo/user_states/{user_id}.json
@@ -777,21 +781,22 @@ outputs/stream/replay_demo/interest_states/{user_id}.json
 
 ```text
 실제 streaming infra 없이도
-file-based event stream + micro-batch subprocess chain으로
+file-based timestamp trace + event-level subprocess chain으로
 closed-loop streaming behavior를 검증한다.
 ```
 
-Phase 5 smoke:
+Trace replay smoke:
 
 ```text
-input events: 30
-processed events: 30
+input events: 5
+processed events: 5
 unique users: 1
-micro-batches: 2
-final active embedding rows: 12
-refit requests opened/closed/skipped: 2 / 2 / 0
-backend selected: gpu
-elapsed: about 11.18 sec
+speed: 100
+trace/scheduled span: 32 sec / 0.32 sec
+target/actual throughput: 15.625 EPS / about 0.158 EPS
+refit requests opened/closed/skipped: 1 / 0 / 0 with --skip-refit
+behind schedule events: 4
+elapsed: about 31.74 sec
 ```
 
 ---
@@ -818,6 +823,7 @@ outputs/stream/replay_demo/replay_summary.json
 
 ```text
 replay_summary.json
+ingress_events.jsonl
 replay_events.jsonl
 interest_assignments.jsonl
 refit_requests.jsonl
@@ -831,8 +837,9 @@ interest_states/{user_id}.json
 - processed/input events
 - unique users
 - elapsed/throughput
-- replay event timeline
-- latency
+- speed, target/actual throughput
+- trace event timeline
+- injector/processing/end-to-end latency
 - active embedding rows
 - assignment status counts
 - open/closed/skipped refit events
@@ -872,8 +879,9 @@ Schema versions:
 | artifact | version |
 |---|---|
 | replay input event | `stream_replay_event.v1` |
-| replay progress event | `stream_replay_progress.v1` |
-| replay summary | `stream_replay_summary.v1` |
+| ingress event | `stream_ingress_event.v1` |
+| replay progress event | `stream_trace_replay_progress.v1` |
+| replay summary | `stream_trace_replay_summary.v1` |
 
 이 계약이 중요한 이유는 현재 구현이 파일 기반이어도 producer/consumer 역할이 분리되기 때문이다.
 
@@ -889,22 +897,23 @@ Schema versions:
 
 ## 14. End-to-End 실행이 의미하는 것
 
-Phase 5 smoke command 하나가 다음을 모두 통과한다.
+Trace replay smoke command 하나가 다음을 모두 통과한다.
 
 ```bash
 .venv/bin/python -m model.stream.replay_pipeline \
   --reset-output \
   --generate-events \
   --replay-user-id 28 \
-  --limit-events 30 \
-  --micro-batch-size 15 \
+  --limit-events 5 \
+  --speed 100 \
   --refit-min-events 3 \
   --assign-trigger-count 3 \
   --outlier-trigger-count 3 \
   --min-cluster-size 2 \
   --cluster-dim 3 \
-  --cluster-backend auto \
-  --run-id phase5_replay_smoke
+  --cluster-backend cpu \
+  --skip-refit \
+  --run-id trace_replay_smoke
 ```
 
 이 명령이 닫는 흐름:
@@ -912,13 +921,14 @@ Phase 5 smoke command 하나가 다음을 모두 통과한다.
 ```text
 C++ event generation
   -> timestamp-sorted replay input
-  -> micro-batch split
+  -> trace-clock event injection
+  -> ingress schedule/lag log
   -> online user state update
   -> SASRec canonical embedding
   -> cosine interest assignment
   -> refit request open
-  -> GPU UMAP/HDBSCAN refit
-  -> interest state replace
+  -> optional UMAP/HDBSCAN refit
+  -> optional interest state replace
   -> replay progress log
   -> replay summary entrypoint
   -> dashboard read

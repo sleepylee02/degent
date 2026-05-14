@@ -27,12 +27,12 @@
 | online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | interest assign / refit trigger | [x] | `stream/interest_assign.py` | active online embedding을 user별 interest state에 cosine nearest-interest로 assign하고, no-interest/pending/outlier/event-count 기준 refit request를 기록 | 실제 refit은 Phase 4-1 이후 범위 |
 | triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | `auto`는 cuML/CUDA runtime 가능 시 GPU, 불가하거나 auto GPU refit 실패 시 CPU fallback |
-| replay engine / closed-loop demo | [x] | `replay/cpp/rating_replay.cpp`, `stream/replay_pipeline.py` | ML-32M user history를 timestamp-sorted replay input으로 만들고, Phase 3~4-1 CLI와 선택적 recommend 단계를 micro-batch로 호출해 `outputs/stream/replay_demo/`에 격리된 artifact를 기록 | Phase 6 dashboard는 내부 구현이 아니라 `docs/streaming-replay-dashboard-contract.md`와 summary/JSONL artifact만 읽는다 |
+| trace replay engine / closed-loop demo | [x] | `replay/cpp/rating_replay.cpp`, `stream/trace_replay.py`, `stream/replay_pipeline.py` | ML-32M user history를 timestamp-sorted replay input으로 만들고, `--speed N` trace clock에 맞춰 Phase 3~4-1 CLI와 선택적 recommend 단계를 event 단위로 호출해 `outputs/stream/replay_demo/`에 격리된 artifact를 기록 | Dashboard는 내부 구현이 아니라 `docs/streaming-replay-dashboard-contract.md`와 summary/JSONL artifact만 읽는다 |
 | 유저별 클러스터링 | [~] | `batch/cluster.py`, `common/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz`와 `outputs/batch/interest_states/{user_id}.json` 저장, genre labeling 포함 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | dashboard cluster export | [x] | `batch/export_clusters.py` | `outputs/user_interests.npz`의 labels/UMAP 배열을 `data/clustering/user_clusters.parquet` 등 dashboard table로 변환 | batch interest state JSON 자체는 export하지 않음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
-| `u_k` 기반 추천 스코어링 | [x] | `batch/recommend.py`, `stream/recommend_online.py` | `score(u, i) = max_k(u_k^T v_i)`를 계산하고 top-K 추천을 CSV/NPZ 또는 JSONL로 기록. `replay_pipeline.py --recommend` 옵션으로 micro-batch loop에 통합 | stream 경로는 current interest state JSON을 읽음. batch 경로는 interest vector NPZ 입력 계약 정리 필요 |
+| `u_k` 기반 추천 스코어링 | [x] | `batch/recommend.py`, `stream/recommend_online.py` | `score(u, i) = max_k(u_k^T v_i)`를 계산하고 top-K 추천을 CSV/NPZ 또는 JSONL로 기록. `replay_pipeline.py --recommend` 옵션으로 trace replay event loop에 통합 | stream 경로는 current interest state JSON을 읽음. batch 경로는 interest vector NPZ 입력 계약 정리 필요 |
 | downstream 추천 평가 | [ ] | 없음 | `u_k` 기반 retrieval/rerank 평가 파이프라인 없음 | Recall@K/NDCG@K 평가 기준부터 확정 필요 |
 | 설정 파일 기반 실행 | [ ] | 없음 | 주요 hyperparameter는 CLI 인자와 코드 기본값에 분산 | run 비교를 위해 config 파일 도입 검토 |
 
@@ -52,8 +52,11 @@
 - `outputs/stream/refit_requests.jsonl`: Phase 4-1 이후 refit backend가 소비할 request log.
 - `outputs/stream/refit_events.jsonl`: Phase 4-1 refit request close/skip event log.
 - `outputs/stream/stream_recommendations.jsonl`: `recommend_online` 단독 실행 기본 출력 경로. 유저별 top-K 추천 결과 JSONL (append).
+- `outputs/stream/replay_demo/ingress_events.jsonl`: trace replay event emit log. event별 scheduled/emitted time, injector lag, behind-schedule flag를 기록한다.
+- `outputs/stream/replay_demo/replay_events.jsonl`: trace replay progress log. event별 처리 결과, processing/end-to-end lag, assignment/refit/recommendation count를 기록한다.
+- `outputs/stream/replay_demo/replay_summary.json`: dashboard stable entrypoint. speed, trace span, scheduled span, target/actual throughput, lag totals를 기록한다.
 - `outputs/stream/replay_demo/stream_recommendations.jsonl`: replay demo 격리 경로. `--recommend` 옵션 사용 시 생성.
-- `outputs/stream/replay_demo/`: Phase 5 replay demo root. `replay_summary.json`은 dashboard entrypoint, `replay_events.jsonl`은 progress log, 나머지 stream state/log/embedding은 replay run 안에 격리된다.
+- `outputs/stream/replay_demo/`: trace replay demo root. 나머지 stream state/log/embedding은 replay run 안에 격리된다.
 - `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, `user_ids_list=[10202]` 테스트 모드 산출물로 보인다. 현재 포맷은 dashboard/export용 labels/UMAP/sliding-window 배열 중심이며, interest vector는 `outputs/batch/interest_states/{user_id}.json`에 저장된다. 전체 유저 클러스터링 산출물로 간주하면 안 된다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/canonical_embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
@@ -211,49 +214,41 @@ Phase 4-1 GPU dependency/smoke:
 4. `score(u, i) = max_k(u_k^T v_i)`로 candidate item을 scoring한다.
 5. top-K 결과를 `outputs/stream/stream_recommendations.jsonl`에 append하고 run metadata/metric을 기록한다.
 
-`replay_pipeline.py --recommend`를 사용하면 각 micro-batch의 `cluster_refit` 이후 replay scope의 `interest_states/`와 `user_states/`를 대상으로 같은 추천 단계를 호출한다. 결과는 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 append된다.
+`replay_pipeline.py --recommend`를 사용하면 각 event 처리 이후 replay scope의 `interest_states/`와 `user_states/`를 대상으로 같은 추천 단계를 호출한다. 결과는 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 append된다.
 
 아직 없는 것:
 
 - 추천 결과에 대한 Recall@K/NDCG@K 평가 파이프라인
 - `batch/cluster.py`의 JSON interest state를 `batch/recommend.py`가 직접 읽는 연결
 
-## Replay Engine 흐름
+## Trace Replay Engine 흐름
 
-Phase 5는 새 모델링을 추가하지 않고 Phase 3~4-1 CLI를 replay run 단위로 묶는다.
+Trace replay는 새 모델링을 추가하지 않고 Phase 3~4-1 CLI를 replay run 단위로 묶는다.
 
 1. `make -C replay`로 `replay/bin/rating_replay`를 빌드한다.
 2. `rating_replay`가 `data/ratings_drop_processed.jsonl`을 읽고 `ratedAtTs`, `userId`, `movieId`, `eventId` 순서의 `replay_input_events.jsonl`을 만든다.
-3. `python3 -m model.stream.replay_pipeline`이 replay input을 micro-batch로 나눈다.
-4. batch마다 `extract_online -> interest_assign -> cluster_refit`을 호출한다.
-5. `--recommend` 옵션이 있으면 각 micro-batch 뒤에 `recommend_online`을 호출한다.
+3. `python3 -m model.stream.replay_pipeline --speed N`이 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event를 주입한다.
+4. event마다 `extract_online -> interest_assign -> cluster_refit`을 호출한다.
+5. `--recommend` 옵션이 있으면 각 event 처리 뒤에 `recommend_online`을 호출한다.
 6. 모든 산출물은 `outputs/stream/replay_demo/` 아래에 저장해 기본 `outputs/stream/*` 산출물을 덮어쓰지 않는다.
-7. `replay_events.jsonl`에는 progress, replay clock, latency, assignment/refit/recommendation count를 append하고, `replay_summary.json`에는 dashboard가 읽을 stable entrypoint를 기록한다.
+7. `ingress_events.jsonl`에는 event 주입 schedule/lag를 append한다.
+8. `replay_events.jsonl`에는 progress, replay clock, processing/end-to-end latency, assignment/refit/recommendation count를 append하고, `replay_summary.json`에는 dashboard가 읽을 stable entrypoint를 기록한다.
 
-Phase 5 smoke:
+Trace replay smoke:
 
-- command: `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke`
+- command: `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --run-id trace_replay_smoke`
 - output root: `outputs/stream/replay_demo/`
-- input events: 30
-- processed events: 30
-- unique users: 1
-- micro-batches: 2
-- final active embedding rows: 12
-- refit requests opened/closed: 2 / 2
-- backend selected by refit events: GPU
-- elapsed: 약 11.18초
-
-2026-05-10 E2E smoke 재검증:
-
-- command: `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id e2e_streaming_smoke_auto_fallback`
 - status: completed
-- input/processed events: 30 / 30
+- input/processed events: 5 / 5
 - unique users: 1
-- micro-batches: 2
-- assignment records: 19
-- refit requests opened/closed/skipped: 2 / 2 / 0
-- backend selected by refit events: CPU fallback (`cudaErrorInsufficientDriver`)
-- elapsed: 약 32.40초
+- speed: 100
+- trace/scheduled span: 32 sec / 0.32 sec
+- target/actual throughput: 15.625 EPS / 약 0.158 EPS
+- assignment records: 10
+- refit requests opened/closed/skipped: 1 / 0 / 0 (`--skip-refit`)
+- behind schedule events: 4
+- max injector/processing/end-to-end lag: 약 25.26 / 6.94 / 31.42초
+- elapsed: 약 31.74초
 
 ## 현재 정리 방향
 

@@ -47,11 +47,12 @@ data/**/raw/
         -> experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.stream.recommend_online
         -> outputs/stream/stream_recommendations.jsonl
-        -> Phase 5 replay demo artifacts
+        -> trace replay artifacts
         -> make -C replay
         -> replay/bin/rating_replay
         -> outputs/stream/replay_demo/replay_input_events.jsonl
-        -> python3 -m model.stream.replay_pipeline
+        -> python3 -m model.stream.replay_pipeline --speed N
+        -> outputs/stream/replay_demo/ingress_events.jsonl
         -> outputs/stream/replay_demo/replay_summary.json
         -> outputs/stream/replay_demo/replay_events.jsonl
         -> outputs/stream/replay_demo/user_states/{user_id}.json
@@ -164,7 +165,7 @@ python3 -m model.stream.interest_assign
 python3 -m model.stream.cluster_refit
 python3 -m model.stream.recommend_online
 make -C replay
-python3 -m model.stream.replay_pipeline --generate-events --recommend
+python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommend
 ```
 
 주요 출력:
@@ -184,6 +185,7 @@ python3 -m model.stream.replay_pipeline --generate-events --recommend
 - `outputs/stream/refit_events.jsonl`
 - `outputs/stream/stream_recommendations.jsonl`
 - `outputs/stream/replay_demo/replay_input_events.jsonl`
+- `outputs/stream/replay_demo/ingress_events.jsonl`
 - `outputs/stream/replay_demo/replay_summary.json`
 - `outputs/stream/replay_demo/replay_events.jsonl`
 - `outputs/stream/replay_demo/user_states/{user_id}.json`
@@ -209,9 +211,9 @@ python3 -m model.stream.replay_pipeline --generate-events --recommend
 
 `outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 `interest_states/{user_id}.json`의 interest vectors를 replace한다. `--cluster-backend auto`는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 
-`outputs/stream/stream_recommendations.jsonl`은 current streaming interest state에서 생성한 top-K 추천 결과다. Replay에서 `--recommend`를 사용하면 같은 추천 결과가 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 격리된다.
+`outputs/stream/stream_recommendations.jsonl`은 current streaming interest state에서 생성한 top-K 추천 결과다. Trace replay에서 `--recommend`를 사용하면 같은 추천 결과가 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 격리된다.
 
-Phase 5 replay demo artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline`은 이 입력을 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출한다. `--recommend` 사용 시 `recommend_online`도 호출한다. Phase 6 dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths`가 있으면 해당 경로를 우선 사용한다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+Trace replay artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths`가 있으면 해당 경로를 우선 사용한다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 7. Dashboard input
 
@@ -231,9 +233,10 @@ python3 -m model.batch.export_clusters \
 
 Cluster explorer 입력 파일은 `dashboard/README.md`의 입력 스키마를 따른다. 실제 결과 파일이 없으면 대시보드에서 demo 데이터를 사용해 UI를 먼저 확인할 수 있다.
 
-Replay monitor 입력은 Phase 5 replay artifact다.
+Replay monitor 입력은 trace replay artifact다.
 
 - `outputs/stream/replay_demo/replay_summary.json`
+- `outputs/stream/replay_demo/ingress_events.jsonl`
 - `outputs/stream/replay_demo/replay_events.jsonl`
 - `outputs/stream/replay_demo/interest_assignments.jsonl`
 - `outputs/stream/replay_demo/refit_requests.jsonl`

@@ -13,6 +13,12 @@
 
 ## Done
 
+- Trace Replay Replacement
+  - owner: sleepylee / LLM
+  - plan: `plan/done/trace_replay_replacement.md`
+  - files: `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `dashboard/cluster_dashboard.py`, `docs/streaming-replay-dashboard-contract.md`, `docs/streaming-e2e-pipeline.md`, `docs/current-pipeline-snapshot.md`, `docs/data-flow.md`, `docs/artifacts.md`, `docs/part-contracts.md`, `docs/batch-to-streaming-analysis-v2.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `dashboard/README.md`, `replay/README.md`, `README.md`, `PROJECT_GUIDE.md`, `outputs/readme.md`, `todo.md`
+  - status: 기존 batch-file replay demo runner를 N배속 trace-clock replay runner로 대체. 공식 `model.stream.replay_pipeline`은 `trace_replay` wrapper로 유지하고, smoke에서 5/5 events, `--speed 100`, `stream_ingress_event.v1`, `stage=trace_event`, summary completed, lag/throughput metric, `git diff --check` 통과 확인
+
 - Current Pipeline Snapshot
   - owner: sleepylee / LLM
   - plan: `plan/done/current_pipeline_snapshot.md`

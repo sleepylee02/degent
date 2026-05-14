@@ -1,16 +1,16 @@
 # Streaming Replay/Dashboard Contract
 
-이 문서는 Phase 5 replay engine과 Phase 6 dashboard가 병렬로 구현될 수 있도록 고정하는 파일 기반 인터페이스 계약이다.
+이 문서는 trace-clock replay runner와 dashboard가 공유하는 파일 기반 인터페이스 계약이다.
 
 ## Version
 
-`stream_replay_demo.v1`
+`stream_trace_replay_demo.v1`
 
 ## Ownership
 
-- Phase 5 owns writes under `outputs/stream/replay_demo/`.
-- Phase 6 reads `outputs/stream/replay_demo/` and must not depend on Phase 5 internal functions, process model, CLI implementation, or C++ code structure.
-- Contract changes must be made here first, then reflected in Phase 5 and Phase 6 plans. Do not silently change dashboard expectations from Phase 6 only.
+- Trace replay owns writes under `outputs/stream/replay_demo/`.
+- Dashboard reads `outputs/stream/replay_demo/` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
+- Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
 ## Default Root
 
@@ -31,10 +31,11 @@ outputs/stream/refit_requests.jsonl
 outputs/stream/refit_events.jsonl
 ```
 
-## Phase 5 Outputs
+## Trace Replay Outputs
 
 ```text
 outputs/stream/replay_demo/replay_input_events.jsonl
+outputs/stream/replay_demo/ingress_events.jsonl
 outputs/stream/replay_demo/replay_events.jsonl
 outputs/stream/replay_demo/replay_summary.json
 outputs/stream/replay_demo/user_states/{user_id}.json
@@ -49,7 +50,7 @@ outputs/stream/replay_demo/stream_recommendations.jsonl
 
 ## Replay Input Event JSONL
 
-`replay_input_events.jsonl` is produced by the replay event generator and consumed by the Python replay orchestrator.
+`replay_input_events.jsonl` is produced by the replay event generator and consumed by the Python trace replay runner.
 
 Required fields per line:
 
@@ -73,40 +74,85 @@ Ordering contract:
 - `eventId` is globally unique within the replay input file.
 - `replayOrder` is the 0-based line/order after sorting.
 
-## Replay Events JSONL
+## Ingress Events JSONL
 
-`replay_events.jsonl` is an append-only progress log written by Phase 5 and read by Phase 6.
+`ingress_events.jsonl` is an append-only log of events emitted by the trace scheduler. One record means the trace runner attempted to inject one event at its scheduled wall-clock time.
 
 Required fields per line:
 
 ```json
 {
-  "version": "stream_replay_progress.v1",
-  "recordedAt": "2026-05-06T13:00:00+09:00",
-  "runId": "phase5_replay_smoke",
-  "stage": "micro_batch",
+  "version": "stream_ingress_event.v1",
+  "recordedAt": "2026-05-14T17:05:16.439686+09:00",
+  "runId": "trace_replay_smoke",
+  "eventId": 0,
+  "replayOrder": 0,
+  "userId": 28,
+  "movieId": 839,
+  "rating": 1.0,
+  "ratedAt": "2000-06-19T17:36:56Z",
+  "ratedAtTs": 961436216.0,
+  "source": "ratings_drop_processed",
+  "speed": 100.0,
+  "scheduledAt": "2026-05-14T17:05:16.439442+09:00",
+  "emittedAt": "2026-05-14T17:05:16.439686+09:00",
+  "injectorLagSec": 0.0002,
+  "behindSchedule": false
+}
+```
+
+The schedule contract is:
+
+```text
+scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed
+```
+
+## Replay Events JSONL
+
+`replay_events.jsonl` is an append-only progress log written by trace replay and read by dashboard.
+
+Required fields per line:
+
+```json
+{
+  "version": "stream_trace_replay_progress.v1",
+  "recordedAt": "2026-05-14T17:05:23.379422+09:00",
+  "runId": "trace_replay_smoke",
+  "stage": "trace_event",
   "status": "completed",
-  "batchId": 0,
-  "eventStart": 0,
-  "eventEnd": 19,
-  "processedEvents": 20,
+  "eventOrdinal": 0,
+  "eventId": 0,
+  "replayOrder": 0,
+  "userId": 28,
+  "movieId": 839,
+  "ratedAt": "2000-06-19T17:36:56Z",
+  "ratedAtTs": 961436216.0,
+  "speed": 100.0,
+  "scheduledAt": "2026-05-14T17:05:16.439442+09:00",
+  "emittedAt": "2026-05-14T17:05:16.439686+09:00",
+  "processingStartedAt": "2026-05-14T17:05:16.439791+09:00",
+  "processedAt": "2026-05-14T17:05:23.379422+09:00",
+  "injectorLagSec": 0.0002,
+  "processingLagSec": 6.94,
+  "endToEndLagSec": 6.94,
+  "behindSchedule": false,
+  "queueDepth": 0,
+  "processedEvents": 1,
   "uniqueUsers": 1,
-  "activeEmbeddingRows": 12,
+  "activeEmbeddingRows": 1,
   "assignmentStatusCounts": {
-    "assigned": 0,
-    "pending_no_interest": 12
+    "pending_no_interest": 1
   },
   "refitRequestsOpened": 0,
   "refitClosed": 0,
-  "latencySec": 1.23
+  "latencySec": 6.94
 }
 ```
 
 Allowed `stage` values:
 
 - `start`
-- `micro_batch`
-- `refit`
+- `trace_event`
 - `end`
 - `error`
 
@@ -119,11 +165,17 @@ Allowed `status` values:
 
 Phase 6 must tolerate missing optional metrics and render available fields.
 
-Optional replay clock fields:
+Trace replay fields:
 
-- `replayClockTs`: latest replay input timestamp covered by the micro-batch.
-- `replayClockRatedAt`: ISO timestamp for `replayClockTs`.
-- `replaySleepSec`: wall-clock sleep inserted before the micro-batch when replay pacing is enabled.
+- `scheduledAt`: target wall-clock time calculated from trace time and `speed`.
+- `emittedAt`: wall-clock time when the event was emitted into the replay run.
+- `processingStartedAt`: wall-clock time before online processing starts.
+- `processedAt`: wall-clock time after online processing completes.
+- `injectorLagSec`: `emittedAt - scheduledAt`, clipped at zero.
+- `processingLagSec`: `processedAt - emittedAt`, clipped at zero.
+- `endToEndLagSec`: `processedAt - scheduledAt`, clipped at zero.
+- `behindSchedule`: true when the event could not be emitted on schedule.
+- `queueDepth`: reserved for future producer/consumer split. The current runner records `0`.
 
 ## Replay Summary JSON
 
@@ -133,26 +185,41 @@ Required fields:
 
 ```json
 {
-  "version": "stream_replay_summary.v1",
-  "runId": "phase5_replay_smoke",
+  "version": "stream_trace_replay_summary.v1",
+  "runId": "trace_replay_smoke",
   "status": "completed",
-  "startedAt": "2026-05-06T13:00:00+09:00",
-  "endedAt": "2026-05-06T13:01:00+09:00",
-  "elapsedSec": 60.0,
-  "inputEvents": 100,
-  "processedEvents": 100,
+  "startedAt": "2026-05-14T17:05:16+09:00",
+  "endedAt": "2026-05-14T17:05:48+09:00",
+  "elapsedSec": 31.74,
+  "inputEvents": 5,
+  "processedEvents": 5,
   "uniqueUsers": 1,
-  "microBatchSize": 20,
-  "refitBackend": "auto",
+  "speed": 100.0,
+  "traceStartTs": 961436216.0,
+  "traceEndTs": 961436248.0,
+  "traceSpanSec": 32.0,
+  "scheduledSpanSec": 0.32,
+  "throughputEventsPerSec": 0.157,
+  "targetEventsPerSec": 15.625,
+  "refitBackend": "cpu",
   "totals": {
-    "activeEmbeddingRows": 100,
-    "assignmentRecords": 100,
+    "activeEmbeddingRows": 10,
+    "assignmentRecords": 10,
     "refitRequestsOpened": 1,
-    "refitClosed": 1,
+    "refitClosed": 0,
     "refitSkipped": 0,
-    "recommendationRows": 0
+    "recommendationRows": 0,
+    "behindScheduleEvents": 4,
+    "maxInjectorLagSec": 25.26,
+    "meanInjectorLagSec": 12.89,
+    "maxProcessingLagSec": 6.94,
+    "meanProcessingLagSec": 6.35,
+    "maxEndToEndLagSec": 31.42,
+    "meanEndToEndLagSec": 19.24
   },
   "paths": {
+    "replayInputEvents": "outputs/stream/replay_demo/replay_input_events.jsonl",
+    "ingressEvents": "outputs/stream/replay_demo/ingress_events.jsonl",
     "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
     "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
     "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
@@ -168,7 +235,7 @@ Phase 6 should use `paths` from this file when present and fall back to the defa
 
 ## Stream Recommendations JSONL
 
-`stream_recommendations.jsonl` is optional. It is written only when Phase 5 runs the replay orchestrator with recommendation enabled.
+`stream_recommendations.jsonl` is optional. It is written only when trace replay runs with recommendation enabled.
 
 Fields currently written per line:
 
@@ -198,6 +265,7 @@ Phase 6 should tolerate either `movieId` or `recommendedMovieId` as the recommen
 Phase 6 may read:
 
 - `replay_summary.json`
+- `ingress_events.jsonl`
 - `replay_events.jsonl`
 - `interest_assignments.jsonl`
 - `refit_requests.jsonl`

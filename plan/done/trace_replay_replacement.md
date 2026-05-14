@@ -28,7 +28,7 @@
 
 - 수정:
   - `model/stream/replay_pipeline.py`
-  - `model/stream/trace_runtime.py` 또는 필요한 stream helper
+  - `model/stream/trace_replay.py`
   - `docs/streaming-replay-dashboard-contract.md`
   - `docs/streaming-e2e-pipeline.md`
   - `docs/current-pipeline-snapshot.md`
@@ -72,12 +72,13 @@
 
 ## 검증
 
-- [ ] `.venv/bin/python -m py_compile model/stream/replay_pipeline.py`
-- [ ] `.venv/bin/python -m model.stream.replay_pipeline --help`
-- [ ] `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --run-id trace_replay_smoke`
-- [ ] `outputs/stream/replay_demo/replay_summary.json` status가 `completed`
-- [ ] `outputs/stream/replay_demo/replay_events.jsonl`에 `stage=trace_event`와 lag metric이 기록됨
-- [ ] `git diff --check`
+- [x] `.venv/bin/python -m py_compile model/stream/trace_replay.py model/stream/replay_pipeline.py dashboard/cluster_dashboard.py`
+- [x] `.venv/bin/python -m model.stream.replay_pipeline --help`
+- [x] `.venv/bin/python -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --run-id trace_replay_smoke`
+- [x] `outputs/stream/replay_demo/replay_summary.json` status가 `completed`
+- [x] `outputs/stream/replay_demo/replay_events.jsonl`에 `stage=trace_event`와 lag metric이 기록됨
+- [x] `outputs/stream/replay_demo/ingress_events.jsonl`에 `stream_ingress_event.v1`과 schedule/lag metric이 기록됨
+- [x] `git diff --check`
 
 ## 완료 조건
 

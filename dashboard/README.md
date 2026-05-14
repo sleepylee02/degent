@@ -69,7 +69,7 @@ Cluster explorer는 선택적으로 replay recommendation JSONL도 읽을 수 �
 
 ## Replay monitor
 
-Phase 6 replay monitor는 Phase 5가 생성한 replay artifact를 읽기만 하는 reader다. Replay pipeline을 실행하거나 `outputs/stream/replay_demo/` 아래 파일을 생성/수정/삭제하지 않는다.
+Replay monitor는 trace replay가 생성한 artifact를 읽기만 하는 reader다. Replay pipeline을 실행하거나 `outputs/stream/replay_demo/` 아래 파일을 생성/수정/삭제하지 않는다.
 
 Stable entrypoint:
 
@@ -78,6 +78,7 @@ Stable entrypoint:
 `replay_summary.json`에 `paths`가 있으면 해당 경로를 우선 사용하고, 없으면 아래 기본 경로를 fallback으로 사용한다.
 
 - `outputs/stream/replay_demo/replay_events.jsonl`
+- `outputs/stream/replay_demo/ingress_events.jsonl`
 - `outputs/stream/replay_demo/interest_assignments.jsonl`
 - `outputs/stream/replay_demo/refit_requests.jsonl`
 - `outputs/stream/replay_demo/refit_events.jsonl`
@@ -86,8 +87,8 @@ Stable entrypoint:
 
 Replay monitor에서 표시하는 내용:
 
-- run status, processed/input events, unique users, elapsed, throughput
-- replay event timeline, latency, active embedding rows, assignment status counts
+- run status, processed/input events, unique users, elapsed, target/actual throughput, speed
+- trace replay event timeline, scheduled/emitted/processed time, injector/processing/end-to-end latency, active embedding rows, assignment status counts
 - assignment status counts, open refit requests, closed/skipped refit events
 - user별 interest count, pending/processed event count, refit trigger state
 - replay recommendation row 수, unique user/movie 수, top score 추천 테이블

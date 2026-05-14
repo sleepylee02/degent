@@ -273,7 +273,7 @@ python3 -m model.batch.export_clusters \
 
 실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
 
-Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 artifact를 읽는 read-only view다. Stable entrypoint는 `outputs/stream/replay_demo/replay_summary.json`이며, summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+Replay monitor는 trace replay가 `outputs/stream/replay_demo/` 아래에 생성한 artifact를 읽는 read-only view다. Stable entrypoint는 `outputs/stream/replay_demo/replay_summary.json`이며, summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 모델 실험 기록
 
@@ -293,7 +293,7 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 
 `python3 -m model.stream.recommend_online`은 `outputs/stream/interest_states/{user_id}.json`의 interest vector와 SASRec item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산해 `outputs/stream/stream_recommendations.jsonl`에 top-K 추천을 append한다. seen positive item은 기본적으로 제외한다.
 
-`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `outputs/stream/replay_demo/` 아래에 `replay_summary.json`, `replay_events.jsonl`, replay-scoped state/log/embedding을 기록한다. `--recommend`를 추가하면 각 micro-batch 뒤에 `recommend_online`을 실행해 `outputs/stream/replay_demo/stream_recommendations.jsonl`도 남긴다. 기본 `--replay-speed 0`은 wall-clock pacing 없이 빠르게 처리하고, 양수 값은 timestamp gap을 배속으로 압축한다.
+`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출한다. `outputs/stream/replay_demo/` 아래에는 `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, replay-scoped state/log/embedding을 기록한다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 `outputs/stream/replay_demo/stream_recommendations.jsonl`도 남긴다.
 
 가벼운 기록:
 

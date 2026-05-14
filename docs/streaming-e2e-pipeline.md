@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-10 기준으로 replay closed-loop smoke는 완료된다. 이후 `--recommend` 옵션이 추가되어 micro-batch마다 online recommendation까지 같은 replay scope에 기록할 수 있다.
+2026-05-14 기준으로 replay 공식 경로는 N배속 trace-clock runner다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다.
 
 검증 command:
 
@@ -15,15 +15,16 @@
   --reset-output \
   --generate-events \
   --replay-user-id 28 \
-  --limit-events 30 \
-  --micro-batch-size 15 \
+  --limit-events 5 \
+  --speed 100 \
   --refit-min-events 3 \
   --assign-trigger-count 3 \
   --outlier-trigger-count 3 \
   --min-cluster-size 2 \
   --cluster-dim 3 \
-  --cluster-backend auto \
-  --run-id e2e_streaming_smoke_auto_fallback
+  --cluster-backend cpu \
+  --skip-refit \
+  --run-id trace_replay_smoke
 ```
 
 추천까지 포함한 실행 예시:
@@ -33,17 +34,18 @@
   --reset-output \
   --generate-events \
   --replay-user-id 28 \
-  --limit-events 30 \
-  --micro-batch-size 15 \
+  --limit-events 5 \
+  --speed 100 \
   --refit-min-events 3 \
   --assign-trigger-count 3 \
   --outlier-trigger-count 3 \
   --min-cluster-size 2 \
   --cluster-dim 3 \
-  --cluster-backend auto \
+  --cluster-backend cpu \
+  --skip-refit \
   --recommend \
   --recommend-top-k 20 \
-  --run-id replay_with_recommend
+  --run-id trace_replay_with_recommend
 ```
 
 검증 결과:
@@ -51,17 +53,22 @@
 | metric | value |
 |---|---:|
 | status | completed |
-| input events | 30 |
-| processed events | 30 |
+| input events | 5 |
+| processed events | 5 |
 | unique users | 1 |
-| micro-batches | 2 |
-| assignment records | 19 |
-| refit requests opened | 2 |
-| refit requests closed | 2 |
+| speed | 100 |
+| trace span | 32 sec |
+| scheduled span | 0.32 sec |
+| assignment records | 10 |
+| refit requests opened | 1 |
+| refit requests closed | 0 (`--skip-refit`) |
 | refit requests skipped | 0 |
-| elapsed | about 32.40 sec |
+| target EPS | 15.625 |
+| actual EPS | about 0.158 |
+| behind schedule events | 4 |
+| elapsed | about 31.74 sec |
 
-현재 로컬 환경에서는 GPU runtime이 `cudaErrorInsufficientDriver`로 실패하므로 `--cluster-backend auto`가 CPU fallback을 사용했다. GPU가 정상인 환경에서는 같은 옵션으로 GPU refit을 시도한다.
+위 smoke는 trace schedule/lag 기록 확인을 위해 `--skip-refit`을 사용한다. refit까지 닫는 검증은 `--skip-refit`을 제거하고 `--cluster-backend auto` 또는 `cpu`를 지정한다.
 
 ## Minimum Runbook
 
@@ -79,7 +86,7 @@ replay binary가 없거나 오래되었으면 먼저 빌드한다.
 make -C replay
 ```
 
-작은 smoke는 위 Current Status command를 그대로 실행한다. 모든 demo 산출물은 아래 경로로 격리된다.
+작은 smoke는 위 Current Status command를 그대로 실행한다. 모든 trace replay 산출물은 아래 경로로 격리된다.
 
 ```text
 outputs/stream/replay_demo/
@@ -93,7 +100,8 @@ outputs/stream/replay_demo/
 ratings_drop_processed.jsonl
   -> replay/bin/rating_replay
   -> replay_input_events.jsonl
-  -> replay_pipeline micro-batches
+  -> replay_pipeline --speed N trace clock
+     -> ingress_events.jsonl
      -> extract_online
         -> user_states/{user_id}.json
         -> online_embeddings.npz
@@ -111,7 +119,7 @@ ratings_drop_processed.jsonl
   -> replay_summary.json
 ```
 
-`replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input을 micro-batch로 자른 뒤 기존 stream CLI를 순서대로 호출하는 orchestrator다.
+`replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, 기존 stream CLI를 event 단위로 호출하는 trace replay runner다.
 
 ## Stage 0. Replay Input Generation
 
@@ -146,7 +154,7 @@ Output:
 
 정렬 기준은 `ratedAtTs`, `userId`, `movieId`, `eventId`다. `eventId`는 replay input 파일 안에서 globally unique이고, `replayOrder`는 정렬 후 0-based 순서다.
 
-## Stage 1. Micro-Batch Orchestration
+## Stage 1. Trace-Clock Replay
 
 Producer:
 
@@ -156,24 +164,44 @@ Input:
 
 - `replay_input_events.jsonl`
 
-Internal batch files:
+Emit log:
 
-- `outputs/stream/replay_demo/batches/batch_000000.jsonl`
-- `outputs/stream/replay_demo/batches/batch_000001.jsonl`
+- `outputs/stream/replay_demo/ingress_events.jsonl`
 
-batch 파일은 `extract_online`이 필요한 최소 event 필드만 담는다.
+각 input event는 아래 schedule 기준으로 emitted 된다.
 
-```json
-{"userId": 28, "movieId": 296, "rating": 4.0, "ratedAt": "2001-01-01T00:00:00Z"}
+```text
+scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed
 ```
 
-각 micro-batch마다 아래 순서가 실행된다.
+`ingress_events.jsonl`은 emitted event와 schedule metric을 담는다.
+
+```json
+{
+  "version": "stream_ingress_event.v1",
+  "runId": "trace_replay_smoke",
+  "eventId": 0,
+  "replayOrder": 0,
+  "userId": 28,
+  "movieId": 296,
+  "rating": 4.0,
+  "ratedAt": "2001-01-01T00:00:00Z",
+  "ratedAtTs": 978307200.0,
+  "speed": 100.0,
+  "scheduledAt": "2026-05-14T12:00:00.000000+09:00",
+  "emittedAt": "2026-05-14T12:00:00.000271+09:00",
+  "injectorLagSec": 0.000271,
+  "behindSchedule": false
+}
+```
+
+각 event마다 아래 순서가 실행된다.
 
 ```text
 extract_online -> interest_assign -> cluster_refit
 ```
 
-`--skip-refit`을 주면 `cluster_refit` 호출만 건너뛸 수 있다. `--recommend`를 주면 refit 이후 `recommend_online`이 추가로 실행된다.
+`--skip-refit`을 주면 `cluster_refit` 호출만 건너뛸 수 있다. `--recommend`를 주면 event 처리 이후 `recommend_online`이 추가로 실행된다.
 
 ## Stage 2. Online Extract
 
@@ -183,7 +211,7 @@ Consumer/producer:
 
 Input:
 
-- batch event JSONL
+- single event JSON
 - `data/movies_processed_drop.csv`
 - `outputs/sasrec_cl.pt`
 - `outputs/item2idx.json`
@@ -209,7 +237,7 @@ Output:
 - `positiveEvents`는 현재 policy 기준 positive로 판정된 event다.
 - `rawEventId`는 user별 stable id다.
 - `eventIdx`는 positive projection 기준 derived id라 raw history가 늘면 재계산될 수 있다.
-- `online_embeddings.npz`는 "이번 batch delta"가 아니라 현재 user state의 active positive embedding 전체 snapshot이다.
+- `online_embeddings.npz`는 "이번 event delta"가 아니라 현재 user state의 active positive embedding 전체 snapshot이다.
 
 `online_embeddings.npz` 주요 배열:
 
@@ -334,42 +362,53 @@ Consumer/producer:
 
 Output:
 
+- `ingress_events.jsonl`
 - `replay_events.jsonl`
 - `replay_summary.json`
 
-`replay_events.jsonl`은 progress log다. micro-batch별 processed count, active row count, assignment status count, refit close/skip count, latency를 append한다.
+`ingress_events.jsonl`은 event 주입 시각과 trace clock 기준 schedule/lag를 append한다.
+
+`replay_events.jsonl`은 progress log다. event별 processed count, active row count, assignment status count, refit close/skip count, injector/processing/end-to-end latency를 append한다.
 
 `replay_summary.json`은 dashboard가 읽는 stable entrypoint다.
 
 ```json
 {
-  "version": "stream_replay_summary.v1",
-  "runId": "e2e_streaming_smoke_auto_fallback",
+  "version": "stream_trace_replay_summary.v1",
+  "runId": "trace_replay_smoke",
   "status": "completed",
-  "inputEvents": 30,
-  "processedEvents": 30,
+  "inputEvents": 5,
+  "processedEvents": 5,
   "uniqueUsers": 1,
-  "microBatchSize": 15,
+  "speed": 100.0,
+  "traceSpanSec": 32.0,
+  "scheduledSpanSec": 0.32,
+  "targetEventsPerSec": 15.625,
+  "throughputEventsPerSec": 0.158,
   "refitBackend": "auto",
   "totals": {
-    "activeEmbeddingRows": 19,
-    "assignmentRecords": 19,
-    "refitRequestsOpened": 2,
-    "refitClosed": 2,
+    "activeEmbeddingRows": 10,
+    "assignmentRecords": 10,
+    "refitRequestsOpened": 1,
+    "refitClosed": 0,
     "refitSkipped": 0,
-    "recommendationRows": 0
+    "recommendationRows": 0,
+    "behindScheduleEvents": 4,
+    "maxInjectorLagSec": 25.26,
+    "maxProcessingLagSec": 6.94,
+    "maxEndToEndLagSec": 31.42
   }
 }
 ```
 
-주의: `totals.activeEmbeddingRows`는 micro-batch별 active snapshot row 수를 더한 값이다. 최종 active row 수를 보려면 `online_embeddings.npz`의 `embeddings.shape[0]` 또는 마지막 `online_embedding_events.jsonl` record를 확인한다. 2026-05-10 smoke에서는 batch별 active row가 7, 12라 summary total은 19이고 최종 active row는 12다.
+주의: `totals.activeEmbeddingRows`는 event 처리 후 관측한 active snapshot row 수의 누적 합이다. 최종 active row 수를 보려면 `online_embeddings.npz`의 `embeddings.shape[0]` 또는 마지막 `online_embedding_events.jsonl` record를 확인한다.
 
 ## Artifact Map
 
 | artifact | written by | consumed by | role |
 |---|---|---|---|
 | `replay_input_events.jsonl` | replay generator | `replay_pipeline` | timestamp-sorted replay source |
-| `batches/batch_*.jsonl` | `replay_pipeline` | `extract_online` | micro-batch event input |
+| `ingress_events.jsonl` | `replay_pipeline` | dashboard/humans | trace-clock event emit log |
 | `user_states/{user_id}.json` | `extract_online` | `extract_online` | raw events + positive projection state |
 | `online_embeddings.npz` | `extract_online` | `interest_assign`, `cluster_refit` | current active positive embedding snapshot |
 | `online_embedding_events.jsonl` | `extract_online` | humans/debugging | online extract run summary log |
@@ -385,7 +424,7 @@ Output:
 
 새 event source를 붙일 때:
 
-- `replay_input_events.jsonl`과 같은 필드를 만들거나, `extract_online`이 읽는 batch event shape인 `userId`, `movieId`, `rating`, `ratedAt`을 제공한다.
+- `replay_input_events.jsonl`과 같은 필드를 만들거나, `extract_online --event-json`이 읽는 event shape인 `userId`, `movieId`, `rating`, `ratedAt`을 제공한다.
 - event ordering은 timestamp 기준으로 안정적이어야 한다.
 
 positive policy를 바꿀 때:
@@ -423,8 +462,8 @@ dashboard를 바꿀 때:
 
 ## Known Gaps
 
-- 현재 smoke는 user 28, 30 events 기준의 작은 closed-loop 검증이다.
+- 현재 smoke는 user 28, 5 events 기준의 작은 trace-clock 검증이다.
 - `u_k` 기반 추천 scoring은 `stream/recommend_online.py`와 `replay_pipeline --recommend`로 가능하다. 다만 Recall@K/NDCG@K 같은 offline evaluation은 아직 없다.
-- replay는 batch마다 full active snapshot을 다시 assign/refit 후보로 읽으므로 `already_processed` record가 정상적으로 생긴다.
+- replay는 event마다 full active snapshot을 다시 assign/refit 후보로 읽으므로 `already_processed` record가 정상적으로 생긴다.
 - `outputs/stream/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/stream/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
 - GPU backend는 환경 의존적이다. `auto`를 쓰면 가능한 경우 GPU를 쓰고, 현재 로컬처럼 CUDA runtime이 맞지 않으면 CPU fallback으로 진행한다.

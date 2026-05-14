@@ -20,11 +20,12 @@ Streaming Phase 3 산출물은 `outputs/stream/` 아래에 둔다.
 - `outputs/stream/refit_events.jsonl`: triggered refit backend의 close/skip 결과 로그
 - `outputs/stream/stream_recommendations.jsonl`: `model.stream.recommend_online`이 append하는 top-K 추천 결과 로그
 
-Streaming Phase 5 replay demo 산출물은 `outputs/stream/replay_demo/` 아래에 격리한다. 이 경로는 기본 Phase 3~4-1 산출물을 덮어쓰지 않고, Phase 6 dashboard가 읽는 파일 계약이다.
+Streaming trace replay demo 산출물은 `outputs/stream/replay_demo/` 아래에 격리한다. 이 경로는 기본 Phase 3~4-1 산출물을 덮어쓰지 않고, replay dashboard가 읽는 파일 계약이다.
 
 - `outputs/stream/replay_demo/replay_input_events.jsonl`: timestamp-sorted replay input event stream
-- `outputs/stream/replay_demo/replay_events.jsonl`: replay progress, replay clock, latency, assignment/refit count 로그
-- `outputs/stream/replay_demo/replay_summary.json`: dashboard stable entrypoint
+- `outputs/stream/replay_demo/ingress_events.jsonl`: trace-clock event emit schedule/lag 로그
+- `outputs/stream/replay_demo/replay_events.jsonl`: event-level replay progress, processing/end-to-end lag, assignment/refit count 로그
+- `outputs/stream/replay_demo/replay_summary.json`: dashboard stable entrypoint. speed, trace span, scheduled span, target/actual throughput을 포함
 - `outputs/stream/replay_demo/user_states/{user_id}.json`: replay-scoped raw/positive user state
 - `outputs/stream/replay_demo/interest_states/{user_id}.json`: replay-scoped interest state
 - `outputs/stream/replay_demo/online_embeddings.npz`: replay-scoped active online embeddings

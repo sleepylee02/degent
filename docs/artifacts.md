@@ -51,8 +51,9 @@
 | `outputs/stream/refit_events.jsonl` | streaming refit event log | `python3 -m model.stream.cluster_refit` | append/regenerate |
 | `outputs/stream/stream_recommendations.jsonl` | streaming recommendation log | `python3 -m model.stream.recommend_online` | append/regenerate |
 | `outputs/stream/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
-| `outputs/stream/replay_demo/replay_summary.json` | replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline` | regenerate |
-| `outputs/stream/replay_demo/replay_events.jsonl` | replay progress log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/stream/replay_demo/ingress_events.jsonl` | trace replay event emit log with schedule/lag | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
+| `outputs/stream/replay_demo/replay_summary.json` | trace replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
+| `outputs/stream/replay_demo/replay_events.jsonl` | event-level trace replay progress and lag log | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
 | `outputs/stream/replay_demo/user_states/{user_id}.json` | replay-scoped user state | `python3 -m model.stream.replay_pipeline` | regenerate |
 | `outputs/stream/replay_demo/online_embeddings.npz` | replay-scoped online embeddings | `python3 -m model.stream.replay_pipeline` | regenerate |
 | `outputs/stream/replay_demo/interest_assignments.jsonl` | replay-scoped assignment log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
@@ -91,6 +92,6 @@ python3 -m model.stream.interest_assign
 python3 -m model.stream.cluster_refit
 python3 -m model.stream.recommend_online
 make -C replay
-python3 -m model.stream.replay_pipeline --generate-events --recommend
+python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommend
 streamlit run dashboard/cluster_dashboard.py
 ```

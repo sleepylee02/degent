@@ -23,6 +23,7 @@ DEFAULT_REPLAY_RECOMMENDATIONS_PATH = DEFAULT_REPLAY_ROOT / "stream_recommendati
 REQUIRED_COLUMNS = {"userId", "clusterLabel", "x", "y"}
 NOISE_LABEL = -1
 REPLAY_PATH_KEYS = {
+    "ingressEvents": "ingress_events.jsonl",
     "replayEvents": "replay_events.jsonl",
     "onlineEmbeddings": "online_embeddings.npz",
     "interestAssignments": "interest_assignments.jsonl",
@@ -737,7 +738,10 @@ def render_replay_summary(summary: dict[str, Any], paths: dict[str, Path]) -> No
         "runId": summary.get("runId"),
         "startedAt": summary.get("startedAt"),
         "endedAt": summary.get("endedAt"),
-        "microBatchSize": summary.get("microBatchSize"),
+        "speed": summary.get("speed"),
+        "traceSpanSec": summary.get("traceSpanSec"),
+        "scheduledSpanSec": summary.get("scheduledSpanSec"),
+        "targetEventsPerSec": summary.get("targetEventsPerSec"),
         "refitBackend": summary.get("refitBackend"),
     }
     st.dataframe(pd.DataFrame([metadata]), use_container_width=True, hide_index=True)
@@ -773,7 +777,7 @@ def render_replay_events(frame: pd.DataFrame, max_rows: int) -> None:
     with left:
         if "latencySec" in plot_frame.columns:
             color_column = "stage" if "stage" in plot_frame.columns else None
-            figure = px.bar(plot_frame, x=x_column, y="latencySec", color=color_column, title="Batch latency")
+            figure = px.bar(plot_frame, x=x_column, y="latencySec", color=color_column, title="Replay processing latency")
             figure.update_layout(height=360, xaxis_title="", yaxis_title="Seconds")
             st.plotly_chart(figure, use_container_width=True)
     with right:
@@ -795,9 +799,18 @@ def render_replay_events(frame: pd.DataFrame, max_rows: int) -> None:
         "runId",
         "stage",
         "status",
-        "batchId",
-        "eventStart",
-        "eventEnd",
+        "eventOrdinal",
+        "eventId",
+        "replayOrder",
+        "userId",
+        "movieId",
+        "scheduledAt",
+        "emittedAt",
+        "processedAt",
+        "injectorLagSec",
+        "processingLagSec",
+        "endToEndLagSec",
+        "behindSchedule",
         "processedEvents",
         "uniqueUsers",
         "activeEmbeddingRows",

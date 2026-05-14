@@ -2,7 +2,7 @@
 
 이 문서는 현재 batch / streaming 최종 구현을 기준으로 "무엇이 어떤 순서로 돌고, 어떤 데이터가 흐르며, 어디가 다음 수정 후보인가"를 정리한다. 실행 인계 문서는 `docs/streaming-e2e-pipeline.md`, 전체 데이터 흐름 요약은 `docs/data-flow.md`, artifact 계약은 `docs/artifacts.md`와 `docs/streaming-replay-dashboard-contract.md`를 함께 본다.
 
-주의할 점은 현재 streaming 구현이 production streaming service가 아니라 file-based online/replay pipeline이라는 것이다. 각 단계는 CLI로 실행되고 JSON/JSONL/NPZ artifact를 읽고 쓴다. `model.stream.replay_pipeline`은 이 CLI들을 micro-batch 단위로 호출하는 orchestrator다.
+주의할 점은 현재 streaming 구현이 production streaming service가 아니라 file-based online/trace replay pipeline이라는 것이다. 각 단계는 CLI로 실행되고 JSON/JSONL/NPZ artifact를 읽고 쓴다. `model.stream.replay_pipeline`은 timestamp trace를 `--speed N` virtual clock 기준으로 event 단위 주입하고 lag/throughput metric을 기록한다.
 
 ## 1. 한 줄 그림
 
@@ -179,7 +179,7 @@ Event input은 camelCase와 snake_case를 모두 수용한다.
 - `rating`
 - `ratedAt` 또는 `rated_at`
 
-Replay pipeline은 micro-batch마다 `outputs/stream/replay_demo/batches/batch_000000.jsonl` 같은 파일을 만들고, 그 batch file을 `extract_online --event-jsonl`에 넘긴다.
+Trace replay pipeline은 `replay_input_events.jsonl`의 `ratedAtTs`를 기준으로 event별 schedule을 계산하고, `extract_online --event-json`에 단일 event payload를 넘긴다. 주입 시각과 lag는 `outputs/stream/replay_demo/ingress_events.jsonl`에 append된다.
 
 ### 3.2 Online User State
 
@@ -243,7 +243,7 @@ State 버전:
 - `context_start_idx`
 - `status`
 
-이 파일은 append-only delta가 아니다. 매 실행마다 이번 호출에서 처리한 user들의 현재 active embedding snapshot을 overwrite한다. Replay에서는 batch마다 이 파일이 replay output root 아래에서 갱신된다. 따라서 이 파일의 row 수는 "이번 micro-batch에서 새로 생긴 embedding 수"가 아니라 "이번에 touched된 user들의 현재 active row 수"다.
+이 파일은 append-only delta가 아니다. 매 실행마다 이번 호출에서 처리한 user들의 현재 active embedding snapshot을 overwrite한다. Replay에서는 event마다 이 파일이 replay output root 아래에서 갱신된다. 따라서 이 파일의 row 수는 "이번 event에서 새로 생긴 embedding 수"가 아니라 "이번에 touched된 user들의 현재 active row 수"다.
 
 이 설계는 canonical batch embedding과 비교하기 쉽다는 장점이 있지만, user history가 커질수록 반복 embedding 비용이 커지고, downstream 단계가 snapshot/delta 차이를 반드시 이해해야 한다.
 
@@ -385,7 +385,7 @@ python3 -m model.stream.recommend_online \
 python3 -m model.stream.replay_pipeline \
   --generate-events \
   --reset-output \
-  --micro-batch-size 20 \
+  --speed 100 \
   --cluster-backend auto \
   --recommend
 ```
@@ -394,26 +394,28 @@ python3 -m model.stream.replay_pipeline \
 
 - `outputs/stream/replay_demo/`
 
-Replay pipeline은 새 모델 로직을 구현하지 않는다. 이미 있는 streaming CLI를 micro-batch마다 순서대로 호출한다.
+Replay pipeline은 새 모델 로직을 구현하지 않는다. replay input의 `ratedAtTs`를 trace clock으로 삼고, `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed` 기준으로 event를 emit한 뒤 기존 streaming CLI를 event 단위로 호출한다.
 
-Micro-batch 처리 순서:
+Event 처리 순서:
 
-1. `batches/batch_000000.jsonl` 생성
-2. `model.stream.extract_online` 호출
-3. `online_embeddings.npz` row 수 확인
-4. `model.stream.interest_assign` 호출
-5. 새로 append된 `refit_requests.jsonl` request를 읽음
-6. request user별로 `model.stream.cluster_refit` 호출
-7. `--recommend`가 있으면 batch user별로 `model.stream.recommend_online` 호출
-8. `replay_events.jsonl`에 micro-batch progress record append
-9. 전체 완료 시 `replay_summary.json` 저장
+1. `replay_input_events.jsonl`의 다음 event에 대해 `scheduledAt` 계산
+2. schedule이 미래면 sleep, 이미 지났으면 behind schedule로 기록
+3. `ingress_events.jsonl`에 emitted event record append
+4. `model.stream.extract_online` 호출
+5. `online_embeddings.npz` row 수 확인
+6. `model.stream.interest_assign` 호출
+7. 새로 append된 `refit_requests.jsonl` request를 읽음
+8. request user별로 `model.stream.cluster_refit` 호출
+9. `--recommend`가 있으면 event user에 대해 `model.stream.recommend_online` 호출
+10. `replay_events.jsonl`에 `stage=trace_event` progress/lag record append
+11. 전체 완료 시 `replay_summary.json` 저장
 
 주요 replay artifact:
 
 - `replay_input_events.jsonl`
+- `ingress_events.jsonl`
 - `replay_events.jsonl`
 - `replay_summary.json`
-- `batches/*.jsonl`
 - `user_states/{user_id}.json`
 - `online_embeddings.npz`
 - `online_embedding_events.jsonl`
@@ -423,7 +425,7 @@ Micro-batch 처리 순서:
 - `refit_events.jsonl`
 - `stream_recommendations.jsonl`
 
-`replay_summary.json`의 `totals.activeEmbeddingRows`는 micro-batch별 active snapshot row 수를 합산한 값이다. 최종 active embedding row 수가 아니다.
+`replay_summary.json`에는 `speed`, `traceSpanSec`, `scheduledSpanSec`, `targetEventsPerSec`, `throughputEventsPerSec`, `behindScheduleEvents`, `mean/max *LagSec`가 기록된다. `totals.activeEmbeddingRows`는 event별 active snapshot row 수를 합산한 값이며 최종 active embedding row 수가 아니다.
 
 ## 5. Dashboard Connection
 
@@ -461,7 +463,7 @@ Dashboard는 replay/stream state를 만들거나 수정하지 않는다. Replay 
 
 `cluster_refit`은 `refit_requests.jsonl`에서 `status=open`인 request를 읽지만, request log 자체에 closed record를 쓰지는 않는다. State와 `refit_events.jsonl`에는 닫힘이 남지만, standalone으로 `cluster_refit`을 다시 돌릴 때 오래된 open request를 다시 볼 수 있다.
 
-Replay pipeline은 "이번 micro-batch 이후 새로 append된 request"만 처리해서 이 문제를 일부 피한다. 하지만 standalone 운용 기준으로는 request open/closed lifecycle을 더 명확히 해야 한다.
+Trace replay pipeline은 "이번 event 이후 새로 append된 request"만 처리해서 이 문제를 일부 피한다. 하지만 standalone 운용 기준으로는 request open/closed lifecycle을 더 명확히 해야 한다.
 
 수정 후보:
 
@@ -506,7 +508,7 @@ Replay pipeline은 "이번 micro-batch 이후 새로 append된 request"만 처�
 수정 후보:
 
 - replay run은 `--reset-output` 사용을 기본 운용 규칙으로 유지
-- recommendation record에 `batchId` 또는 `replayEventEnd`를 추가
+- recommendation record에 `eventId`, `replayOrder`, 또는 `processedAt` replay context를 추가
 - dashboard는 최신 `recordedAt` 또는 batch 기준으로 dedupe
 
 ### P1. Streaming은 service가 아니라 subprocess/file orchestration
