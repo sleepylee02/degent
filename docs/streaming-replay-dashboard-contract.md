@@ -44,6 +44,7 @@ outputs/stream/replay_demo/online_embedding_events.jsonl
 outputs/stream/replay_demo/interest_assignments.jsonl
 outputs/stream/replay_demo/refit_requests.jsonl
 outputs/stream/replay_demo/refit_events.jsonl
+outputs/stream/replay_demo/stream_recommendations.jsonl
 ```
 
 ## Replay Input Event JSONL
@@ -148,7 +149,8 @@ Required fields:
     "assignmentRecords": 100,
     "refitRequestsOpened": 1,
     "refitClosed": 1,
-    "refitSkipped": 0
+    "refitSkipped": 0,
+    "recommendationRows": 0
   },
   "paths": {
     "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
@@ -156,12 +158,40 @@ Required fields:
     "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
     "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
     "refitEvents": "outputs/stream/replay_demo/refit_events.jsonl",
-    "interestStateDir": "outputs/stream/replay_demo/interest_states"
+    "interestStateDir": "outputs/stream/replay_demo/interest_states",
+    "streamRecommendations": "outputs/stream/replay_demo/stream_recommendations.jsonl"
   }
 }
 ```
 
 Phase 6 should use `paths` from this file when present and fall back to the default paths above.
+
+## Stream Recommendations JSONL
+
+`stream_recommendations.jsonl` is optional. It is written only when Phase 5 runs the replay orchestrator with recommendation enabled.
+
+Fields currently written per line:
+
+```json
+{
+  "recordedAt": "2026-05-06T13:00:00+09:00",
+  "runId": "replay_with_recommend",
+  "userId": 28,
+  "rank": 1,
+  "movieId": 2571,
+  "itemIdx": 1234,
+  "title": "The Matrix",
+  "genres": "[\"Action\", \"Sci-Fi\"]",
+  "score": 12.34,
+  "bestClusterId": 3,
+  "clusterScores": [12.34, 8.76],
+  "normalize": false,
+  "includeSeen": false,
+  "topK": 20
+}
+```
+
+Phase 6 should tolerate either `movieId` or `recommendedMovieId` as the recommended item field. If the file is absent, recommendation panels should render an empty state without failing the replay monitor.
 
 ## Phase 6 Read Scope
 
@@ -173,11 +203,12 @@ Phase 6 may read:
 - `refit_requests.jsonl`
 - `refit_events.jsonl`
 - `interest_states/{user_id}.json`
+- `stream_recommendations.jsonl`
 
 Phase 6 must not mutate these files.
 
 ## Non-Goals
 
-- No recommendation scoring/evaluation.
+- No offline recommendation evaluation metrics.
 - No dashboard-driven mutation of stream state.
 - No direct editing of generated replay artifacts.

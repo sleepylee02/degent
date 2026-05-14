@@ -13,6 +13,18 @@
 
 ## Done
 
+- Current Pipeline Snapshot
+  - owner: sleepylee / LLM
+  - plan: `plan/done/current_pipeline_snapshot.md`
+  - files: `docs/current-pipeline-snapshot.md`, `README.md`, `PROJECT_GUIDE.md`, `model/README.md`, `docs/data-flow.md`, `todo.md`
+  - status: 현재 batch / streaming 최종 구현, streaming data flow, artifact/state 계약, replay orchestration, 문제 포인트와 후속 수정 후보를 한 문서로 정리. `git diff --check` 통과
+
+- 머지 후 문서 정합성 업데이트
+  - owner: sleepylee / LLM
+  - plan: `plan/done/docs_consistency_after_merge.md`
+  - files: `PROJECT_GUIDE.md`, `README.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/`, `dashboard/README.md`, `outputs/readme.md`, `replay/README.md`, `experiments/model/README.md`, `todo.md`
+  - status: cluster 공통화, canonical cluster 기본 경로, dashboard export, stream/replay recommendation, replay dashboard recommendation artifact, 삭제된 legacy entrypoint 상태를 현재 운영 문서에 반영. `git diff --check`와 stale command 검색 완료
+
 - Streaming Online Recommend
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_recommend_online.md`
@@ -67,7 +79,7 @@
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase2_canonical_embedding.md`
   - files: `model/common/canonical.py`, `model/batch/extract_canonical.py`, `PROJECT_GUIDE.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `README.md`, `todo.md`
-  - status: legacy `model/batch/extract.py`는 보존하고 `python3 -m model.batch.extract_canonical` 경로를 추가. event 하나당 canonical embedding 하나를 보장하며 smoke test에서 `(2869, 128)`, duplicate 0, NaN 0 확인
+  - status: 당시에는 legacy overlap extract를 보존하고 `python3 -m model.batch.extract_canonical` 경로를 추가. 현재 main에서는 overlap extract entrypoint가 제거되어 `extract_canonical`이 공식 추출 경로다. event 하나당 canonical embedding 하나를 보장하며 smoke test에서 `(2869, 128)`, duplicate 0, NaN 0 확인
 - Streaming Pipeline Phase 1: 모델 구조 재정리
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase1_structure.md`

@@ -87,7 +87,7 @@ raw 데이터를 모델 학습 가능한 CSV/JSONL로 바꾸는 파트다.
 |---|---|
 | 담당 파일 | `model/batch/`, `model/common/`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md` |
 | Input | `data/ratings_drop_processed.jsonl`, B 파트 validation 결과 |
-| Output | `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/embeddings.npz`, `outputs/canonical_embeddings.npz`, `outputs/user_interests.npz`, `outputs/viz/`, run metadata |
+| Output | `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz`, `outputs/user_interests.npz`, `outputs/batch/interest_states/`, `data/clustering/user_clusters.parquet`, `outputs/viz/`, run metadata |
 | Endpoint | `python3 -m model.batch.*` |
 | 넘기는 기준 | 모델 artifact와 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`이 같은 run 기준으로 남아야 함 |
 
@@ -96,16 +96,17 @@ raw 데이터를 모델 학습 가능한 CSV/JSONL로 바꾸는 파트다.
 | step | 파일 | Input | Output |
 |---|---|---|---|
 | train | `model/batch/train.py` | `data/ratings_drop_processed.jsonl` | `outputs/sasrec_cl.pt`, `outputs/item2idx.json` |
-| legacy extract | `model/batch/extract.py` | model artifact, `data/ratings_drop_processed.jsonl` | `outputs/embeddings.npz` |
 | canonical extract | `model/batch/extract_canonical.py` | model artifact, `data/ratings_drop_processed.jsonl` | `outputs/canonical_embeddings.npz` |
-| cluster | `model/batch/cluster.py` | `outputs/embeddings.npz` | `outputs/user_interests.npz` |
+| cluster | `model/batch/cluster.py` | `outputs/canonical_embeddings.npz` | `outputs/user_interests.npz`, `outputs/batch/interest_states/{user_id}.json` |
+| cluster export | `model/batch/export_clusters.py` | `outputs/user_interests.npz` | `data/clustering/user_clusters.parquet` |
+| batch recommend | `model/batch/recommend.py` | interest vector NPZ, model artifact | `outputs/recommendations.csv`, `outputs/recommendations.npz` |
 | visualize | `model/batch/visualize_clusters.py` | `outputs/user_interests.npz` | `outputs/viz/` |
 
 ### C 파트가 D/E/F 파트에 넘기는 것
 
 - D 파트: `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, 필요 시 `outputs/canonical_embeddings.npz`
 - E 파트: replay orchestration에 필요한 model artifact
-- F 파트: 현재는 `outputs/user_interests.npz`를 직접 dashboard가 읽지 못하므로 export 파트가 추가로 필요
+- F 파트: `data/clustering/user_clusters.parquet`를 Cluster explorer가 읽음. 이 파일은 `model/batch/export_clusters.py`로 재생성
 
 ## D. Streaming State/Interest
 
@@ -113,9 +114,9 @@ rating event를 online user state로 반영하고, active positive embedding을 
 
 | 항목 | 내용 |
 |---|---|
-| 담당 파일 | `model/stream/state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/drift_detector.py` |
+| 담당 파일 | `model/stream/state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py` |
 | Input | C 파트 model artifact, `data/ratings_drop_processed.jsonl` 또는 E 파트 replay micro-batch |
-| Output | `outputs/stream/user_states/`, `outputs/stream/online_embeddings.npz`, `outputs/stream/interest_states/`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`, `outputs/stream/refit_events.jsonl` |
+| Output | `outputs/stream/user_states/`, `outputs/stream/online_embeddings.npz`, `outputs/stream/interest_states/`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`, `outputs/stream/refit_events.jsonl`, `outputs/stream/stream_recommendations.jsonl` |
 | Endpoint | `python3 -m model.stream.*` |
 | 넘기는 기준 | user state, online embedding, assignment/refit log가 같은 output scope 안에서 만들어져야 함 |
 
@@ -126,7 +127,7 @@ rating event를 online user state로 반영하고, active positive embedding을 
 | online extract | `model/stream/extract_online.py` | rating events, `outputs/sasrec_cl.pt`, `outputs/item2idx.json` | `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl` |
 | interest assign | `model/stream/interest_assign.py` | `outputs/stream/online_embeddings.npz`, existing `outputs/stream/interest_states/` | `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl` |
 | cluster refit | `model/stream/cluster_refit.py` | `outputs/stream/refit_requests.jsonl`, `outputs/stream/online_embeddings.npz` | updated `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/refit_events.jsonl` |
-| drift placeholder | `model/stream/drift_detector.py` | future stream metrics | future trigger output |
+| online recommend | `model/stream/recommend_online.py` | `outputs/stream/interest_states/`, `outputs/stream/user_states/`, model artifact | `outputs/stream/stream_recommendations.jsonl` |
 
 ### D 파트가 E/F 파트에 넘기는 것
 
@@ -141,7 +142,7 @@ rating event를 online user state로 반영하고, active positive embedding을 
 |---|---|
 | 담당 파일 | `replay/`, `model/stream/replay_pipeline.py`, `docs/streaming-replay-dashboard-contract.md`, `replay/README.md` |
 | Input | `data/ratings_drop_processed.jsonl`, C 파트 model artifact |
-| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts |
+| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl` |
 | Endpoint | `make -C replay`, `replay/bin/rating_replay`, `python3 -m model.stream.replay_pipeline` |
 | 넘기는 기준 | 모든 replay demo artifact는 `outputs/stream/replay_demo/` 아래에 격리되어야 함 |
 
@@ -151,12 +152,12 @@ rating event를 online user state로 반영하고, active positive embedding을 
 |---|---|---|---|
 | build replay binary | `replay/Makefile`, `replay/cpp/` | C++ source | `replay/bin/rating_replay` |
 | generate replay input | `replay/bin/rating_replay` | `data/ratings_drop_processed.jsonl` | `outputs/stream/replay_demo/replay_input_events.jsonl` |
-| replay orchestrator | `model/stream/replay_pipeline.py` | replay input events, model artifact | `outputs/stream/replay_demo/replay_summary.json`, `replay_events.jsonl`, replay-scoped states/logs |
+| replay orchestrator | `model/stream/replay_pipeline.py` | replay input events, model artifact | `outputs/stream/replay_demo/replay_summary.json`, `replay_events.jsonl`, replay-scoped states/logs, optional `stream_recommendations.jsonl` |
 
 ### E 파트가 F 파트에 넘기는 것
 
 - 필수 entrypoint: `outputs/stream/replay_demo/replay_summary.json`
-- 추가 read files: `replay_events.jsonl`, `interest_assignments.jsonl`, `refit_requests.jsonl`, `refit_events.jsonl`, `interest_states/{user_id}.json`
+- 추가 read files: `replay_events.jsonl`, `interest_assignments.jsonl`, `refit_requests.jsonl`, `refit_events.jsonl`, `interest_states/{user_id}.json`, `stream_recommendations.jsonl`
 - 세부 파일 계약: `docs/streaming-replay-dashboard-contract.md`
 
 ## F. Dashboard
@@ -178,10 +179,10 @@ batch cluster 결과나 replay 진행 상황을 사람이 탐색하는 read-only
 | Cluster explorer | `data/clustering/user_clusters.parquet` 또는 `.csv/.jsonl/.ndjson` | `dashboard/README.md`의 필수 컬럼: `userId`, `clusterLabel`, `x`, `y` |
 | Replay monitor | `outputs/stream/replay_demo/replay_summary.json` | `docs/streaming-replay-dashboard-contract.md` |
 
-### F 파트에서 아직 필요한 연결
+### F 파트 연결 기준
 
-- `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export endpoint가 아직 없다.
-- 이 export를 추가하면 담당 파일, input, output, endpoint를 이 문서에 별도 파트나 C/F 사이 단계로 추가한다.
+- Cluster explorer 입력은 `model/batch/export_clusters.py`로 생성한다.
+- Replay monitor는 summary `paths`가 있으면 이를 우선 사용하며, `stream_recommendations.jsonl`이 있으면 recommendation view도 표시한다.
 
 ## G. Experiment/Docs Tracking
 

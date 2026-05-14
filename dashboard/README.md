@@ -1,6 +1,6 @@
 # Recommendation Dashboard
 
-사용자 상태 임베딩 클러스터링 결과와 streaming replay 진행 상황을 탐색하기 위한 Streamlit 대시보드.
+사용자 상태 임베딩 클러스터링 결과, streaming replay 진행 상황, replay-scoped 추천 결과를 탐색하기 위한 Streamlit 대시보드.
 
 ## 실행
 
@@ -61,6 +61,12 @@ userId,clusterLabel,x,y,z,timepoint,clusterProbability,outlierScore,sequenceLeng
 
 앱 기본값은 `data/clustering/user_clusters.parquet`를 먼저 찾는다. 파일이 없으면 demo 데이터를 사용할 수 있다.
 
+Cluster explorer는 선택적으로 replay recommendation JSONL도 읽을 수 있다.
+
+- 기본 경로: `outputs/stream/replay_demo/stream_recommendations.jsonl`
+- 파일이 있으면 sidebar의 `Load replay recommendations`가 기본으로 켜진다.
+- 추천 레코드에 `movieId` 또는 `recommendedMovieId`가 있으면 영화 메타데이터와 함께 recommendation panel에 표시한다.
+
 ## Replay monitor
 
 Phase 6 replay monitor는 Phase 5가 생성한 replay artifact를 읽기만 하는 reader다. Replay pipeline을 실행하거나 `outputs/stream/replay_demo/` 아래 파일을 생성/수정/삭제하지 않는다.
@@ -76,6 +82,7 @@ Stable entrypoint:
 - `outputs/stream/replay_demo/refit_requests.jsonl`
 - `outputs/stream/replay_demo/refit_events.jsonl`
 - `outputs/stream/replay_demo/interest_states/{user_id}.json`
+- `outputs/stream/replay_demo/stream_recommendations.jsonl`
 
 Replay monitor에서 표시하는 내용:
 
@@ -83,5 +90,6 @@ Replay monitor에서 표시하는 내용:
 - replay event timeline, latency, active embedding rows, assignment status counts
 - assignment status counts, open refit requests, closed/skipped refit events
 - user별 interest count, pending/processed event count, refit trigger state
+- replay recommendation row 수, unique user/movie 수, top score 추천 테이블
 
 파일 계약의 정본은 `docs/streaming-replay-dashboard-contract.md`다.

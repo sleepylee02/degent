@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-10 기준으로 replay closed-loop smoke는 완료된다.
+2026-05-10 기준으로 replay closed-loop smoke는 완료된다. 이후 `--recommend` 옵션이 추가되어 micro-batch마다 online recommendation까지 같은 replay scope에 기록할 수 있다.
 
 검증 command:
 
@@ -24,6 +24,26 @@
   --cluster-dim 3 \
   --cluster-backend auto \
   --run-id e2e_streaming_smoke_auto_fallback
+```
+
+추천까지 포함한 실행 예시:
+
+```bash
+.venv/bin/python -m model.stream.replay_pipeline \
+  --reset-output \
+  --generate-events \
+  --replay-user-id 28 \
+  --limit-events 30 \
+  --micro-batch-size 15 \
+  --refit-min-events 3 \
+  --assign-trigger-count 3 \
+  --outlier-trigger-count 3 \
+  --min-cluster-size 2 \
+  --cluster-dim 3 \
+  --cluster-backend auto \
+  --recommend \
+  --recommend-top-k 20 \
+  --run-id replay_with_recommend
 ```
 
 검증 결과:
@@ -85,6 +105,8 @@ ratings_drop_processed.jsonl
      -> cluster_refit
         -> updated interest_states/{user_id}.json
         -> refit_events.jsonl
+     -> recommend_online (when --recommend)
+        -> stream_recommendations.jsonl
   -> replay_events.jsonl
   -> replay_summary.json
 ```
@@ -151,7 +173,7 @@ batch 파일은 `extract_online`이 필요한 최소 event 필드만 담는다.
 extract_online -> interest_assign -> cluster_refit
 ```
 
-`--skip-refit`을 주면 `cluster_refit` 호출만 건너뛸 수 있다.
+`--skip-refit`을 주면 `cluster_refit` 호출만 건너뛸 수 있다. `--recommend`를 주면 refit 이후 `recommend_online`이 추가로 실행된다.
 
 ## Stage 2. Online Extract
 
@@ -275,6 +297,34 @@ backend behavior:
 - `gpu`: RAPIDS/cuML + CUDA runtime이 안 되면 실패
 - `auto`: cuML import와 CUDA runtime probe가 통과하면 GPU, 아니면 CPU fallback. auto GPU refit 실행 중 실패해도 CPU로 한 번 fallback
 
+## Stage 4-1. Online Recommendation
+
+Consumer/producer:
+
+- `model.stream.recommend_online`
+
+Input:
+
+- `interest_states/{user_id}.json`
+- `user_states/{user_id}.json`
+- `outputs/sasrec_cl.pt`
+- `outputs/item2idx.json`
+- `data/movies_processed_drop.csv`
+
+Output:
+
+- `stream_recommendations.jsonl`
+
+동작:
+
+1. refit/assign 결과로 만들어진 interest vector를 읽는다.
+2. SASRec item embedding과 item vocabulary를 로드한다.
+3. user state의 positive movie를 seen set으로 보고 기본적으로 추천 후보에서 제외한다.
+4. `score(u, i) = max_k(u_k^T v_i)`로 item을 scoring한다.
+5. `--recommend-top-k` 개수만큼 JSONL에 append한다.
+
+이 단계는 `replay_pipeline --recommend`를 사용할 때만 실행된다. 추천 결과 평가(Recall@K/NDCG@K)는 아직 별도 파이프라인으로 구현되지 않았다.
+
 ## Stage 5. Replay Summary And Dashboard Entry
 
 Consumer/producer:
@@ -306,7 +356,8 @@ Output:
     "assignmentRecords": 19,
     "refitRequestsOpened": 2,
     "refitClosed": 2,
-    "refitSkipped": 0
+    "refitSkipped": 0,
+    "recommendationRows": 0
   }
 }
 ```
@@ -326,6 +377,7 @@ Output:
 | `interest_assignments.jsonl` | `interest_assign` | `replay_pipeline`, dashboard | assignment/pending/outlier log |
 | `refit_requests.jsonl` | `interest_assign` | `cluster_refit`, dashboard | open refit request log |
 | `refit_events.jsonl` | `cluster_refit` | `replay_pipeline`, dashboard | refit close/skip result log |
+| `stream_recommendations.jsonl` | `recommend_online` | dashboard | replay-scoped top-K recommendation log |
 | `replay_events.jsonl` | `replay_pipeline` | dashboard | replay progress log |
 | `replay_summary.json` | `replay_pipeline` | dashboard | stable replay entrypoint |
 
@@ -358,6 +410,11 @@ refit algorithm을 바꿀 때:
 - `interest_states/{user_id}.json`의 `interests[].vector` dimension은 online embedding dimension과 같아야 한다.
 - `refit_events.jsonl`에는 backend, status, request, activeEmbeddingRows, interestCount를 남긴다.
 
+recommendation logic을 바꿀 때:
+
+- `stream_recommendations.jsonl`의 user/movie/rank/score 필드를 유지하거나 계약을 먼저 갱신한다.
+- seen item 제외 정책을 바꾸면 `stream/recommend_online.py`, `docs/streaming-replay-dashboard-contract.md`, dashboard README를 함께 갱신한다.
+
 dashboard를 바꿀 때:
 
 - `replay_summary.json`의 `paths`를 우선 사용한다.
@@ -367,7 +424,7 @@ dashboard를 바꿀 때:
 ## Known Gaps
 
 - 현재 smoke는 user 28, 30 events 기준의 작은 closed-loop 검증이다.
-- 추천 scoring/evaluation은 아직 없다.
+- `u_k` 기반 추천 scoring은 `stream/recommend_online.py`와 `replay_pipeline --recommend`로 가능하다. 다만 Recall@K/NDCG@K 같은 offline evaluation은 아직 없다.
 - replay는 batch마다 full active snapshot을 다시 assign/refit 후보로 읽으므로 `already_processed` record가 정상적으로 생긴다.
 - `outputs/stream/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/stream/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
 - GPU backend는 환경 의존적이다. `auto`를 쓰면 가능한 경우 GPU를 쓰고, 현재 로컬처럼 CUDA runtime이 맞지 않으면 CPU fallback으로 진행한다.

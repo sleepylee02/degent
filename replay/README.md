@@ -32,6 +32,8 @@ The generated JSONL follows `docs/streaming-replay-dashboard-contract.md`.
 
 The orchestrator writes replay progress, summary, and stream artifacts under `outputs/stream/replay_demo/`.
 
+Add `--recommend` to run online recommendation after each micro-batch. Recommendation rows are appended to `outputs/stream/replay_demo/stream_recommendations.jsonl` and exposed through the replay summary `paths`.
+
 To build input events and run the closed-loop smoke in one command:
 
 ```bash
@@ -47,6 +49,8 @@ To build input events and run the closed-loop smoke in one command:
   --min-cluster-size 2 \
   --cluster-dim 3 \
   --cluster-backend auto \
+  --recommend \
+  --recommend-top-k 20 \
   --run-id phase5_replay_smoke
 ```
 

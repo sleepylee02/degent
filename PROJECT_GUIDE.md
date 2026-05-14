@@ -43,6 +43,8 @@ degent/
 │   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json
 │   │   ├── extract_canonical.py #  event당 canonical 히든스테이트 추출 → canonical_embeddings.npz
 │   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz + batch/interest_states/
+│   │   ├── export_clusters.py #   user_interests.npz → dashboard table export
+│   │   ├── recommend.py     #     batch interest vector 기반 top-K 추천 산출
 │   │   └── visualize_clusters.py # 클러스터 변화 시각화 → outputs/viz/
 │   ├── common/              #   batch/stream 공통 모델 유틸
 │   │   ├── canonical.py     #     canonical event window/Dataset/검증 helper
@@ -50,10 +52,11 @@ degent/
 │   │   ├── dataset.py       #     데이터 로드/전처리/Dataset
 │   │   ├── sasrec.py        #     SASRecCL 모델, Contrastive Loss
 │   │   └── runtime.py       #     로그, run metadata, device/seed 유틸
-│   ├── stream/              #   streaming pipeline skeleton
+│   ├── stream/              #   streaming/replay pipeline
 │   │   ├── extract_online.py #    online rating ingest → user state + canonical embedding
 │   │   ├── interest_assign.py #   online interest assignment + refit request 기록
 │   │   ├── cluster_refit.py #     triggered cluster refit backend (genre labeling 포함)
+│   │   ├── recommend_online.py #  streaming interest state 기반 top-K 추천 산출
 │   │   └── replay_pipeline.py #   replay event micro-batch orchestrator
 │   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
 │   └── README.md            #   모델 파이프라인 설명
@@ -67,9 +70,11 @@ degent/
 ├── experiments/             # 실험 메타데이터 (가벼운 manifest/metrics/notes)
 │   └── model/               #   모델 run별 추적 기록
 ├── docs/                    # LLM/사람이 함께 보는 보조 문서
+│   ├── current-pipeline-snapshot.md # 현재 batch/streaming 구현과 문제 포인트
 │   ├── data-flow.md         #   raw -> processed -> model -> dashboard 흐름
 │   ├── artifacts.md         #   원본/생성물 목록과 수정 가능 여부
 │   ├── part-contracts.md    #   협업용 파트별 담당 파일/input/output/endpoint 계약
+│   ├── streaming-e2e-pipeline.md # streaming replay e2e 실행/인계 문서
 │   ├── streaming-replay-dashboard-contract.md # Phase 5/6 replay artifact 계약
 │   └── decisions/           #   중요한 설계 결정 기록
 ├── plan/                    # 작업 계획서
@@ -119,15 +124,18 @@ degent/
 ### 대시보드
 - 대시보드 코드는 `dashboard/` 아래에 둔다.
 - 시각화용 입력 산출물은 스크립트로 재생성 가능해야 하며, 원본 데이터처럼 수동 편집하지 않는다.
+- batch cluster 결과를 dashboard에 연결할 때는 `python3 -m model.batch.export_clusters`로 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet` 등 테이블 포맷으로 변환한다.
+- Replay monitor는 `outputs/stream/replay_demo/` 아래 artifact를 읽기만 하며 replay/stream state를 생성하거나 수정하지 않는다.
 - 인터랙티브 시각화를 위한 새 패키지를 추가하면 반드시 `requirements.txt`에 반영한다.
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.
-- `python3 -m model.batch.train`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
+- `python3 -m model.batch.train`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
 - `python3 -m model.stream.extract_online`은 raw rating event를 user state에 저장하고 active positive embedding을 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.cluster_refit`은 refit request를 소비해 user별 interest state를 갱신한다.
-- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 micro-batch로 소비해 Phase 3~4-1 closed-loop 산출물을 `outputs/stream/replay_demo/` 아래에 격리해 기록한다.
+- `python3 -m model.stream.recommend_online`은 streaming interest state와 item embedding으로 top-K 추천을 만들고 `outputs/stream/stream_recommendations.jsonl`에 기록한다.
+- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 micro-batch로 소비해 Phase 3~4-1 closed-loop 산출물을 `outputs/stream/replay_demo/` 아래에 격리해 기록한다. `--recommend`를 주면 micro-batch마다 `recommend_online`도 호출해 `outputs/stream/replay_demo/stream_recommendations.jsonl`을 남긴다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.

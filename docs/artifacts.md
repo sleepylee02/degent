@@ -36,8 +36,12 @@
 | `outputs/sasrec_cl.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
 | `outputs/sasrec_cl_best.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
 | `outputs/item2idx.json` | model artifact | `python3 -m model.batch.train` | regenerate |
-| `outputs/embeddings.npz` | model artifact | `python3 -m model.batch.extract` | regenerate |
+| `outputs/embeddings.npz` | legacy model artifact | removed overlap-window extract workflow | no new writes |
 | `outputs/canonical_embeddings.npz` | model artifact | `python3 -m model.batch.extract_canonical` | regenerate |
+| `outputs/user_interests.npz` | batch cluster export source | `python3 -m model.batch.cluster` | regenerate |
+| `outputs/batch/interest_states/{user_id}.json` | batch interest state | `python3 -m model.batch.cluster` | regenerate |
+| `outputs/recommendations.csv` | batch recommendation table | `python3 -m model.batch.recommend` | regenerate |
+| `outputs/recommendations.npz` | batch recommendation arrays | `python3 -m model.batch.recommend` | regenerate |
 | `outputs/stream/user_states/{user_id}.json` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
 | `outputs/stream/online_embeddings.npz` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
 | `outputs/stream/online_embedding_events.jsonl` | streaming run log | `python3 -m model.stream.extract_online` | append/regenerate |
@@ -45,6 +49,7 @@
 | `outputs/stream/interest_assignments.jsonl` | streaming assignment log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/stream/refit_requests.jsonl` | streaming refit request log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/stream/refit_events.jsonl` | streaming refit event log | `python3 -m model.stream.cluster_refit` | append/regenerate |
+| `outputs/stream/stream_recommendations.jsonl` | streaming recommendation log | `python3 -m model.stream.recommend_online` | append/regenerate |
 | `outputs/stream/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
 | `outputs/stream/replay_demo/replay_summary.json` | replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline` | regenerate |
 | `outputs/stream/replay_demo/replay_events.jsonl` | replay progress log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
@@ -54,8 +59,8 @@
 | `outputs/stream/replay_demo/refit_requests.jsonl` | replay-scoped refit request log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
 | `outputs/stream/replay_demo/refit_events.jsonl` | replay-scoped refit event log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
 | `outputs/stream/replay_demo/interest_states/{user_id}.json` | replay-scoped interest state | `python3 -m model.stream.replay_pipeline` | regenerate |
+| `outputs/stream/replay_demo/stream_recommendations.jsonl` | replay-scoped recommendation log | `python3 -m model.stream.replay_pipeline --recommend` | append/regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
-| `outputs/user_interests.npz` | model artifact | `python3 -m model.batch.cluster` | regenerate |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
 | `outputs/logs/` | tracked runtime logs | model scripts | append/regenerate |
 | `outputs/latest_model_run_id.txt` | local run pointer | model scripts | regenerate |
@@ -77,15 +82,15 @@ python3 preprocess/drop_rating/drop_ratings.py
 python3 preprocess/process_rating/process_ratings_drop.py
 (cd preprocess/preprocess_genre && python3 preprocess_genre.py)
 python3 -m model.batch.train
-python3 -m model.batch.extract
 python3 -m model.batch.extract_canonical
-python3 -m model.stream.extract_online --bootstrap-user-id <userId>
-python3 -m model.stream.interest_assign
-python3 -m model.stream.cluster_refit
-make -C replay
-python3 -m model.stream.replay_pipeline --generate-events
 python3 -m model.batch.cluster
 python3 -m model.batch.export_clusters
 python3 -m model.batch.visualize_clusters
+python3 -m model.stream.extract_online --bootstrap-user-id <userId>
+python3 -m model.stream.interest_assign
+python3 -m model.stream.cluster_refit
+python3 -m model.stream.recommend_online
+make -C replay
+python3 -m model.stream.replay_pipeline --generate-events --recommend
 streamlit run dashboard/cluster_dashboard.py
 ```

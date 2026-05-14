@@ -246,7 +246,7 @@ Cluster explorer는 기본적으로 아래 결과 파일을 기대한다.
 
 - `data/clustering/user_clusters.parquet`
 
-이제 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트가 `model/batch/export_clusters.py`에 추가되었습니다.
+`outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트는 `model/batch/export_clusters.py`다.
 
 사용법:
 
@@ -277,9 +277,13 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 
 ## 모델 실험 기록
 
-`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 최신 run id를 이어받는다.
+`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`, `python3 -m model.stream.recommend_online`은 최신 run id를 이어받는다.
 
-`python3 -m model.batch.extract`는 기존 overlap-window hidden state를 `outputs/embeddings.npz`로 저장한다. `python3 -m model.batch.extract_canonical`은 streaming/replay 전환용으로 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다.
+`python3 -m model.batch.extract_canonical`은 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다. 현재 `python3 -m model.batch.cluster`의 기본 입력도 이 canonical embedding이다. 과거 overlap-window 추출 산출물인 `outputs/embeddings.npz`는 legacy artifact로만 취급한다.
+
+`python3 -m model.batch.cluster`는 유저별 UMAP+HDBSCAN을 실행하고 `outputs/user_interests.npz`와 `outputs/batch/interest_states/{user_id}.json`을 만든다. `model.common.cluster`의 공통 backend를 사용하며 `--cluster-backend auto`는 가능한 경우 GPU, 불가능하면 CPU fallback을 사용한다. 장르 라벨링은 `data/movies_processed_drop.csv`가 있으면 자동으로 붙는다.
+
+`python3 -m model.batch.export_clusters`는 `outputs/user_interests.npz`를 dashboard용 `data/clustering/user_clusters.parquet` 등 테이블 포맷으로 변환한다.
 
 `python3 -m model.stream.extract_online`은 raw rating event를 user state에 모두 저장하고, 현재까지 관측된 history 기준 positive projection에서 active online embedding을 만든다. 기본 출력은 `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl`이다.
 
@@ -287,7 +291,9 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 
 `python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
 
-`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `outputs/stream/replay_demo/` 아래에 `replay_summary.json`, `replay_events.jsonl`, replay-scoped state/log/embedding을 기록한다. 기본 `--replay-speed 0`은 wall-clock pacing 없이 빠르게 처리하고, 양수 값은 timestamp gap을 배속으로 압축한다.
+`python3 -m model.stream.recommend_online`은 `outputs/stream/interest_states/{user_id}.json`의 interest vector와 SASRec item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산해 `outputs/stream/stream_recommendations.jsonl`에 top-K 추천을 append한다. seen positive item은 기본적으로 제외한다.
+
+`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `outputs/stream/replay_demo/` 아래에 `replay_summary.json`, `replay_events.jsonl`, replay-scoped state/log/embedding을 기록한다. `--recommend`를 추가하면 각 micro-batch 뒤에 `recommend_online`을 실행해 `outputs/stream/replay_demo/stream_recommendations.jsonl`도 남긴다. 기본 `--replay-speed 0`은 wall-clock pacing 없이 빠르게 처리하고, 양수 값은 timestamp gap을 배속으로 압축한다.
 
 가벼운 기록:
 
@@ -346,6 +352,7 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 - `PROJECT_GUIDE.md`: 프로젝트 운영 규칙과 구조
 - `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`: LLM 도구별 진입점
 - `todo.md`: 현재 작업 상태와 협업 메모
+- `docs/current-pipeline-snapshot.md`: 현재 batch / streaming 구현, streaming data flow, 문제 포인트
 - `docs/data-flow.md`: raw -> processed -> model -> dashboard 흐름
 - `docs/artifacts.md`: 원본 데이터와 생성물의 수정 가능 여부
 - `docs/decisions/`: 중요한 설계 결정 기록

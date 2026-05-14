@@ -4,23 +4,28 @@ SASRec + Contrastive Loss 기반 적응형 다중 관심사 추천 시스템 구
 
 ## 전체 흐름
 
-Streaming replay e2e를 실행하거나 다른 파트에 넘길 artifact를 확인할 때는 `docs/streaming-e2e-pipeline.md`를 함께 본다.
+현재 batch / streaming 구현과 문제 포인트를 구체적으로 확인할 때는 `docs/current-pipeline-snapshot.md`를 먼저 본다. Streaming replay e2e를 실행하거나 다른 파트에 넘길 artifact를 확인할 때는 `docs/streaming-e2e-pipeline.md`를 함께 본다.
 
 ```
 python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json 저장
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
        ↓
-     python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz + outputs/batch/interest_states/{id}.json 저장
+     python3 -m model.batch.cluster → 유저별 UMAP + HDBSCAN → user_interests.npz + outputs/batch/interest_states/{id}.json 저장
+       ↓
+     python3 -m model.batch.export_clusters → dashboard table 저장
        ↓
      python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
-       ↓
-     python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
+
+streaming/replay path:
+python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
        ↓
      python3 -m model.stream.interest_assign → interest assignment + refit request 기록
        ↓
      python3 -m model.stream.cluster_refit → refit request 소비 + interest state replace
        ↓
-     python3 -m model.stream.replay_pipeline → timestamp replay closed-loop demo
+     python3 -m model.stream.recommend_online → interest state 기반 top-K 추천 기록
+       ↓
+     python3 -m model.stream.replay_pipeline --recommend → timestamp replay closed-loop + 추천 demo
 ```
 
 ---
@@ -32,6 +37,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best
 | `batch/train.py` | batch 학습 실행 |
 | `batch/extract_canonical.py` | event당 canonical 히든스테이트 1개 추출 |
 | `batch/cluster.py` | batch 유저별 UMAP + HDBSCAN 클러스터링 (기본 입력: `canonical_embeddings.npz`, genre labeling 포함) |
+| `batch/export_clusters.py` | `user_interests.npz`를 dashboard table(`parquet/csv/jsonl/ndjson`)로 변환 |
+| `batch/recommend.py` | interest vector NPZ 기반 batch top-K 추천 export. 현재 stream/replay 경로는 `stream/recommend_online.py`가 주 경로 |
 | `batch/visualize_clusters.py` | batch 클러스터 변화 시각화 |
 | `common/canonical.py` | canonical event window, Dataset, 검증 helper |
 | `common/cluster.py` | UMAP+HDBSCAN, GPU/CPU backend 선택, top_genres_for_cluster |
@@ -42,7 +49,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best
 | `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback, genre labeling 포함 |
-| `stream/replay_pipeline.py` | replay input event를 micro-batch로 소비해 Phase 3~4-1 CLI를 순서대로 호출 |
+| `stream/recommend_online.py` | streaming interest state를 읽어 top-K 추천 JSONL append |
+| `stream/replay_pipeline.py` | replay input event를 micro-batch로 소비해 Phase 3~4-1 CLI와 선택적 recommend 단계를 순서대로 호출 |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
 ---
@@ -89,6 +97,9 @@ make -C replay
 # 2-10. replay closed-loop smoke test
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke
 
+# 2-11. replay closed-loop + online recommendation smoke test
+python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --recommend --recommend-top-k 20 --run-id replay_with_recommend
+
 # 3. 클러스터링 (배치, 전체 유저)
 python3 -m model.batch.cluster
 
@@ -96,7 +107,13 @@ python3 -m model.batch.cluster
 python3 -m model.batch.cluster --user-id 28        # 특정 유저만
 python3 -m model.batch.cluster --top-n 50          # 시퀀스 긴 상위 50명
 python3 -m model.batch.cluster --stride 2          # 매 2번째 시점만 사용 (속도 향상)
-python3 -m model.batch.cluster --embeddings outputs/embeddings.npz  # legacy embeddings.npz 사용
+python3 -m model.batch.cluster --embeddings outputs/canonical_embeddings.npz
+
+# 3-2. dashboard table export
+python3 -m model.batch.export_clusters --input outputs/user_interests.npz --output data/clustering/user_clusters.parquet
+
+# 3-3. streaming interest state 기반 online recommendation
+python3 -m model.stream.recommend_online --user-id 28
 
 # 4. 시각화
 python3 -m model.batch.visualize_clusters          # 전체 유저
@@ -109,9 +126,9 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 - `batch/train.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
-- `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
-- `stream/cluster_refit.py`의 `auto` backend는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
+- `batch/cluster.py`와 `stream/cluster_refit.py`는 `model.common.cluster`의 backend 선택 로직을 공유한다. `auto`는 cuML/CUDA runtime probe가 통과하면 GPU를 사용하고, GPU가 불가하거나 실행 중 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 - `stream/replay_pipeline.py`의 `--replay-speed 0` 기본값은 wall-clock pacing 없이 가능한 한 빠르게 처리한다. 양수 값을 주면 timestamp gap을 speed multiplier로 나눠 micro-batch 사이를 대기하며, `--max-sleep-sec`로 sleep 상한을 둔다.
+- `stream/replay_pipeline.py --recommend`는 각 micro-batch의 refit 이후 `stream/recommend_online.py`를 호출하고 replay scope 안의 `stream_recommendations.jsonl`에 append한다.
 - 현재 GPU 검증된 `.venv` 조합은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2`다. 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
 
@@ -120,11 +137,11 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 ## 실험 메타데이터
 
 - `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
-- `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
-- `python3 -m model.stream.replay_pipeline`은 `replay_summary.json`, `replay_events.jsonl` metadata를 run별 manifest/metrics에 기록한다.
+- `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`, `python3 -m model.stream.recommend_online`은 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
+- `python3 -m model.stream.replay_pipeline`은 `replay_summary.json`, `replay_events.jsonl`, 선택적 `stream_recommendations.jsonl` metadata를 run별 manifest/metrics에 기록한다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
-- `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster summary를 append한다.
+- `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster/refit/recommend/replay summary를 append한다.
 - `notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 파일이다.
 - 큰 입력/산출물은 git에 저장하지 않는다. SHA256은 기본 100MB 이하 파일만 계산하고, 큰 파일은 size/mtime만 남긴다. 필요하면 `--hash-inputs --hash-limit-mb -1`로 강제할 수 있다.
 
@@ -161,9 +178,6 @@ git diff <old_commit>..<new_commit> -- model/
 | train: patience | 10 | Recall@10 기준 early stopping patience (평가 횟수 기준) |
 | train: min_interactions | 200 | 학습 유저 필터링 기준 |
 | train: stride | 50 | 학습용 슬라이딩 윈도우 간격 |
-| extract: min_interactions | 1000 | 클러스터링 대상 유저 필터링 기준 |
-| extract: stride | 10 | 추출용 슬라이딩 윈도우 간격 |
-| extract: interval | 10 | 히든스테이트 추출 간격 |
 | extract_canonical: min_interactions | 1000 | canonical event embedding 대상 유저 필터링 기준 |
 | extract_canonical: output | `outputs/canonical_embeddings.npz` | event당 embedding 1개를 저장하는 기본 출력 경로 |
 | stream: min_ratings_for_zscore | 3 | online positive projection에서 z-score를 적용하기 전 optimistic cold-start 기준 |
@@ -179,6 +193,8 @@ git diff <old_commit>..<new_commit> -- model/
 | replay: output_root | `outputs/stream/replay_demo` | Phase 5/6 demo 산출물 격리 경로 |
 | replay: micro_batch_size | 20 | replay orchestrator가 한 번에 Phase 3~4-1에 전달하는 event 수 |
 | replay: replay_speed | 0 | wall-clock pacing 비활성. 양수면 timestamp gap을 배속으로 압축 |
+| recommend: top_k | 20 | batch/stream recommendation 기본 후보 수 |
+| recommend: normalize | false | 기본 raw dot product 사용. true면 cosine-normalized dot product 사용 |
 | cluster: cluster_n_components | 10 | HDBSCAN 입력 UMAP 차원 |
 | cluster: viz_n_components | 3 | 시각화용 UMAP 차원 |
 | cluster: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
@@ -195,7 +211,10 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/sasrec_cl_best.pt` | validation Recall@10 기준 best 모델 가중치 |
 | `outputs/item2idx.json` | 아이템 ID → 인덱스 매핑 (학습 vocabulary) |
 | `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |
-| `outputs/batch/interest_states/{user_id}.json` | 배치 클러스터링 결과 interest state. `interests[k].topGenres`에 클러스터별 상위 장르 포함 |
+| `outputs/user_interests.npz` | batch cluster visualization/export source. `labels_user_ids`, `labels_timepoints`, `labels`, `umap_z`, `win_*` 배열을 저장 |
+| `outputs/batch/interest_states/{user_id}.json` | 배치 클러스터링 결과 interest state. interest vector와 `interests[k].topGenres`에 클러스터별 상위 장르 포함 |
+| `outputs/recommendations.csv` | batch recommendation table. `batch/recommend.py` 실행 시 생성 |
+| `outputs/recommendations.npz` | batch recommendation arrays. `batch/recommend.py` 실행 시 생성 |
 | `outputs/stream/user_states/{user_id}.json` | user별 raw rating event와 현재 positive projection state |
 | `outputs/stream/online_embeddings.npz` | active positive online embedding `embeddings(N,128)`, `user_ids(N,)`, `raw_event_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)`, `status(N,)` |
 | `outputs/stream/online_embedding_events.jsonl` | online ingest/extract run summary event log |
@@ -203,6 +222,7 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/interest_assignments.jsonl` | online embedding별 assignment/pending/outlier 결과 log |
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/stream/refit_events.jsonl` | refit request 소비/skip/close 결과 log |
+| `outputs/stream/stream_recommendations.jsonl` | `stream/recommend_online.py` 단독 실행 추천 결과 |
 | `outputs/stream/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
 | `outputs/stream/replay_demo/replay_events.jsonl` | replay progress, micro-batch latency, replay clock, assignment/refit count log |
 | `outputs/stream/replay_demo/replay_summary.json` | Phase 6 dashboard가 읽는 replay run summary entrypoint |
@@ -212,8 +232,9 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
 | `outputs/stream/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
 | `outputs/stream/replay_demo/refit_events.jsonl` | replay run의 refit close/skip 결과 log |
+| `outputs/stream/replay_demo/stream_recommendations.jsonl` | `replay_pipeline --recommend` 실행 시 replay scope에 append되는 추천 결과 |
+| `outputs/embeddings.npz` | 삭제된 overlap-window extract entrypoint가 만들던 legacy 산출물. 현재 공식 경로는 `canonical_embeddings.npz` |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
-| `outputs/user_interests.npz` | 유저별 클러스터 레이블, 관심사 벡터 u_k, UMAP 3D 좌표 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
 | `outputs/logs/*.log` | 스크립트별 실행 로그 |
 | `experiments/model/<run_id>/manifest.json` | run별 config, git 상태, 입력/출력 metadata |
@@ -233,11 +254,11 @@ git diff <old_commit>..<new_commit> -- model/
 **min_cluster_size 튜닝**
 현재 10 고정. downstream 추천 성능(Recall@K, NDCG@K)으로 최적값 탐색 필요
 
-**u_k 기반 추천 스코어링 구현**
-`user_interests.npz`의 u_k를 이용한 `score(u, i) = max_k(u_k^T · v_i)` 계산 모듈 및 평가 파이프라인 미구현
+**추천 평가 파이프라인**
+`batch/recommend.py`와 `stream/recommend_online.py`는 top-K 후보를 생성하지만 Recall@K/NDCG@K 평가 파이프라인은 아직 없다.
 
-**canonical embedding downstream 연결**
-`outputs/canonical_embeddings.npz`는 streaming/replay 계약 검증용 산출물이다. 아직 `batch/cluster.py`와 dashboard export는 이 산출물을 직접 소비하지 않는다.
+**batch recommendation 입력 계약 정리**
+현재 `batch/cluster.py`는 interest vector를 `outputs/batch/interest_states/{user_id}.json`에 저장하고, `outputs/user_interests.npz`는 dashboard/export용 label/UMAP 배열 중심이다. `batch/recommend.py`는 interest vector 배열이 들어 있는 NPZ 포맷을 읽도록 구현되어 있어, 현재 batch cluster 산출물과 바로 연결하려면 JSON interest state loader 또는 별도 export가 필요하다. Streaming/replay 추천은 `stream/recommend_online.py`가 현재 주 경로다.
 
 **online positive policy 고도화**
 Phase 3 stream path는 raw rating을 모두 저장하고, 현재까지 관측된 user history 기준 z-score positive projection을 재검증한다. 실제 서비스 정책에서는 threshold, running statistics, 유보 상태, latency budget을 추가 비교해야 한다.

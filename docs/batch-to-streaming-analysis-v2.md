@@ -2,6 +2,8 @@
 
 이 문서는 `streaming` 브랜치가 기존 batch 추천 파이프라인을 어떤 방식으로 end-to-end streaming pipeline으로 확장했는지 정리한다.
 
+2026-05-14 현재 `origin/main` 기준으로는 이후 merge에서 공통 clustering backend, batch cluster export, streaming online recommendation, replay recommendation artifact, dashboard recommendation view가 추가됐다. 또한 `model/batch/extract.py`와 `model/stream/drift_detector.py`는 현재 git 추적 대상에서 제거됐으므로 이 문서에서 해당 이름이 나오는 부분은 historical context로만 읽는다. 현재 실행 가능한 경로의 정본은 `PROJECT_GUIDE.md`, `model/README.md`, `docs/data-flow.md`, `docs/streaming-e2e-pipeline.md`다.
+
 핵심은 기존 batch를 버린 것이 아니다. 기존 batch가 잘하던 부분은 그대로 재사용하고, streaming에서 반드시 필요한 부분만 새로 정의했다.
 
 ```text
@@ -27,11 +29,12 @@ data/ratings_drop_processed.jsonl
   -> SASRec + Contrastive Loss 학습
   -> outputs/sasrec_cl.pt
   -> outputs/item2idx.json
-  -> hidden state 일괄 추출
-  -> outputs/embeddings.npz
+  -> canonical hidden state 일괄 추출
+  -> outputs/canonical_embeddings.npz
   -> user별 UMAP + HDBSCAN clustering
   -> outputs/user_interests.npz
-  -> visualization/dashboard 후보
+  -> outputs/batch/interest_states/{user_id}.json
+  -> visualization/dashboard/recommendation 후보
 ```
 
 현재 브랜치에서는 이 기존 batch 책임을 `model/batch/` 아래에 보존했다.
@@ -39,8 +42,11 @@ data/ratings_drop_processed.jsonl
 | 책임 | 현재 파일 | 기존 방식 |
 |---|---|---|
 | 학습 | `model/batch/train.py` | 전체 전처리 데이터를 읽어 SASRec+CL checkpoint 생성 |
-| hidden state 추출 | `model/batch/extract.py` | overlap sliding window에서 interval마다 hidden state 추출 |
-| clustering | `model/batch/cluster.py` | user별 UMAP + HDBSCAN으로 interest vector 생성 |
+| hidden state 추출 | `model/batch/extract_canonical.py` | event당 canonical hidden state 1개 추출 |
+| legacy hidden state 추출 | 제거됨 | 과거 `model/batch/extract.py`가 overlap sliding window 산출물을 생성 |
+| clustering | `model/batch/cluster.py` | user별 UMAP + HDBSCAN으로 interest vector/state 생성 |
+| dashboard export | `model/batch/export_clusters.py` | `user_interests.npz`를 dashboard table로 변환 |
+| recommendation | `model/stream/recommend_online.py` | streaming interest state 기반 top-K 추천 생성 |
 | 시각화 | `model/batch/visualize_clusters.py` | `outputs/user_interests.npz`를 user별 plot으로 변환 |
 
 기존 batch는 다음 전제를 가진다.
@@ -323,22 +329,24 @@ Phase 1은 구조를 먼저 나눴다.
 model/
   batch/
     train.py
-    extract.py
     extract_canonical.py
     cluster.py
+    export_clusters.py
+    recommend.py
     visualize_clusters.py
   common/
     dataset.py
     sasrec.py
     runtime.py
     canonical.py
+    cluster.py
   stream/
     state.py
     extract_online.py
     interest_assign.py
     cluster_refit.py
+    recommend_online.py
     replay_pipeline.py
-    drift_detector.py
 ```
 
 의도:
@@ -370,7 +378,7 @@ Streaming은 별도 layer로 붙인다.
 
 ## 7. Phase 2: Canonical Batch Extract 추가
 
-기존에는 `batch/extract.py`가 `outputs/embeddings.npz`만 만들었다. 이 산출물은 legacy overlap-window embedding이다.
+기존에는 `batch/extract.py`가 `outputs/embeddings.npz`만 만들었다. 이 산출물은 legacy overlap-window embedding이며 현재 main에서는 재생성 entrypoint가 제거됐다.
 
 Phase 2는 새 entrypoint를 추가했다.
 
@@ -379,11 +387,16 @@ python3 -m model.batch.extract_canonical
   -> outputs/canonical_embeddings.npz
 ```
 
-기존 `extract.py`를 수정하지 않은 이유:
+당시 기존 `extract.py`를 수정하지 않은 이유:
 
 - 기존 batch clustering baseline을 깨지 않는다.
 - overlap-window 산출물과 canonical 산출물을 구분한다.
 - streaming/replay 계약용 embedding을 명확히 새 artifact로 둔다.
+
+현재 상태:
+
+- `batch/cluster.py` 기본 입력은 `outputs/canonical_embeddings.npz`다.
+- `outputs/embeddings.npz`는 historical evidence로만 남긴다.
 
 추가된 것:
 
@@ -941,7 +954,8 @@ event
 | refit trigger | 없음 | pending/outlier/assigned count 기반 |
 | refit backend | CPU UMAP/HDBSCAN | GPU-first cuML, CPU fallback |
 | replay | 없음 | C++ generator + Python orchestrator |
-| dashboard | cluster explorer | replay monitor read-only 추가 |
+| recommendation | batch/offline 후보 | `stream/recommend_online.py`, `replay_pipeline --recommend` |
+| dashboard | cluster explorer | replay monitor + recommendation view read-only 추가 |
 | phase boundary | script 중심 | file/JSONL/NPZ contract 중심 |
 
 ---
@@ -956,12 +970,12 @@ Streaming end-to-end가 됐다고 해서 모든 추천 serving 기능이 완성�
 |---|---|
 | full online training | deferred |
 | 매 event UMAP/HDBSCAN | 하지 않음 |
-| `u_k` 기반 recommendation scoring | 아직 없음 |
+| `u_k` 기반 recommendation scoring | `stream/recommend_online.py`와 `replay_pipeline --recommend` 구현됨 |
 | downstream Recall/NDCG 평가 | 아직 없음 |
 | dashboard-driven state mutation | 하지 않음 |
 | legacy batch 산출물 제거 | 하지 않음 |
 
-이 브랜치는 추천 scoring/evaluation보다 먼저 streaming state/refit/replay 계약을 닫는 데 집중했다.
+이 브랜치는 먼저 streaming state/refit/replay 계약을 닫았고, 이후 merge에서 `u_k` 기반 recommendation scoring이 추가됐다. 아직 남은 것은 추천 품질 평가와 batch recommendation 입력 계약 정리다.
 
 ---
 
