@@ -8,14 +8,11 @@ Streaming replay e2e를 실행하거나 다른 파트에 넘길 artifact를 확�
 
 ```
 python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json 저장
-  ├─ python3 -m model.batch.extract → legacy overlap 히든스테이트 추출 → embeddings.npz 저장
-  │    ↓
-  │  python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz 저장
-  │    ↓
-  │  python3 -m model.batch.export_clusters → dashboard 입력 테이블 생성 → data/clustering/user_clusters.parquet 저장
-  │    ↓
-  │  python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
+       ↓
+     python3 -m model.batch.cluster → 유저별 UMAP(10D) + HDBSCAN → user_interests.npz + outputs/batch/interest_states/{id}.json 저장
+       ↓
+     python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
        ↓
      python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
        ↓
@@ -33,19 +30,18 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best
 | 경로 | 역할 |
 |---|---|
 | `batch/train.py` | batch 학습 실행 |
-| `batch/extract.py` | legacy overlap-window batch 히든스테이트 추출 |
 | `batch/extract_canonical.py` | event당 canonical 히든스테이트 1개 추출 |
-| `batch/cluster.py` | batch 유저별 UMAP + HDBSCAN 클러스터링 |
+| `batch/cluster.py` | batch 유저별 UMAP + HDBSCAN 클러스터링 (기본 입력: `canonical_embeddings.npz`, genre labeling 포함) |
 | `batch/visualize_clusters.py` | batch 클러스터 변화 시각화 |
 | `common/canonical.py` | canonical event window, Dataset, 검증 helper |
+| `common/cluster.py` | UMAP+HDBSCAN, GPU/CPU backend 선택, top_genres_for_cluster |
 | `common/dataset.py` | 데이터 로드, 전처리, Dataset |
 | `common/sasrec.py` | SASRecCL 모델, Contrastive Loss |
 | `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
 | `stream/state.py` | online user raw event state, positive projection, state JSON 저장/로드 |
 | `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
-| `stream/drift_detector.py` | Phase 4 refit trigger placeholder |
-| `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback |
+| `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback, genre labeling 포함 |
 | `stream/replay_pipeline.py` | replay input event를 micro-batch로 소비해 Phase 3~4-1 CLI를 순서대로 호출 |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
 
@@ -60,40 +56,47 @@ python3 -m model.batch.train
 # 1-1. 특정 실험 ID로 학습
 python3 -m model.batch.train --run-id sasrec_cl_cl0_05 --cl-lambda 0.05
 
-# 2. 임베딩 추출
-python3 -m model.batch.extract
-
-# 2-1. streaming/replay 계약 검증용 canonical event embedding 추출
+# 2. canonical event embedding 추출 (streaming/replay 파이프라인 기본 입력)
 python3 -m model.batch.extract_canonical
 
-# 2-2. canonical extract smoke test
+# 2-1. canonical extract smoke test
 python3 -m model.batch.extract_canonical --limit-users 2 --batch-size 32 --num-workers 0 --output outputs/test_canonical_embeddings.npz
 
-# 2-3. online embedding/user state smoke test
+# 2-2. 단일 유저 추출 (CPU 테스트용, min-interactions 필터 우회)
+python3 -m model.batch.extract_canonical --user-id 28
+
+# 2-3. 배치 클러스터링 (canonical_embeddings.npz 기본 입력, genre labeling 자동)
+python3 -m model.batch.cluster
+
+# 2-4. 배치 클러스터링 단일 유저 테스트
+python3 -m model.batch.cluster --user-id 28
+
+# 2-5. online embedding/user state smoke test
 python3 -m model.stream.extract_online --bootstrap-user-id 28 --output outputs/stream/test_online_embeddings.npz
 
-# 2-4. online interest assignment/refit trigger smoke test
+# 2-6. online interest assignment/refit trigger smoke test
 python3 -m model.stream.interest_assign --embeddings outputs/stream/test_online_embeddings.npz
 
-# 2-5. triggered cluster refit smoke test
+# 2-7. triggered cluster refit smoke test
 python3 -m model.stream.cluster_refit --embeddings outputs/stream/test_online_embeddings.npz
 
-# 2-6. triggered cluster refit GPU/auto smoke test
+# 2-8. triggered cluster refit GPU/auto smoke test
 python3 -m model.stream.cluster_refit --embeddings outputs/stream/test_online_embeddings.npz --cluster-backend auto
 
-# 2-7. replay event generator build
+# 2-9. replay event generator build
 make -C replay
 
-# 2-8. replay closed-loop smoke test
+# 2-10. replay closed-loop smoke test
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 30 --micro-batch-size 15 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend auto --run-id phase5_replay_smoke
 
-# 3. 클러스터링 (전체 유저)
+# 3. 클러스터링 (배치, 전체 유저)
 python3 -m model.batch.cluster
 
 # 3-1. 클러스터링 (옵션)
 python3 -m model.batch.cluster --user-id 28        # 특정 유저만
 python3 -m model.batch.cluster --top-n 50          # 시퀀스 긴 상위 50명
 python3 -m model.batch.cluster --stride 2          # 매 2번째 시점만 사용 (속도 향상)
+python3 -m model.batch.cluster --embeddings outputs/embeddings.npz  # legacy embeddings.npz 사용
 
 # 4. 시각화
 python3 -m model.batch.visualize_clusters          # 전체 유저
@@ -104,7 +107,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 ## 실행 환경과 로그
 
-- `batch/train.py`, `batch/extract.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
+- `batch/train.py`, `batch/extract_canonical.py`는 실행 시 `cuda` → `mps` → `cpu` 순으로 자동 선택한다.
 - 선택된 device는 콘솔과 실행 로그 파일에 함께 기록된다.
 - `batch/cluster.py`는 현재 NumPy/UMAP/HDBSCAN 기반으로 CPU 실행 로그를 남긴다.
 - `stream/cluster_refit.py`의 `auto` backend는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
@@ -117,7 +120,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 ## 실험 메타데이터
 
 - `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
-- `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
+- `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - `python3 -m model.stream.replay_pipeline`은 `replay_summary.json`, `replay_events.jsonl` metadata를 run별 manifest/metrics에 기록한다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
@@ -191,8 +194,8 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/sasrec_cl.pt` | 마지막 epoch 모델 가중치 |
 | `outputs/sasrec_cl_best.pt` | validation Recall@10 기준 best 모델 가중치 |
 | `outputs/item2idx.json` | 아이템 ID → 인덱스 매핑 (학습 vocabulary) |
-| `outputs/embeddings.npz` | 시점별 히든스테이트 `embeddings(N,128)`, `user_ids(N,)`, `timepoint_idx(N,)` |
 | `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |
+| `outputs/batch/interest_states/{user_id}.json` | 배치 클러스터링 결과 interest state. `interests[k].topGenres`에 클러스터별 상위 장르 포함 |
 | `outputs/stream/user_states/{user_id}.json` | user별 raw rating event와 현재 positive projection state |
 | `outputs/stream/online_embeddings.npz` | active positive online embedding `embeddings(N,128)`, `user_ids(N,)`, `raw_event_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)`, `status(N,)` |
 | `outputs/stream/online_embedding_events.jsonl` | online ingest/extract run summary event log |

@@ -436,6 +436,8 @@ def main() -> None:
                             str(args.min_cluster_size),
                             "--cluster-dim",
                             str(args.cluster_dim),
+                            "--movies",
+                            str(resolve_path(root, args.movies)),
                             "--user-id",
                             str(user_id),
                         ],

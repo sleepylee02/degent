@@ -41,20 +41,19 @@ degent/
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
 │   ├── batch/               #   batch 모델 파이프라인 실행 entrypoint
 │   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json
-│   │   ├── extract.py       #     히든스테이트 추출 → embeddings.npz
 │   │   ├── extract_canonical.py #  event당 canonical 히든스테이트 추출 → canonical_embeddings.npz
-│   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz
+│   │   ├── cluster.py       #     유저별 UMAP + HDBSCAN → user_interests.npz + batch/interest_states/
 │   │   └── visualize_clusters.py # 클러스터 변화 시각화 → outputs/viz/
 │   ├── common/              #   batch/stream 공통 모델 유틸
 │   │   ├── canonical.py     #     canonical event window/Dataset/검증 helper
+│   │   ├── cluster.py       #     UMAP+HDBSCAN, GPU/CPU backend, top_genres_for_cluster
 │   │   ├── dataset.py       #     데이터 로드/전처리/Dataset
 │   │   ├── sasrec.py        #     SASRecCL 모델, Contrastive Loss
 │   │   └── runtime.py       #     로그, run metadata, device/seed 유틸
 │   ├── stream/              #   streaming pipeline skeleton
 │   │   ├── extract_online.py #    online rating ingest → user state + canonical embedding
 │   │   ├── interest_assign.py #   online interest assignment + refit request 기록
-│   │   ├── drift_detector.py #    refit trigger/drift detection 예정
-│   │   ├── cluster_refit.py #     triggered cluster refit backend
+│   │   ├── cluster_refit.py #     triggered cluster refit backend (genre labeling 포함)
 │   │   └── replay_pipeline.py #   replay event micro-batch orchestrator
 │   ├── IMPLEMENTATION_STATUS.md # 구현 현황, 산출물 상태, 보류 보완 후보
 │   └── README.md            #   모델 파이프라인 설명
@@ -124,7 +123,7 @@ degent/
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.
-- `python3 -m model.batch.train`, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
+- `python3 -m model.batch.train`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
 - `python3 -m model.stream.extract_online`은 raw rating event를 user state에 저장하고 active positive embedding을 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.cluster_refit`은 refit request를 소비해 user별 interest state를 갱신한다.

@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--min-interactions", type=int, default=1000)
     parser.add_argument("--min-activity-days", type=int, default=30)
     parser.add_argument("--limit-users", type=int, default=None)
+    parser.add_argument("--user-id", type=int, default=None, help="Extract only this user (skips min-interactions filter).")
     parser.add_argument("--output", type=Path, default=Path("outputs/canonical_embeddings.npz"))
     parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--d-model", type=int, default=None)
@@ -214,9 +215,10 @@ if __name__ == "__main__":
     user_events, load_stats = load_canonical_event_sequences(
         ratings_path,
         item2idx,
-        min_interactions=args.min_interactions,
-        min_activity_days=args.min_activity_days,
+        min_interactions=1 if args.user_id is not None else args.min_interactions,
+        min_activity_days=0 if args.user_id is not None else args.min_activity_days,
         limit_users=args.limit_users,
+        user_id=args.user_id,
     )
     logger.info("Canonical load stats: %s", load_stats.to_dict())
 
