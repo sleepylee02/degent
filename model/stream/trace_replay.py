@@ -75,14 +75,16 @@ def parse_args() -> argparse.Namespace:
         "--seed-user-state-dir",
         type=Path,
         default=None,
-        help="Optional pre-T user state dir copied into the replay output root before processing.",
+        help="Legacy pre-T user state dir copied into the replay output root before processing.",
     )
     parser.add_argument(
         "--seed-interest-state-dir",
         type=Path,
         default=None,
-        help="Optional pre-T interest state dir copied into the replay output root before processing.",
+        help="Legacy pre-T interest state dir copied into the replay output root before processing.",
     )
+    parser.add_argument("--seed-state-db", type=Path, default=None, help="Pre-T SQLite seed state store.")
+    parser.add_argument("--seed-run-id", type=str, default=None, help="Run id to read from --seed-state-db.")
 
     parser.add_argument("--movies", type=Path, default=Path("data/movies_processed_drop.csv"))
     parser.add_argument("--checkpoint", type=Path, default=Path("outputs/sasrec_cl.pt"))
@@ -388,6 +390,7 @@ def build_summary(
             "interestAssignments": relative_or_absolute(root, paths["interest_assignments"]),
             "refitRequests": relative_or_absolute(root, paths["refit_requests"]),
             "refitEvents": relative_or_absolute(root, paths["refit_events"]),
+            "stateDb": relative_or_absolute(root, paths["replay_db"]),
             "userStateDir": relative_or_absolute(root, paths["user_state_dir"]),
             "interestStateDir": relative_or_absolute(root, paths["interest_state_dir"]),
             "streamRecommendations": relative_or_absolute(root, paths["stream_recommendations"]),
@@ -428,14 +431,32 @@ def main() -> None:
     paths["replay_db"] = runtime_db_path
     runtime_store.init_store(runtime_db_path)
 
+    seed_state_db_path = resolve_path(root, args.seed_state_db) if args.seed_state_db else None
+    if seed_state_db_path is not None and args.seed_run_id is None:
+        raise ValueError("--seed-run-id is required when --seed-state-db is provided.")
+    seed_run_id = args.seed_run_id
     seed_user_state_dir = resolve_path(root, args.seed_user_state_dir) if args.seed_user_state_dir else None
     seed_interest_state_dir = (
         resolve_path(root, args.seed_interest_state_dir) if args.seed_interest_state_dir else None
     )
-    seed_summary = {
-        "userState": copy_seed_directory(seed_user_state_dir, paths["user_state_dir"]),
-        "interestState": copy_seed_directory(seed_interest_state_dir, paths["interest_state_dir"]),
-    }
+    seed_summary: dict[str, Any] = {}
+    if seed_state_db_path is not None:
+        seed_summary["stateDb"] = {
+            "path": relative_or_absolute(root, seed_state_db_path),
+            "runId": seed_run_id,
+            "exists": seed_state_db_path.exists(),
+            "counts": runtime_store.count_state_rows(seed_state_db_path, run_id=str(seed_run_id)),
+            "copied": False,
+        }
+    else:
+        seed_summary["userState"] = copy_seed_directory(seed_user_state_dir, paths["user_state_dir"])
+        seed_summary["interestState"] = copy_seed_directory(seed_interest_state_dir, paths["interest_state_dir"])
+    seed_state_args = []
+    if seed_state_db_path is not None:
+        seed_state_args = ["--seed-state-db", str(seed_state_db_path), "--seed-run-id", str(seed_run_id)]
+    use_legacy_state_dirs = seed_state_db_path is None and (
+        seed_user_state_dir is not None or seed_interest_state_dir is not None
+    )
 
     logger.info("Experiment run id: %s", run_id)
     logger.info("Output root: %s", output_root)
@@ -578,38 +599,40 @@ def main() -> None:
             before_refit_event_lines = count_jsonl(paths["refit_events"])
 
             payload = event_payload(event)
+            extract_cmd = [
+                sys.executable,
+                "-m",
+                "model.stream.extract_online",
+                "--run-id",
+                run_id,
+                "--movies",
+                str(resolve_path(root, args.movies)),
+                "--checkpoint",
+                str(resolve_path(root, args.checkpoint)),
+                "--item2idx",
+                str(resolve_path(root, args.item2idx)),
+                "--output",
+                str(paths["online_embeddings"]),
+                "--event-log",
+                str(paths["online_embedding_events"]),
+                "--event-json",
+                json.dumps(payload, ensure_ascii=False),
+                "--min-ratings-for-zscore",
+                str(args.min_ratings_for_zscore),
+                "--z-threshold",
+                str(args.z_threshold),
+                "--batch-size",
+                str(args.online_batch_size),
+                "--runtime-db",
+                str(runtime_db_path),
+                "--event-id",
+                str(current_event_id),
+                *seed_state_args,
+            ]
+            if use_legacy_state_dirs:
+                extract_cmd.extend(["--state-dir", str(paths["user_state_dir"])])
             run_command(
-                [
-                    sys.executable,
-                    "-m",
-                    "model.stream.extract_online",
-                    "--run-id",
-                    run_id,
-                    "--movies",
-                    str(resolve_path(root, args.movies)),
-                    "--checkpoint",
-                    str(resolve_path(root, args.checkpoint)),
-                    "--item2idx",
-                    str(resolve_path(root, args.item2idx)),
-                    "--state-dir",
-                    str(paths["user_state_dir"]),
-                    "--output",
-                    str(paths["online_embeddings"]),
-                    "--event-log",
-                    str(paths["online_embedding_events"]),
-                    "--event-json",
-                    json.dumps(payload, ensure_ascii=False),
-                    "--min-ratings-for-zscore",
-                    str(args.min_ratings_for_zscore),
-                    "--z-threshold",
-                    str(args.z_threshold),
-                    "--batch-size",
-                    str(args.online_batch_size),
-                    "--runtime-db",
-                    str(runtime_db_path),
-                    "--event-id",
-                    str(current_event_id),
-                ],
+                extract_cmd,
                 root=root,
                 logger=logger,
                 runtime_db=runtime_db_path,
@@ -619,34 +642,36 @@ def main() -> None:
             )
 
             active_rows = npz_row_count(paths["online_embeddings"])
+            interest_assign_cmd = [
+                sys.executable,
+                "-m",
+                "model.stream.interest_assign",
+                "--run-id",
+                run_id,
+                "--embeddings",
+                str(paths["online_embeddings"]),
+                "--assignments",
+                str(paths["interest_assignments"]),
+                "--refit-requests",
+                str(paths["refit_requests"]),
+                "--similarity-threshold",
+                str(args.similarity_threshold),
+                "--refit-min-events",
+                str(args.refit_min_events),
+                "--assign-trigger-count",
+                str(args.assign_trigger_count),
+                "--outlier-trigger-count",
+                str(args.outlier_trigger_count),
+                "--runtime-db",
+                str(runtime_db_path),
+                "--event-id",
+                str(current_event_id),
+                *seed_state_args,
+            ]
+            if use_legacy_state_dirs:
+                interest_assign_cmd.extend(["--interest-state-dir", str(paths["interest_state_dir"])])
             run_command(
-                [
-                    sys.executable,
-                    "-m",
-                    "model.stream.interest_assign",
-                    "--run-id",
-                    run_id,
-                    "--embeddings",
-                    str(paths["online_embeddings"]),
-                    "--interest-state-dir",
-                    str(paths["interest_state_dir"]),
-                    "--assignments",
-                    str(paths["interest_assignments"]),
-                    "--refit-requests",
-                    str(paths["refit_requests"]),
-                    "--similarity-threshold",
-                    str(args.similarity_threshold),
-                    "--refit-min-events",
-                    str(args.refit_min_events),
-                    "--assign-trigger-count",
-                    str(args.assign_trigger_count),
-                    "--outlier-trigger-count",
-                    str(args.outlier_trigger_count),
-                    "--runtime-db",
-                    str(runtime_db_path),
-                    "--event-id",
-                    str(current_event_id),
-                ],
+                interest_assign_cmd,
                 root=root,
                 logger=logger,
                 runtime_db=runtime_db_path,
@@ -661,38 +686,40 @@ def main() -> None:
 
             if not args.skip_refit:
                 for user_id in new_request_users:
+                    cluster_refit_cmd = [
+                        sys.executable,
+                        "-m",
+                        "model.stream.cluster_refit",
+                        "--run-id",
+                        run_id,
+                        "--embeddings",
+                        str(paths["online_embeddings"]),
+                        "--refit-requests",
+                        str(paths["refit_requests"]),
+                        "--refit-events",
+                        str(paths["refit_events"]),
+                        "--cluster-backend",
+                        args.cluster_backend,
+                        "--refit-min-events",
+                        str(args.refit_min_events),
+                        "--min-cluster-size",
+                        str(args.min_cluster_size),
+                        "--cluster-dim",
+                        str(args.cluster_dim),
+                        "--movies",
+                        str(resolve_path(root, args.movies)),
+                        "--user-id",
+                        str(user_id),
+                        "--runtime-db",
+                        str(runtime_db_path),
+                        "--event-id",
+                        str(current_event_id),
+                        *seed_state_args,
+                    ]
+                    if use_legacy_state_dirs:
+                        cluster_refit_cmd.extend(["--interest-state-dir", str(paths["interest_state_dir"])])
                     run_command(
-                        [
-                            sys.executable,
-                            "-m",
-                            "model.stream.cluster_refit",
-                            "--run-id",
-                            run_id,
-                            "--embeddings",
-                            str(paths["online_embeddings"]),
-                            "--refit-requests",
-                            str(paths["refit_requests"]),
-                            "--interest-state-dir",
-                            str(paths["interest_state_dir"]),
-                            "--refit-events",
-                            str(paths["refit_events"]),
-                            "--cluster-backend",
-                            args.cluster_backend,
-                            "--refit-min-events",
-                            str(args.refit_min_events),
-                            "--min-cluster-size",
-                            str(args.min_cluster_size),
-                            "--cluster-dim",
-                            str(args.cluster_dim),
-                            "--movies",
-                            str(resolve_path(root, args.movies)),
-                            "--user-id",
-                            str(user_id),
-                            "--runtime-db",
-                            str(runtime_db_path),
-                            "--event-id",
-                            str(current_event_id),
-                        ],
+                        cluster_refit_cmd,
                         root=root,
                         logger=logger,
                         runtime_db=runtime_db_path,
@@ -709,10 +736,6 @@ def main() -> None:
                     "model.stream.recommend_online",
                     "--run-id",
                     run_id,
-                    "--interest-state-dir",
-                    str(paths["interest_state_dir"]),
-                    "--user-state-dir",
-                    str(paths["user_state_dir"]),
                     "--checkpoint",
                     str(resolve_path(root, args.checkpoint)),
                     "--item2idx",
@@ -729,7 +752,17 @@ def main() -> None:
                     str(runtime_db_path),
                     "--event-id",
                     str(current_event_id),
+                    *seed_state_args,
                 ]
+                if use_legacy_state_dirs:
+                    recommend_cmd.extend(
+                        [
+                            "--interest-state-dir",
+                            str(paths["interest_state_dir"]),
+                            "--user-state-dir",
+                            str(paths["user_state_dir"]),
+                        ]
+                    )
                 if args.recommend_normalize:
                     recommend_cmd.append("--normalize")
                 run_command(
@@ -869,6 +902,7 @@ def main() -> None:
             output_root=relative_or_absolute(root, output_root),
             summary_path=relative_or_absolute(root, paths["replay_summary"]),
         )
+        runtime_store.checkpoint(runtime_db_path)
         append_jsonl(
             paths["replay_events"],
             {
@@ -896,15 +930,19 @@ def main() -> None:
                         "log": file_metadata(log_path, root=root),
                         "inputs": {
                             "replay_input_events": file_metadata(input_events_path, root=root, include_sha256=True),
+                            "seed_state_db": None
+                            if seed_state_db_path is None
+                            else file_metadata(seed_state_db_path, root=root, include_sha256=True),
+                            "seed_run_id": seed_run_id,
                             "seed_user_state_dir": directory_metadata(
                                 seed_user_state_dir,
                                 root=root,
-                                copied_to=paths["user_state_dir"],
+                                copied_to=paths["user_state_dir"] if seed_state_db_path is None else None,
                             ),
                             "seed_interest_state_dir": directory_metadata(
                                 seed_interest_state_dir,
                                 root=root,
-                                copied_to=paths["interest_state_dir"],
+                                copied_to=paths["interest_state_dir"] if seed_state_db_path is None else None,
                             ),
                         },
                         "outputs": {

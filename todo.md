@@ -5,8 +5,8 @@
 - Temporal 2022 Streaming E2E
   - owner: sleepylee / LLM
   - plan: `plan/active/temporal_2022_streaming_e2e.md`
-  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/seed_pre_t_state.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
-  - status: cutoff-aware train/canonical, run-scoped model output path, pre-T user state seed, replay seed state copy, `outputs/pre/temporal_2022/` + `outputs/post/temporal_2022/` 경로 계약 구현. CLI/help, helper smoke, `py_compile`, `git diff --check` 통과. 남은 작업은 실제 pre-T train/canonical/cluster/seed/replay smoke/full run 실행과 runtime report 기록
+  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: cutoff-aware train/canonical, run-scoped model output path, pre/post 경로 계약 구현 후 per-user JSON state directory가 pre에서 12GB, post 복사본도 12GB가 되는 문제가 확인됨. 현재 작업은 pre `state.sqlite` seed store와 post `replay.sqlite` lazy materialize 구조로 전환해 user/interest state를 SQLite 중심으로 정리하는 것.
 
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM

@@ -24,16 +24,16 @@
 | 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, loss/CE/CL 분리 기록, Recall@10 기준 early stopping, 마지막/best checkpoint와 item2idx 저장, run metadata 기록, cutoff와 run-scoped output dir 지원 | test 평가, scheduler, 튜닝 sweep는 없음 |
 | legacy overlap 히든스테이트 추출 | [~] | 제거됨 | 과거 overlap-window extract가 `outputs/embeddings.npz`를 만들었으나 현재 공식 entrypoint는 아님 | 기존 artifact는 historical evidence로만 보존 |
 | canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록, cutoff와 explicit checkpoint/item2idx path 지원 | 현재 batch cluster 기본 입력 |
-| pre-T user state seed | [x] | `stream/seed_pre_t_state.py` | temporal cutoff 이전 rating history로 replay-ready user state를 생성하고, 기존 interest state가 있으면 pre-T active raw event를 processed로 표시 | Temporal 2022 E2E smoke/full run으로 규모 검증 필요 |
-| online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
+| pre-T user state seed | [x] | `stream/seed_pre_t_state.py` | temporal cutoff 이전 rating history로 replay-ready SQLite user state를 생성하고, 기존 SQLite interest state가 있으면 pre-T active raw event를 processed로 표시 | Temporal 2022 E2E smoke/full run으로 규모 검증 필요 |
+| online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 SQLite user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | interest assign / refit trigger | [x] | `stream/interest_assign.py` | active online embedding을 user별 interest state에 cosine nearest-interest로 assign하고, no-interest/pending/outlier/event-count 기준 refit request를 기록 | 실제 refit은 Phase 4-1 이후 범위 |
 | triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | `auto`는 cuML/CUDA runtime 가능 시 GPU, 불가하거나 auto GPU refit 실패 시 CPU fallback |
 | trace replay engine / closed-loop demo | [x] | `replay/cpp/rating_replay.cpp`, `stream/trace_replay.py`, `stream/replay_pipeline.py`, `stream/runtime_store.py` | ML-32M user history를 timestamp-sorted replay input으로 만들고, `--speed N` trace clock에 맞춰 Phase 3~4-1 CLI와 선택적 recommend 단계를 event 단위로 호출한다. Runtime state/payload/metadata/lifecycle/metric은 `replay.sqlite`에 기록하고 JSONL/JSON/NPZ는 fallback/debug와 대형 vector artifact 정본으로 유지한다 | Dashboard는 `paths.replayDb`가 있으면 SQLite를 우선 읽고 없으면 기존 JSONL artifact로 fallback한다 |
-| 유저별 클러스터링 | [~] | `batch/cluster.py`, `common/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz`와 `outputs/batch/interest_states/{user_id}.json` 저장, genre labeling 포함 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
+| 유저별 클러스터링 | [~] | `batch/cluster.py`, `common/cluster.py` | 유저별 UMAP + HDBSCAN, interest vector `u_k`, sliding window K(t), NaN 제거, `user_interests.npz`와 SQLite interest state 저장, genre labeling 포함 | 현재 산출물은 특정 유저 테스트 실행 결과로 보이며, 전체 유저 재실행 필요 |
 | 클러스터 시각화 | [~] | `batch/visualize_clusters.py` | `user_interests.npz` 로드, 유저별 cluster timeline/K(t)/UMAP plot 저장 | run metadata 기록은 아직 없음 |
 | dashboard cluster export | [x] | `batch/export_clusters.py` | `outputs/user_interests.npz`의 labels/UMAP 배열을 `data/clustering/user_clusters.parquet` 등 dashboard table로 변환 | batch interest state JSON 자체는 export하지 않음 |
 | 실험 메타데이터 유틸 | [~] | `common/runtime.py` | 로그, run id, manifest/metrics/notes, git 상태, 입력/출력 metadata, seed/device 유틸 | 기존 산출물에는 run별 manifest가 확인되지 않음 |
-| `u_k` 기반 추천 스코어링 | [x] | `batch/recommend.py`, `stream/recommend_online.py` | `score(u, i) = max_k(u_k^T v_i)`를 계산하고 top-K 추천을 CSV/NPZ 또는 JSONL로 기록. `replay_pipeline.py --recommend` 옵션으로 trace replay event loop에 통합 | stream 경로는 current interest state JSON을 읽음. batch 경로는 interest vector NPZ 입력 계약 정리 필요 |
+| `u_k` 기반 추천 스코어링 | [x] | `batch/recommend.py`, `stream/recommend_online.py` | `score(u, i) = max_k(u_k^T v_i)`를 계산하고 top-K 추천을 CSV/NPZ 또는 JSONL로 기록. `replay_pipeline.py --recommend` 옵션으로 trace replay event loop에 통합 | stream 경로는 SQLite interest/user state를 읽음. batch 경로는 interest vector NPZ 입력 계약 정리 필요 |
 | downstream 추천 평가 | [ ] | 없음 | `u_k` 기반 retrieval/rerank 평가 파이프라인 없음 | Recall@K/NDCG@K 평가 기준부터 확정 필요 |
 | 설정 파일 기반 실행 | [ ] | 없음 | 주요 hyperparameter는 CLI 인자와 코드 기본값에 분산 | run 비교를 위해 config 파일 도입 검토 |
 
@@ -42,14 +42,14 @@
 - `outputs/sasrec_cl.pt`: 학습 checkpoint 존재. 로그 기준 2026-04-08 09:34:52부터 20 epoch 학습, epoch 20 validation `Recall@10=0.0406`, `NDCG@10=0.0197`.
 - `outputs/sasrec_cl_best.pt`: 최신 `batch/train.py`는 validation `Recall@10`이 개선될 때 best checkpoint를 저장한다. 기존 산출물 존재 여부는 최신 코드로 재학습 후 확인한다.
 - `outputs/item2idx.json`: 학습 vocabulary 존재. 로그 기준 item 수 55,726.
-- `outputs/pre/temporal_2022/`: 신규 temporal cutoff run 권장 root. pre-T checkpoint, item2idx, canonical embeddings, user state, interest state, `pre_summary.json`을 이 아래에 모은다.
+- `outputs/pre/temporal_2022/`: 신규 temporal cutoff run 권장 root. pre-T checkpoint, item2idx, canonical embeddings, `state.sqlite`, `pre_summary.json`을 이 아래에 모은다.
 - `outputs/embeddings.npz`: legacy overlap-window extract artifact. shape `(763772, 128)`, dtype `float32`, unique user 622로 확인됐으나 현재 재생성 entrypoint는 제거됐다.
 - `outputs/canonical_embeddings.npz`: canonical extract 기본 출력 경로이며 현재 `batch/cluster.py` 기본 입력이다. Phase 2 smoke test에서는 `outputs/test_canonical_embeddings.npz`로 별도 저장해 검증했다.
-- `outputs/batch/interest_states/{user_id}.json`: batch cluster가 저장하는 user별 interest state. interest vector와 genre label을 포함한다.
-- `outputs/stream/user_states/{user_id}.json`: Phase 3 online state 기본 저장 경로. raw event와 positive projection을 함께 저장한다.
+- `outputs/batch/state.sqlite`: batch cluster가 저장하는 user별 interest state 기본 DB. interest vector와 genre label을 포함한다.
+- `outputs/stream/state.sqlite` 또는 replay `replay.sqlite`: Phase 3 online state 저장 경로. raw event와 positive projection을 함께 저장한다.
 - `outputs/stream/online_embeddings.npz`: Phase 3 online embedding 기본 출력 경로. active positive row만 저장한다.
 - `outputs/stream/online_embedding_events.jsonl`: Phase 3 online run summary event log.
-- `outputs/stream/interest_states/{user_id}.json`: Phase 4 interest assignment/refit trigger state.
+- SQLite `interest_states`/`interest_vectors`: Phase 4 interest assignment/refit trigger state.
 - `outputs/stream/interest_assignments.jsonl`: Phase 4 assignment/pending/outlier 결과 log.
 - `outputs/stream/refit_requests.jsonl`: Phase 4-1 이후 refit backend가 소비할 request log.
 - `outputs/stream/refit_events.jsonl`: Phase 4-1 refit request close/skip event log.
@@ -60,7 +60,7 @@
 - `outputs/stream/replay_demo/replay_summary.json`: dashboard stable entrypoint. speed, trace span, scheduled span, target/actual throughput, lag totals, `paths.replayDb`를 기록한다.
 - `outputs/stream/replay_demo/stream_recommendations.jsonl`: replay demo 격리 경로. `--recommend` 옵션 사용 시 생성.
 - `outputs/stream/replay_demo/`: trace replay demo root. 나머지 stream state/log/embedding은 replay run 안에 격리된다.
-- `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, `user_ids_list=[10202]` 테스트 모드 산출물로 보인다. 현재 포맷은 dashboard/export용 labels/UMAP/sliding-window 배열 중심이며, interest vector는 `outputs/batch/interest_states/{user_id}.json`에 저장된다. 전체 유저 클러스터링 산출물로 간주하면 안 된다.
+- `outputs/user_interests.npz`: 현재 shape 기준 label row 3,860, user 1명, `user_ids_list=[10202]` 테스트 모드 산출물로 보인다. 현재 포맷은 dashboard/export용 labels/UMAP/sliding-window 배열 중심이며, interest vector는 SQLite state store에 저장된다. 전체 유저 클러스터링 산출물로 간주하면 안 된다.
 - `outputs/embeddings.npy`: legacy 산출물로 보이며 현재 `np.load` 시 reshape 오류가 발생한다. 현 파이프라인 기준으로는 `outputs/canonical_embeddings.npz`를 사용한다.
 - `experiments/model/`: 현재 `README.md`만 확인됨. 기존 산출물에 대응되는 `manifest.json`, `metrics.jsonl`, `notes.md` run 디렉토리는 확인되지 않았다.
 - `outputs/logs/`: train/extract/cluster 로그가 존재하지만 과거 절대 경로가 서로 달라 historical evidence로만 취급한다.
@@ -127,7 +127,7 @@ Phase 2 smoke test:
 4. 유저별 embedding을 UMAP + HDBSCAN으로 clustering한다.
 5. `movie_ids`와 `data/movies_processed_drop.csv`가 있으면 cluster별 `topGenres`를 계산한다.
 6. `outputs/user_interests.npz`에는 dashboard/export용 labels, UMAP 좌표, sliding-window K(t) 배열을 저장한다.
-7. `outputs/batch/interest_states/{user_id}.json`에는 recommendation/refit과 공유 가능한 interest vector state를 저장한다.
+7. SQLite state store에는 recommendation/refit과 공유 가능한 interest vector state를 저장한다.
 
 `batch/export_clusters.py`는 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet` 같은 table 포맷으로 바꿔 Cluster explorer가 읽을 수 있게 한다.
 
@@ -149,7 +149,7 @@ Phase 2 smoke test:
 6. 그 외에는 현재까지 관측된 user ratings 기준 `z > 0`을 positive로 둔다.
 7. positive event 중 `item2idx`에 있는 event만 active embedding 대상으로 삼는다.
 8. active positive sequence 전체를 Phase 2 canonical window와 같은 right-padding + `SASRecCL.get_last_hidden()` 방식으로 재계산한다.
-9. state JSON, online embedding NPZ, event log JSONL, run metadata를 저장한다.
+9. SQLite user state, online embedding NPZ, event log JSONL, run metadata를 저장한다. Legacy `--state-dir`를 명시하면 per-user JSON도 쓸 수 있다.
 10. `--runtime-db`가 있으면 `user_states`, `user_raw_events`, `user_positive_events`, `embedding_snapshots`, `embedding_rows`를 SQLite에 기록한다.
 
 계약:
@@ -165,7 +165,7 @@ Phase 2 smoke test:
 `stream/interest_assign.py` 기준 흐름:
 
 1. `outputs/stream/online_embeddings.npz`에서 `status == active` row만 로드한다.
-2. user별 `outputs/stream/interest_states/{user_id}.json`을 로드하거나 새로 만든다.
+2. user별 SQLite interest state를 로드하거나 새로 만든다. Legacy `--interest-state-dir`를 명시하면 per-user JSON도 읽고 쓸 수 있다.
 3. interest state가 없거나 interest vector가 없으면 assign하지 않고 `pendingRawEventIds`에 쌓는다.
 4. pending active event 수가 `refit_min_events` 이상이면 `no_interest_pending_events` refit request를 기록한다.
 5. interest vector가 있으면 cosine similarity가 가장 큰 interest에 assign한다.
@@ -215,14 +215,14 @@ Phase 4-1 GPU dependency/smoke:
 
 `stream/recommend_online.py` 기준 흐름:
 
-1. `outputs/stream/interest_states/{user_id}.json` 또는 지정한 `--interest-state-dir`에서 interest vector를 읽는다.
+1. SQLite state store 또는 legacy `--interest-state-dir`에서 interest vector를 읽는다.
 2. `outputs/sasrec_cl.pt`의 `item_emb.weight`와 `outputs/item2idx.json`을 로드한다.
-3. `outputs/stream/user_states/{user_id}.json`에서 seen positive movie를 읽어 기본적으로 추천 후보에서 제외한다. `--include-seen`을 주면 제외하지 않는다.
+3. SQLite user state 또는 legacy `--user-state-dir`에서 seen positive movie를 읽어 기본적으로 추천 후보에서 제외한다. `--include-seen`을 주면 제외하지 않는다.
 4. `score(u, i) = max_k(u_k^T v_i)`로 candidate item을 scoring한다.
 5. top-K 결과를 `outputs/stream/stream_recommendations.jsonl`에 append하고 run metadata/metric을 기록한다.
 6. `--runtime-db`가 있으면 `recommendation_runs`, `recommendation_rows`를 SQLite에 기록한다.
 
-`replay_pipeline.py --recommend`를 사용하면 각 event 처리 이후 replay scope의 `interest_states/`와 `user_states/`를 대상으로 같은 추천 단계를 호출한다. 결과는 SQLite와 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 기록된다.
+`replay_pipeline.py --recommend`를 사용하면 각 event 처리 이후 replay scope의 `replay.sqlite` state를 대상으로 같은 추천 단계를 호출한다. 결과는 SQLite와 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 기록된다.
 
 아직 없는 것:
 
@@ -281,7 +281,7 @@ SQLite runtime store smoke:
 
 - [ ] 최신 코드로 `--run-id`를 명시해 `python3 -m model.batch.train/extract_canonical/cluster`를 다시 실행하고 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md` 생성 여부를 확인한다.
 - [ ] legacy `outputs/embeddings.npz`를 계속 보존만 할지, 별도 baseline/compat entrypoint로 되살릴지 결정한다.
-- [ ] `batch/recommend.py`가 현재 `outputs/batch/interest_states/{user_id}.json`을 직접 읽도록 바꾸거나, JSON interest state를 recommendation용 NPZ로 export하는 경로를 추가한다.
+- [ ] `batch/recommend.py`가 현재 SQLite interest state를 직접 읽도록 바꾸거나, SQLite interest state를 recommendation용 NPZ로 export하는 경로를 추가한다.
 - [ ] `batch/cluster.py`가 테스트 실행 결과로 전체 `outputs/user_interests.npz`를 덮어쓰지 않도록 output path 옵션 또는 테스트 산출물 분리 방식을 추가한다.
 - [ ] `outputs/user_interests.npz`를 전체 유저 대상으로 재생성하고 clustered user 수, K 분포, NaN drop 수를 기록한다.
 - [x] `u_k` 기반 추천 스코어링 모듈을 설계/구현한다. → `stream/recommend_online.py`

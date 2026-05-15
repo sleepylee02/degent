@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import sqlite3
 import time
@@ -13,10 +14,24 @@ from model.common.runtime import local_timestamp
 
 
 SCHEMA_VERSION = 1
+USER_STATE_PAYLOAD_ENCODING = "gzip_json_v1"
 
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def _compressed_json_payload(value: Any) -> bytes:
+    return gzip.compress(_json(value).encode("utf-8"), compresslevel=1)
+
+
+def _decode_user_state_payload(row: sqlite3.Row) -> dict[str, Any]:
+    keys = set(row.keys())
+    encoding = str(row["payload_encoding"]) if "payload_encoding" in keys and row["payload_encoding"] else "json"
+    payload_blob = row["payload_blob"] if "payload_blob" in keys else None
+    if encoding == USER_STATE_PAYLOAD_ENCODING and payload_blob is not None:
+        return json.loads(gzip.decompress(bytes(payload_blob)).decode("utf-8"))
+    return json.loads(str(row["payload_json"]))
 
 
 def _bool(value: Any) -> int:
@@ -40,6 +55,12 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def init_store(db_path: Path) -> None:
@@ -337,6 +358,8 @@ def init_store(db_path: Path) -> None:
                 ON embedding_rows(run_id, user_id, raw_event_id);
             """
         )
+        _ensure_column(conn, "user_states", "payload_encoding", "TEXT NOT NULL DEFAULT 'json'")
+        _ensure_column(conn, "user_states", "payload_blob", "BLOB")
         now = local_timestamp()
         conn.execute(
             """
@@ -346,6 +369,15 @@ def init_store(db_path: Path) -> None:
             """,
             (str(SCHEMA_VERSION), now),
         )
+
+
+def checkpoint(db_path: Path) -> None:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return
+    init_store(db_path)
+    with connect(db_path) as conn:
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
 
 def upsert_run(
@@ -641,8 +673,14 @@ def record_runtime_metric(
         )
 
 
-def record_user_state(db_path: Path, *, run_id: str, state: Any, state_path: str | None = None) -> None:
-    init_store(db_path)
+def record_user_state_conn(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    state: Any,
+    state_path: str | None = None,
+    include_event_rows: bool = True,
+) -> None:
     payload = state.to_dict()
     stats = payload.get("stats", {})
     raw_events = payload.get("rawEvents", [])
@@ -650,174 +688,317 @@ def record_user_state(db_path: Path, *, run_id: str, state: Any, state_path: str
     active_events = [event for event in positive_events if event.get("status") == "active"]
     skipped_unknown = [event for event in positive_events if event.get("status") == "skipped_unknown"]
     last_raw_event_id = max((int(event["rawEventId"]) for event in raw_events), default=None)
+    payload_blob = _compressed_json_payload(payload)
+    payload_marker = _json(
+        {
+            "encoding": USER_STATE_PAYLOAD_ENCODING,
+            "compressedBytes": len(payload_blob),
+        }
+    )
 
-    with connect(db_path) as conn:
+    conn.execute(
+        """
+        INSERT INTO user_states(
+            run_id, user_id, version, status, raw_event_count, positive_event_count, active_event_count,
+            skipped_unknown_items, last_raw_event_id, payload_json, payload_encoding, payload_blob,
+            state_path, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, user_id) DO UPDATE SET
+            version=excluded.version,
+            status=excluded.status,
+            raw_event_count=excluded.raw_event_count,
+            positive_event_count=excluded.positive_event_count,
+            active_event_count=excluded.active_event_count,
+            skipped_unknown_items=excluded.skipped_unknown_items,
+            last_raw_event_id=excluded.last_raw_event_id,
+            payload_json=excluded.payload_json,
+            payload_encoding=excluded.payload_encoding,
+            payload_blob=excluded.payload_blob,
+            state_path=excluded.state_path,
+            updated_at=excluded.updated_at
+        """,
+        (
+            run_id,
+            int(payload["userId"]),
+            payload.get("version"),
+            "active",
+            int(stats.get("rawEventCount", len(raw_events))),
+            int(stats.get("positiveEventCount", len(positive_events))),
+            int(stats.get("activeEventCount", len(active_events))),
+            int(stats.get("skippedUnknownItems", len(skipped_unknown))),
+            last_raw_event_id,
+            payload_marker,
+            USER_STATE_PAYLOAD_ENCODING,
+            payload_blob,
+            state_path,
+            payload.get("updatedAt"),
+        ),
+    )
+    conn.execute("DELETE FROM user_raw_events WHERE run_id=? AND user_id=?", (run_id, int(payload["userId"])))
+    conn.execute("DELETE FROM user_positive_events WHERE run_id=? AND user_id=?", (run_id, int(payload["userId"])))
+    if not include_event_rows:
+        return
+
+    for event in raw_events:
         conn.execute(
             """
-            INSERT INTO user_states(
-                run_id, user_id, version, status, raw_event_count, positive_event_count, active_event_count,
-                skipped_unknown_items, last_raw_event_id, payload_json, state_path, updated_at
+            INSERT INTO user_raw_events(
+                run_id, user_id, raw_event_id, movie_id, rating, rated_at, rated_at_ts, status, payload_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(run_id, user_id) DO UPDATE SET
-                version=excluded.version,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, user_id, raw_event_id) DO UPDATE SET
+                movie_id=excluded.movie_id,
+                rating=excluded.rating,
+                rated_at=excluded.rated_at,
+                rated_at_ts=excluded.rated_at_ts,
                 status=excluded.status,
-                raw_event_count=excluded.raw_event_count,
-                positive_event_count=excluded.positive_event_count,
-                active_event_count=excluded.active_event_count,
-                skipped_unknown_items=excluded.skipped_unknown_items,
-                last_raw_event_id=excluded.last_raw_event_id,
-                payload_json=excluded.payload_json,
-                state_path=excluded.state_path,
-                updated_at=excluded.updated_at
+                payload_json=excluded.payload_json
             """,
             (
                 run_id,
-                int(payload["userId"]),
-                payload.get("version"),
-                "active",
-                int(stats.get("rawEventCount", len(raw_events))),
-                int(stats.get("positiveEventCount", len(positive_events))),
-                int(stats.get("activeEventCount", len(active_events))),
-                int(stats.get("skippedUnknownItems", len(skipped_unknown))),
-                last_raw_event_id,
-                _json(payload),
-                state_path,
-                payload.get("updatedAt"),
+                int(event["userId"]),
+                int(event["rawEventId"]),
+                int(event["movieId"]),
+                float(event["rating"]),
+                str(event["ratedAt"]),
+                float(event["ratedAtTs"]),
+                "raw",
+                _json(event),
             ),
         )
-        for event in raw_events:
-            conn.execute(
-                """
-                INSERT INTO user_raw_events(
-                    run_id, user_id, raw_event_id, movie_id, rating, rated_at, rated_at_ts, status, payload_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id, user_id, raw_event_id) DO UPDATE SET
-                    movie_id=excluded.movie_id,
-                    rating=excluded.rating,
-                    rated_at=excluded.rated_at,
-                    rated_at_ts=excluded.rated_at_ts,
-                    status=excluded.status,
-                    payload_json=excluded.payload_json
-                """,
-                (
-                    run_id,
-                    int(event["userId"]),
-                    int(event["rawEventId"]),
-                    int(event["movieId"]),
-                    float(event["rating"]),
-                    str(event["ratedAt"]),
-                    float(event["ratedAtTs"]),
-                    "raw",
-                    _json(event),
-                ),
+    for event in positive_events:
+        conn.execute(
+            """
+            INSERT INTO user_positive_events(
+                run_id, user_id, raw_event_id, event_idx, movie_id, rating, rated_at, rated_at_ts,
+                status, reason, z_score, payload_json
             )
-        for event in positive_events:
-            conn.execute(
-                """
-                INSERT INTO user_positive_events(
-                    run_id, user_id, raw_event_id, event_idx, movie_id, rating, rated_at, rated_at_ts,
-                    status, reason, z_score, payload_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(run_id, user_id, raw_event_id) DO UPDATE SET
-                    event_idx=excluded.event_idx,
-                    movie_id=excluded.movie_id,
-                    rating=excluded.rating,
-                    rated_at=excluded.rated_at,
-                    rated_at_ts=excluded.rated_at_ts,
-                    status=excluded.status,
-                    reason=excluded.reason,
-                    z_score=excluded.z_score,
-                    payload_json=excluded.payload_json
-                """,
-                (
-                    run_id,
-                    int(event["userId"]),
-                    int(event["rawEventId"]),
-                    int(event["eventIdx"]),
-                    int(event["movieId"]),
-                    float(event["rating"]),
-                    str(event["ratedAt"]),
-                    float(event["ratedAtTs"]),
-                    str(event["status"]),
-                    event.get("positiveReason"),
-                    _none_or_float(event.get("zScore")),
-                    _json(event),
-                ),
-            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_id, user_id, raw_event_id) DO UPDATE SET
+                event_idx=excluded.event_idx,
+                movie_id=excluded.movie_id,
+                rating=excluded.rating,
+                rated_at=excluded.rated_at,
+                rated_at_ts=excluded.rated_at_ts,
+                status=excluded.status,
+                reason=excluded.reason,
+                z_score=excluded.z_score,
+                payload_json=excluded.payload_json
+            """,
+            (
+                run_id,
+                int(event["userId"]),
+                int(event["rawEventId"]),
+                int(event["eventIdx"]),
+                int(event["movieId"]),
+                float(event["rating"]),
+                str(event["ratedAt"]),
+                float(event["ratedAtTs"]),
+                str(event["status"]),
+                event.get("positiveReason"),
+                _none_or_float(event.get("zScore")),
+                _json(event),
+            ),
+        )
 
 
-def record_interest_state(db_path: Path, *, run_id: str, state: Any, state_path: str | None = None) -> None:
+def record_user_state(
+    db_path: Path,
+    *,
+    run_id: str,
+    state: Any,
+    state_path: str | None = None,
+    include_event_rows: bool = True,
+) -> None:
     init_store(db_path)
+    with connect(db_path) as conn:
+        record_user_state_conn(
+            conn,
+            run_id=run_id,
+            state=state,
+            state_path=state_path,
+            include_event_rows=include_event_rows,
+        )
+
+
+def fetch_user_state_payload(db_path: Path, *, run_id: str, user_id: int) -> dict[str, Any] | None:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    init_store(db_path)
+    with connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT payload_json, payload_encoding, payload_blob FROM user_states WHERE run_id=? AND user_id=?",
+            (run_id, int(user_id)),
+        ).fetchone()
+    if row is None:
+        return None
+    return _decode_user_state_payload(row)
+
+
+def list_user_state_ids(db_path: Path, *, run_id: str) -> list[int]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    init_store(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT user_id FROM user_states WHERE run_id=? ORDER BY user_id",
+            (run_id,),
+        ).fetchall()
+    return [int(row["user_id"]) for row in rows]
+
+
+def record_interest_state_conn(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    state: Any,
+    state_path: str | None = None,
+) -> None:
     payload = state.to_dict()
     interests = payload.get("interests", [])
     user_id = int(payload["userId"])
-    with connect(db_path) as conn:
+    conn.execute(
+        """
+        INSERT INTO interest_states(
+            run_id, user_id, version, interest_count, pending_count, processed_count,
+            assigned_since_last_refit, outlier_since_last_refit, refit_required, refit_request_open,
+            payload_json, state_path, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(run_id, user_id) DO UPDATE SET
+            version=excluded.version,
+            interest_count=excluded.interest_count,
+            pending_count=excluded.pending_count,
+            processed_count=excluded.processed_count,
+            assigned_since_last_refit=excluded.assigned_since_last_refit,
+            outlier_since_last_refit=excluded.outlier_since_last_refit,
+            refit_required=excluded.refit_required,
+            refit_request_open=excluded.refit_request_open,
+            payload_json=excluded.payload_json,
+            state_path=excluded.state_path,
+            updated_at=excluded.updated_at
+        """,
+        (
+            run_id,
+            user_id,
+            payload.get("version"),
+            len(interests),
+            len(payload.get("pendingRawEventIds", [])),
+            len(payload.get("processedRawEventIds", [])),
+            int(payload.get("assignedSinceLastRefit", 0)),
+            int(payload.get("outlierSinceLastRefit", 0)),
+            _bool(payload.get("refitRequired", False)),
+            _bool(payload.get("refitRequestOpen", False)),
+            _json(payload),
+            state_path,
+            payload.get("updatedAt"),
+        ),
+    )
+    conn.execute("DELETE FROM interest_vectors WHERE run_id=? AND user_id=?", (run_id, user_id))
+    for interest in interests:
+        vector = np.asarray(interest.get("vector", []), dtype=np.float32)
         conn.execute(
             """
-            INSERT INTO interest_states(
-                run_id, user_id, version, interest_count, pending_count, processed_count,
-                assigned_since_last_refit, outlier_since_last_refit, refit_required, refit_request_open,
-                payload_json, state_path, updated_at
+            INSERT INTO interest_vectors(
+                run_id, user_id, interest_id, version, dim, dtype, vector_blob, assigned_count,
+                source, top_genres_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(run_id, user_id) DO UPDATE SET
-                version=excluded.version,
-                interest_count=excluded.interest_count,
-                pending_count=excluded.pending_count,
-                processed_count=excluded.processed_count,
-                assigned_since_last_refit=excluded.assigned_since_last_refit,
-                outlier_since_last_refit=excluded.outlier_since_last_refit,
-                refit_required=excluded.refit_required,
-                refit_request_open=excluded.refit_request_open,
-                payload_json=excluded.payload_json,
-                state_path=excluded.state_path,
-                updated_at=excluded.updated_at
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
                 user_id,
+                int(interest["interestId"]),
                 payload.get("version"),
-                len(interests),
-                len(payload.get("pendingRawEventIds", [])),
-                len(payload.get("processedRawEventIds", [])),
-                int(payload.get("assignedSinceLastRefit", 0)),
-                int(payload.get("outlierSinceLastRefit", 0)),
-                _bool(payload.get("refitRequired", False)),
-                _bool(payload.get("refitRequestOpen", False)),
-                _json(payload),
-                state_path,
-                payload.get("updatedAt"),
+                int(vector.shape[0]),
+                "float32",
+                vector.tobytes(),
+                int(interest.get("assignedCount", 0)),
+                interest.get("source"),
+                _json(interest.get("topGenres", [])),
+                interest.get("createdAt"),
+                interest.get("updatedAt"),
             ),
         )
-        conn.execute("DELETE FROM interest_vectors WHERE run_id=? AND user_id=?", (run_id, user_id))
-        for interest in interests:
-            vector = np.asarray(interest.get("vector", []), dtype=np.float32)
-            conn.execute(
-                """
-                INSERT INTO interest_vectors(
-                    run_id, user_id, interest_id, version, dim, dtype, vector_blob, assigned_count,
-                    source, top_genres_json, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    user_id,
-                    int(interest["interestId"]),
-                    payload.get("version"),
-                    int(vector.shape[0]),
-                    "float32",
-                    vector.tobytes(),
-                    int(interest.get("assignedCount", 0)),
-                    interest.get("source"),
-                    _json(interest.get("topGenres", [])),
-                    interest.get("createdAt"),
-                    interest.get("updatedAt"),
-                ),
-            )
+
+
+def record_interest_state(db_path: Path, *, run_id: str, state: Any, state_path: str | None = None) -> None:
+    init_store(db_path)
+    with connect(db_path) as conn:
+        record_interest_state_conn(conn, run_id=run_id, state=state, state_path=state_path)
+
+
+def fetch_interest_state_payload_conn(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    user_id: int,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT payload_json FROM interest_states WHERE run_id=? AND user_id=?",
+        (run_id, int(user_id)),
+    ).fetchone()
+    if row is None:
+        return None
+    return json.loads(str(row["payload_json"]))
+
+
+def fetch_interest_state_payload(db_path: Path, *, run_id: str, user_id: int) -> dict[str, Any] | None:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return None
+    init_store(db_path)
+    with connect(db_path) as conn:
+        return fetch_interest_state_payload_conn(conn, run_id=run_id, user_id=user_id)
+
+
+def list_interest_state_ids(db_path: Path, *, run_id: str) -> list[int]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    init_store(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT user_id FROM interest_states WHERE run_id=? ORDER BY user_id",
+            (run_id,),
+        ).fetchall()
+    return [int(row["user_id"]) for row in rows]
+
+
+def count_state_rows(db_path: Path, *, run_id: str) -> dict[str, int]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return {
+            "userStates": 0,
+            "userRawEvents": 0,
+            "userPositiveEvents": 0,
+            "interestStates": 0,
+            "interestVectors": 0,
+        }
+    init_store(db_path)
+    with connect(db_path) as conn:
+        return {
+            "userStates": int(
+                conn.execute("SELECT COUNT(*) AS n FROM user_states WHERE run_id=?", (run_id,)).fetchone()["n"]
+            ),
+            "userRawEvents": int(
+                conn.execute("SELECT COUNT(*) AS n FROM user_raw_events WHERE run_id=?", (run_id,)).fetchone()["n"]
+            ),
+            "userPositiveEvents": int(
+                conn.execute("SELECT COUNT(*) AS n FROM user_positive_events WHERE run_id=?", (run_id,)).fetchone()[
+                    "n"
+                ]
+            ),
+            "interestStates": int(
+                conn.execute("SELECT COUNT(*) AS n FROM interest_states WHERE run_id=?", (run_id,)).fetchone()["n"]
+            ),
+            "interestVectors": int(
+                conn.execute("SELECT COUNT(*) AS n FROM interest_vectors WHERE run_id=?", (run_id,)).fetchone()["n"]
+            ),
+        }
 
 
 def record_assignments(

@@ -102,20 +102,20 @@ python3 -m model.batch.cluster
 출력:
 
 - `outputs/user_interests.npz`
-- `outputs/batch/interest_states/{user_id}.json`
+- `outputs/batch/state.sqlite`
 - `experiments/model/<run_id>/manifest.json`
 - `experiments/model/<run_id>/metrics.jsonl`
 
 `model.batch.cluster`는 user별 embedding sequence에 UMAP + HDBSCAN을 수행한다. Cluster backend는 `--cluster-backend auto|gpu|cpu`이며, 공통 구현은 `model.common.cluster`에 있다. `auto`는 RAPIDS/cuML GPU 사용 가능 여부를 먼저 확인하고, 불가능하거나 runtime 실패가 나면 CPU 구현으로 진행한다.
 
-`--output`으로 visualization/export NPZ 경로를 지정할 수 있다. Temporal 2022 run은 `--output outputs/pre/temporal_2022/user_interests.npz --interest-state-dir outputs/pre/temporal_2022/interest_states`처럼 pre-T 모델/state 산출물을 `outputs/pre/` 아래에 둔다.
+`--output`으로 visualization/export NPZ 경로를 지정할 수 있다. Temporal 2022 run은 `--output outputs/pre/temporal_2022/user_interests.npz --state-db outputs/pre/temporal_2022/state.sqlite`처럼 pre-T 모델/state 산출물을 `outputs/pre/` 아래에 둔다.
 
 현재 산출물은 두 계층으로 나뉜다.
 
 - `outputs/user_interests.npz`: dashboard/visualize/export용 label, UMAP 좌표, sliding window `K(t)` 데이터
-- `outputs/batch/interest_states/{user_id}.json`: streaming `InterestState`와 호환되는 user별 interest vector JSON
+- `outputs/batch/state.sqlite`: streaming `InterestState`와 호환되는 user별 interest vector payload
 
-중요한 점은 `outputs/user_interests.npz`에 더 이상 `interest_vectors`를 넣지 않는다는 것이다. Interest vector의 정본은 `outputs/batch/interest_states/*.json`이다.
+중요한 점은 `outputs/user_interests.npz`에 더 이상 `interest_vectors`를 넣지 않는다는 것이다. Interest vector의 정본은 SQLite `interest_states`/`interest_vectors` 테이블이다.
 
 ### 2.4 Export / Visualize / Batch Recommend
 
@@ -141,8 +141,8 @@ python3 -m model.batch.recommend
 
 현재 주의할 부분은 batch recommend 계약이다. `model.batch.recommend`는 `--interests` NPZ 안에 `iv_user_ids`, `iv_cluster_ids`, `interest_vectors` key가 있다고 가정한다. 그러나 현재 `model.batch.cluster`는 interest vector를 JSON state directory에 저장하고, `outputs/user_interests.npz`는 시각화/export용 key만 저장한다. 따라서 batch recommendation을 현재 batch cluster 결과에 바로 붙이려면 다음 중 하나가 필요하다.
 
-- `model.batch.recommend`가 `outputs/batch/interest_states/*.json`을 직접 읽도록 수정한다.
-- 또는 JSON interest state를 기존 NPZ 계약으로 변환하는 bridge를 추가한다.
+- `model.batch.recommend`가 SQLite interest state를 직접 읽도록 수정한다.
+- 또는 SQLite interest state를 기존 NPZ 계약으로 변환하는 bridge를 추가한다.
 
 ## 3. Streaming Pipeline
 
@@ -151,22 +151,22 @@ python3 -m model.batch.recommend
 ```text
 rating event JSONL
   -> model.stream.extract_online
-  -> user_states/{user_id}.json
+  -> SQLite user state
   -> online_embeddings.npz
   -> online_embedding_events.jsonl
 
 online_embeddings.npz
   -> model.stream.interest_assign
-  -> interest_states/{user_id}.json
+  -> SQLite interest state
   -> interest_assignments.jsonl
   -> refit_requests.jsonl
 
 refit_requests.jsonl + online_embeddings.npz
   -> model.stream.cluster_refit
-  -> interest_states/{user_id}.json
+  -> SQLite interest state
   -> refit_events.jsonl
 
-interest_states/{user_id}.json + user_states/{user_id}.json
+SQLite interest/user state
   -> model.stream.recommend_online
   -> stream_recommendations.jsonl
 ```
@@ -195,20 +195,16 @@ Trace replay pipeline은 `replay_input_events.jsonl`의 `ratedAtTs`를 기준으
 python3 -m model.stream.seed_pre_t_state \
   --max-rated-at-exclusive 2022-01-01T00:00:00Z \
   --item2idx outputs/pre/temporal_2022/item2idx.json \
-  --state-dir outputs/pre/temporal_2022/user_states \
-  --interest-state-dir outputs/pre/temporal_2022/interest_states
+  --state-db outputs/pre/temporal_2022/state.sqlite
 ```
 
-`seed_pre_t_state`는 `ratings_drop_processed.jsonl`에서 cutoff 이전 rating만 읽어 replay 시작용 `user_states/{user_id}.json`을 만든다. 기존 pre-T batch cluster가 만든 interest state가 있으면 해당 user의 pre-T active `rawEventId`를 `processedRawEventIds`에 표시해, post-T replay 첫 이벤트에서 과거 active row가 신규 assignment/refit 대상으로 처리되지 않게 한다.
+`seed_pre_t_state`는 `ratings_drop_processed.jsonl`에서 cutoff 이전 rating만 읽어 replay 시작용 SQLite user state를 만든다. 같은 seed DB에 pre-T batch cluster가 만든 interest state가 있으면 해당 user의 pre-T active `rawEventId`를 `processedRawEventIds`에 표시해, post-T replay 첫 이벤트에서 과거 active row가 신규 assignment/refit 대상으로 처리되지 않게 한다.
 
 ### 3.2 Online User State
 
 `extract_online`은 user별 state를 읽고 rating event를 append한 뒤 저장한다.
 
-기본 위치:
-
-- standalone: `outputs/stream/user_states/{user_id}.json`
-- replay: `outputs/stream/replay_demo/user_states/{user_id}.json`
+기본 위치는 `--runtime-db`/`--state-db` SQLite store다. `--state-dir`를 명시하면 legacy/debug용 per-user JSON도 사용할 수 있다.
 
 State 버전:
 
@@ -277,11 +273,11 @@ python3 -m model.stream.interest_assign \
 입력:
 
 - `online_embeddings.npz`
-- 기존 `interest_states/{user_id}.json`이 있으면 읽음
+- 기존 SQLite interest state가 있으면 읽음
 
 출력:
 
-- `interest_states/{user_id}.json`
+- SQLite interest state
 - `interest_assignments.jsonl`
 - `refit_requests.jsonl`
 
@@ -331,12 +327,12 @@ python3 -m model.stream.cluster_refit \
 
 - `online_embeddings.npz`
 - `refit_requests.jsonl`
-- 기존 `interest_states/{user_id}.json`
+- 기존 SQLite interest state
 - `data/movies_processed_drop.csv` optional genre label source
 
 출력:
 
-- 갱신된 `interest_states/{user_id}.json`
+- 갱신된 SQLite interest state
 - `refit_events.jsonl`
 
 처리 방식:
@@ -356,14 +352,13 @@ python3 -m model.stream.cluster_refit \
 
 ```bash
 python3 -m model.stream.recommend_online \
-  --interest-state-dir outputs/stream/interest_states \
-  --user-state-dir outputs/stream/user_states
+  --state-db outputs/stream/state.sqlite
 ```
 
 입력:
 
-- `interest_states/{user_id}.json`
-- `user_states/{user_id}.json`
+- SQLite interest state
+- SQLite user state
 - `outputs/sasrec_cl.pt`
 - `outputs/item2idx.json`
 - `data/movies_processed_drop.csv`
@@ -416,7 +411,7 @@ python3 -m model.stream.replay_pipeline \
 
 Replay pipeline은 새 모델 로직을 구현하지 않는다. replay input의 `ratedAtTs`를 trace clock으로 삼고, `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed` 기준으로 event를 emit한 뒤 기존 streaming CLI를 event 단위로 호출한다.
 
-Temporal seeded replay는 `--start-rated-at <T>`로 post-T input을 만들고, `--seed-user-state-dir` / `--seed-interest-state-dir`로 pre-T state를 replay output root에 복사한 뒤 시작한다. 예: `--output-root outputs/post/temporal_2022 --seed-user-state-dir outputs/pre/temporal_2022/user_states --seed-interest-state-dir outputs/pre/temporal_2022/interest_states`.
+Temporal seeded replay는 `--start-rated-at <T>`로 post-T input을 만들고, `--seed-state-db --seed-run-id`로 pre-T state를 lazy-load한다. pre state는 replay output root로 복사하지 않는다. 예: `--output-root outputs/post/temporal_2022_events_1000 --seed-state-db outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022`.
 
 `outputs/stream/replay_demo/replay.sqlite`는 runtime state/control-plane 정본이다. Payload, state summary, assignment, refit lifecycle, stage latency, recommendation metadata, embedding snapshot row index를 SQLite에 기록한다. Checkpoint, `online_embeddings.npz`, canonical/batch embedding matrix 같은 대형 vector artifact는 파일 정본으로 유지하고 SQLite에는 metadata/index만 둔다.
 
@@ -444,10 +439,8 @@ Event 처리 순서:
 - `replay_events.jsonl`
 - `replay.sqlite`
 - `replay_summary.json`
-- `user_states/{user_id}.json`
 - `online_embeddings.npz`
 - `online_embedding_events.jsonl`
-- `interest_states/{user_id}.json`
 - `interest_assignments.jsonl`
 - `refit_requests.jsonl`
 - `refit_events.jsonl`
@@ -482,11 +475,11 @@ Dashboard는 replay/stream state를 만들거나 수정하지 않는다. Replay 
 
 ### P0. Batch recommendation 계약 불일치
 
-`model.batch.recommend`는 interest vector NPZ를 기대하지만, 현재 batch cluster의 interest vector 정본은 `outputs/batch/interest_states/*.json`이다. Batch 추천을 다시 실험하려면 이 bridge를 먼저 정리해야 한다.
+`model.batch.recommend`는 interest vector NPZ를 기대하지만, 현재 batch cluster의 interest vector 정본은 SQLite state store다. Batch 추천을 다시 실험하려면 이 bridge를 먼저 정리해야 한다.
 
 수정 후보:
 
-- `model.batch.recommend --interest-state-dir outputs/batch/interest_states` 지원
+- `model.batch.recommend --state-db outputs/batch/state.sqlite` 지원
 - 또는 `model.batch.export_interest_vectors` 같은 변환 entrypoint 추가
 
 ### Resolved. Refit request lifecycle이 append-only log에 의존

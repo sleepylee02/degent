@@ -11,14 +11,14 @@ pre-T:
   train model
   build item2idx
   extract canonical embeddings
-  build user state
-  build interest state
+  build SQLite seed state store
+  build interest state in the same seed store
 
 post-T:
   generate replay events
   replay/stream events
-  update user state
-  assign/refit interest state
+  lazy-load pre-T seed state into replay runtime DB
+  update user/interest state in replay runtime DB
   measure replay load
 ```
 
@@ -26,7 +26,7 @@ post-T:
 
 현재 replay generator와 `model.stream.replay_pipeline`은 `--start-rated-at` / `--end-rated-at` 기반 post-T event 생성을 지원한다. 그러나 batch train과 canonical extract는 아직 cutoff를 받지 않아 전체 데이터를 학습/추출에 사용한다.
 
-또한 streaming replay는 output root 내부 state를 기준으로 동작하므로, T 시점에 이미 존재해야 하는 `user_states/`와 `interest_states/`를 seed하지 않으면 2022년 이후 기존 user도 cold-start처럼 처리된다. 이번 작업은 모델뿐 아니라 pre-T user/interest state까지 포함한 temporal streaming E2E 계약을 만든다.
+또한 streaming replay는 output root 내부 state를 기준으로 동작했기 때문에, T 시점에 이미 존재해야 하는 `user_states/`와 `interest_states/`를 output root로 복사하지 않으면 2022년 이후 기존 user도 cold-start처럼 처리됐다. 이번 작업은 그 per-user JSON directory 복사 계약을 폐기하고, pre-T `state.sqlite`를 seed store로 사용한 뒤 post-T replay `replay.sqlite`에 실제로 touched 된 user만 materialize하는 temporal streaming E2E 계약을 만든다.
 
 ## 읽어야 할 파일
 
@@ -56,7 +56,7 @@ post-T:
   - 모델 산출물 경로 계약
     - 신규 temporal run의 모델 관련 산출물은 `outputs/pre/temporal_2022/` 아래에 둔다.
     - 기존 루트 산출물(`outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz` 등)은 legacy/default 호환 경로로 유지하고, 이번 작업에서 일괄 이동하지 않는다.
-    - replay runtime 산출물은 실행 성격상 `outputs/post/temporal_2022/` 아래에 격리하되, 입력 checkpoint/item2idx/seed state는 `outputs/pre/temporal_2022/`를 참조한다.
+    - replay runtime 산출물은 실행 성격상 `outputs/post/temporal_2022_events_<N>/` 아래에 격리하되, 입력 checkpoint/item2idx/pre seed DB는 `outputs/pre/temporal_2022/`를 참조한다.
   - `model/common/dataset.py`
     - `build_user_sequences`에 `max_rated_at_exclusive` cutoff를 추가한다.
     - cutoff 적용 후 activity span, z-score positive projection, min interactions를 계산한다.
@@ -70,15 +70,19 @@ post-T:
     - manifest `extraction_config`에 cutoff를 기록한다.
   - `model/batch/cluster.py`
     - `outputs/user_interests.npz` 고정 저장 대신 `--output` 옵션을 추가한다.
-    - pre-T interest state dir와 viz NPZ를 run-scoped 경로에 저장할 수 있게 한다.
+    - pre-T interest state를 per-user JSON 대신 run-scoped `state.sqlite`에 저장할 수 있게 한다.
   - `model/stream/seed_pre_t_state.py` 신규 추가
-    - `ratings_drop_processed.jsonl`에서 `ratedAt < T` rating만 읽어 `user_states/{user_id}.json`을 생성한다.
+    - `ratings_drop_processed.jsonl`에서 `ratedAt < T` rating만 읽어 `state.sqlite`에 user state를 생성한다.
     - `item2idx` 기준 known/unknown item 상태와 positive projection을 기존 `model.stream.state` 정책으로 계산한다.
     - seed summary를 JSON/metrics로 기록한다.
   - `model/stream/trace_replay.py`
-    - `--seed-user-state-dir`, `--seed-interest-state-dir` 옵션을 추가한다.
-    - replay 시작 시 seed state를 replay output root로 복사해 replay artifact를 격리한다.
+    - `--seed-state-db`, `--seed-run-id` 옵션을 추가한다.
+    - replay 시작 시 seed state directory를 복사하지 않고, stream stage가 pre seed DB를 fallback source로 읽게 한다.
     - summary/manifest에 seed path와 seed count를 기록한다.
+  - `model/stream/runtime_store.py`
+    - user/interest state payload 조회 API를 추가해 pre seed DB와 post replay DB를 같은 schema로 읽고 쓴다.
+  - `model/stream/extract_online.py`, `interest_assign.py`, `cluster_refit.py`, `recommend_online.py`
+    - runtime DB를 primary state store로 쓰고, missing user/interest state는 `--seed-state-db --seed-run-id`에서 lazy-load한다.
   - 문서
     - `docs/streaming-e2e-pipeline.md`: temporal 2022 runbook 추가
     - `docs/current-pipeline-snapshot.md`: cutoff/state seed 계약 반영
@@ -102,13 +106,12 @@ post-T:
   - `outputs/pre/temporal_2022/item2idx.json`
   - `outputs/pre/temporal_2022/canonical_embeddings.npz`
   - `outputs/pre/temporal_2022/user_interests.npz`
-  - `outputs/pre/temporal_2022/user_states/{user_id}.json`
-  - `outputs/pre/temporal_2022/interest_states/{user_id}.json`
+  - `outputs/pre/temporal_2022/state.sqlite`
   - `outputs/pre/temporal_2022/pre_summary.json`
-  - `outputs/post/temporal_2022/`
+  - `outputs/post/temporal_2022_events_<N>/replay.sqlite`
 - 호환성 영향:
-  - 기존 CLI 기본값은 유지한다.
-  - cutoff/output path 옵션을 명시한 temporal run만 신규 경로를 사용한다.
+  - legacy JSON state dir 옵션은 디버깅/구버전 호환용으로 유지하되 temporal runbook 기본 경로에서는 사용하지 않는다.
+  - cutoff/output path/state DB 옵션을 명시한 temporal run은 신규 SQLite state store를 사용한다.
   - schemas 변경은 없다. 신규 JSON artifact 계약은 `docs/artifacts.md`와 streaming E2E 문서에 우선 명시한다.
 
 ## 실행 계획
@@ -119,11 +122,13 @@ post-T:
 2. Canonical extract와 batch cluster를 run-scoped로 연결한다.
    - pre-T checkpoint/item2idx로 pre-T canonical embeddings를 추출한다.
    - pre-T canonical embeddings로 interest state를 만든다.
-3. Pre-T user state seeding entrypoint를 추가한다.
-   - T 이전 raw rating history를 replay 시작 상태로 저장한다.
-   - state seed summary에 users, raw events, positive events, unknown item events를 기록한다.
-4. Replay pipeline에 seed state 복사를 붙인다.
-   - replay output root를 reset해도 seed state가 복사된 뒤 post-T event가 처리되게 한다.
+3. Pre-T SQLite seed store를 만든다.
+   - batch cluster interest state와 pre-T user state를 같은 `outputs/pre/temporal_2022/state.sqlite`에 저장한다.
+   - pre-T seed DB는 replay 시작 상태 복원용이므로 compressed user state payload만 저장하고 `user_raw_events`, `user_positive_events` row 중복 materialize는 하지 않는다.
+   - state seed summary에 users, raw events, positive events, unknown item events, seed DB path를 기록한다.
+4. Replay pipeline에 seed DB fallback을 붙인다.
+   - replay output root를 reset해도 seed DB는 복사하지 않는다.
+   - post-T event를 처리하는 stream stage는 post `replay.sqlite`에 state가 없을 때 pre `state.sqlite`에서 lazy-load한다.
    - replay input은 `--start-rated-at 2022-01-01T00:00:00Z`를 사용한다.
 5. Temporal 2022 smoke를 실행한다.
    - 작은 limit으로 train/extract/cluster/seed/replay가 한 run id와 artifact root에서 이어지는지 확인한다.
@@ -133,25 +138,25 @@ post-T:
 
 ## 검증
 
-- [x] `python3 -m py_compile model/common/dataset.py model/common/canonical.py model/batch/train.py model/batch/extract_canonical.py model/batch/cluster.py model/stream/seed_pre_t_state.py model/stream/trace_replay.py`
-- [x] CLI help: `model.batch.train`, `model.batch.extract_canonical`, `model.stream.seed_pre_t_state`, `model.stream.replay_pipeline`
+- [x] `.venv/bin/python -m py_compile model/stream/runtime_store.py model/batch/cluster.py model/stream/seed_pre_t_state.py model/stream/extract_online.py model/stream/interest_assign.py model/stream/cluster_refit.py model/stream/recommend_online.py model/stream/trace_replay.py`
+- [x] CLI help: `model.batch.train`, `model.batch.extract_canonical`, `model.batch.cluster`, `model.stream.seed_pre_t_state`, `model.stream.extract_online`, `model.stream.interest_assign`, `model.stream.cluster_refit`, `model.stream.recommend_online`, `model.stream.replay_pipeline`
 - [x] cutoff helper smoke: `2022-01-01T00:00:00Z` → `1640995200.0`
 - [x] state seed logic smoke: 실제 `ratings_drop_processed.jsonl` 첫 user로 pre-T raw state 생성 로직 확인
-- [x] replay seed copy helper smoke: 임시 JSON seed dir 복사 확인
+- [x] SQLite seed fallback smoke: `/tmp` DB에서 post DB에 없는 user/interest state가 pre DB에서 lazy-load되는지 확인
 - [x] interest processed marker smoke: 기존 interest state의 `processedRawEventIds` merge와 pending/refit clear 확인
 - [x] `git diff --check`
 - [ ] train smoke: `model.batch.train --max-rated-at-exclusive 2022-01-01T00:00:00Z`가 run-scoped checkpoint/item2idx를 생성
 - [ ] canonical smoke: pre-T checkpoint/item2idx로 `canonical_embeddings.npz` 생성
-- [ ] cluster smoke: pre-T `interest_states/`와 `user_interests.npz` 생성
-- [ ] state seed full/smoke CLI: pre-T `user_states/` 생성 및 summary 기록
-- [ ] replay smoke: `--start-rated-at 2022-01-01T00:00:00Z`와 seed dirs를 사용해 post-T event 처리
+- [ ] cluster smoke: pre-T `state.sqlite` interest state와 `user_interests.npz` 생성
+- [ ] state seed full/smoke CLI: pre-T `state.sqlite` 생성 및 summary 기록
+- [ ] replay smoke: `--start-rated-at 2022-01-01T00:00:00Z`와 seed DB를 사용해 post-T event 처리
 - [ ] `model.stream.runtime_report --db outputs/post/temporal_2022/replay.sqlite`
 - [x] 문서의 runbook 명령이 실제 CLI와 일치하도록 업데이트
 
 ## 완료 조건
 
 - `T = 2022-01-01T00:00:00Z` 계약이 train, canonical, state seed, replay manifest에 모두 기록된다.
-- pre-T checkpoint/item2idx/canonical/user state/interest state가 `outputs/pre/temporal_2022/` 아래에 생성된다.
-- post-T replay가 seed state를 기반으로 실행되고 `replay_summary.json`과 `replay.sqlite`에 부하 지표가 기록된다.
+- pre-T checkpoint/item2idx/canonical/user state/interest state가 `outputs/pre/temporal_2022/` 아래 `state.sqlite` 중심으로 생성된다.
+- post-T replay가 seed DB를 기반으로 실행되고 `replay_summary.json`과 `replay.sqlite`에 부하 지표와 touched state가 기록된다.
 - 문서에서 파일 간 계약과 실행 순서를 재현 가능하게 설명한다.
 - 검증 결과를 이 계획서와 `todo.md`에 반영한 뒤 완료 시 `plan/done/`으로 이동한다.

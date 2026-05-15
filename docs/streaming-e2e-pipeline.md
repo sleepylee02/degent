@@ -101,14 +101,14 @@ Pre-T 모델과 state 생성:
   --run-id temporal_2022 \
   --embeddings outputs/pre/temporal_2022/canonical_embeddings.npz \
   --output outputs/pre/temporal_2022/user_interests.npz \
-  --interest-state-dir outputs/pre/temporal_2022/interest_states
+  --state-db outputs/pre/temporal_2022/state.sqlite \
+  --reset-state-db
 
 .venv/bin/python -m model.stream.seed_pre_t_state \
   --run-id temporal_2022 \
   --max-rated-at-exclusive 2022-01-01T00:00:00Z \
   --item2idx outputs/pre/temporal_2022/item2idx.json \
-  --state-dir outputs/pre/temporal_2022/user_states \
-  --interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --state-db outputs/pre/temporal_2022/state.sqlite \
   --summary outputs/pre/temporal_2022/pre_summary.json
 ```
 
@@ -125,15 +125,15 @@ Post-T seeded replay:
   --speed 100 \
   --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
   --item2idx outputs/pre/temporal_2022/item2idx.json \
-  --seed-user-state-dir outputs/pre/temporal_2022/user_states \
-  --seed-interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --seed-state-db outputs/pre/temporal_2022/state.sqlite \
+  --seed-run-id temporal_2022 \
   --cluster-backend auto \
   --recommend
 ```
 
 `--limit-events`를 쓰는 replay는 output root 이름에 `events_<N>`을 넣는다. 추천을 함께 생성하는 run은 `events_<N>_recommend`를 붙인다. 전체 post-T replay는 `outputs/post/temporal_2022_full/`처럼 `full`을 붙여 smoke/partial run과 분리한다. `--reset-output`은 지정한 output root를 지우고 다시 만들기 때문에, 보존할 결과는 새 root 이름으로 실행한다.
 
-`seed_pre_t_state`는 `user_states/{user_id}.json`을 T 직전 상태로 만들고, `interest_states/{user_id}.json`이 이미 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. 이렇게 해야 post-T 첫 이벤트 처리 때 pre-T active snapshot row가 새 이벤트처럼 assignment/refit 대상으로 보이지 않는다.
+`seed_pre_t_state`는 `state.sqlite`의 compressed `user_states` payload를 T 직전 상태로 만들고, 같은 DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. pre seed DB는 replay 시작점 복원용이므로 `user_raw_events`, `user_positive_events` row를 펼쳐 저장하지 않는다. post-T replay는 이 DB를 복사하지 않는다. 각 stream stage가 post `replay.sqlite`에서 state를 먼저 찾고, 없으면 pre `state.sqlite`에서 lazy-load한 뒤 touched user만 post DB에 기록한다.
 
 ## Minimum Runbook
 
@@ -157,7 +157,7 @@ make -C replay
 outputs/stream/replay_demo/
 ```
 
-기본 stream 산출물인 `outputs/stream/online_embeddings.npz`, `outputs/stream/user_states/`, `outputs/stream/interest_states/`를 덮어쓰지 않는다.
+기본 stream 산출물인 `outputs/stream/online_embeddings.npz`와 state DB/legacy state directory를 덮어쓰지 않는다.
 
 Replay가 끝난 뒤 runtime/control-plane 상태는 SQLite report로 바로 요약할 수 있다.
 
@@ -179,15 +179,15 @@ ratings_drop_processed.jsonl
      -> replay.sqlite
      -> ingress_events.jsonl
      -> extract_online
-        -> user_states/{user_id}.json
+        -> replay.sqlite user state
         -> online_embeddings.npz
         -> online_embedding_events.jsonl
      -> interest_assign
-        -> interest_states/{user_id}.json
+        -> replay.sqlite interest state
         -> interest_assignments.jsonl
         -> refit_requests.jsonl
      -> cluster_refit
-        -> updated interest_states/{user_id}.json
+        -> updated replay.sqlite interest state
         -> refit_events.jsonl
      -> recommend_online (when --recommend)
         -> stream_recommendations.jsonl
@@ -291,11 +291,11 @@ Input:
 - `data/movies_processed_drop.csv`
 - `outputs/sasrec_cl.pt`
 - `outputs/item2idx.json`
-- 기존 `user_states/{user_id}.json`이 있으면 이어서 로드
+- 기존 SQLite user state가 있으면 이어서 로드하고, 없으면 `--seed-state-db`에서 lazy-load
 
 Output:
 
-- `user_states/{user_id}.json`
+- SQLite user state in `--runtime-db`/`--state-db`
 - `online_embeddings.npz`
 - `online_embedding_events.jsonl`
 
@@ -339,11 +339,11 @@ Consumer/producer:
 Input:
 
 - `online_embeddings.npz`
-- 기존 `interest_states/{user_id}.json`이 있으면 이어서 로드
+- 기존 SQLite interest state가 있으면 이어서 로드하고, 없으면 `--seed-state-db`에서 lazy-load
 
 Output:
 
-- `interest_states/{user_id}.json`
+- SQLite interest state in `--runtime-db`/`--state-db`
 - `interest_assignments.jsonl`
 - `refit_requests.jsonl`
 - `replay.sqlite`의 `interest_states`, `interest_vectors`, `assignments`, `refit_requests`
@@ -378,11 +378,11 @@ Input:
 
 - `refit_requests.jsonl`
 - `online_embeddings.npz`
-- 기존 `interest_states/{user_id}.json`
+- 기존 SQLite interest state
 
 Output:
 
-- updated `interest_states/{user_id}.json`
+- updated SQLite interest state
 - `refit_events.jsonl`
 - `replay.sqlite`의 `refit_requests`, `refit_attempts`, `interest_states`, `interest_vectors`
 
@@ -411,8 +411,8 @@ Consumer/producer:
 
 Input:
 
-- `interest_states/{user_id}.json`
-- `user_states/{user_id}.json`
+- SQLite interest state
+- SQLite user state
 - `outputs/sasrec_cl.pt`
 - `outputs/item2idx.json`
 - `data/movies_processed_drop.csv`
@@ -494,12 +494,13 @@ Output:
 |---|---|---|---|
 | `replay_input_events.jsonl` | replay generator | `replay_pipeline` | timestamp-sorted replay source |
 | `replay.sqlite` | `replay_pipeline`, stream stages | dashboard/humans | runtime state, payload, metadata, lifecycle, metric store |
+| `pre/state.sqlite` | `model.batch.cluster`, `seed_pre_t_state` | `replay_pipeline` stream stages | pre-T user/interest seed state store |
 | `runtime_report` output | `model.stream.runtime_report` | humans/notes | optional markdown/json bottleneck report from `replay.sqlite` |
 | `ingress_events.jsonl` | `replay_pipeline` | dashboard/humans | trace-clock event emit log |
-| `user_states/{user_id}.json` | `extract_online` | `extract_online` | raw events + positive projection state |
+| `replay.sqlite.user_states` | `extract_online` | `extract_online`, `recommend_online` | touched raw events + positive projection state |
 | `online_embeddings.npz` | `extract_online` | `interest_assign`, `cluster_refit` | current active positive embedding snapshot |
 | `online_embedding_events.jsonl` | `extract_online` | humans/debugging | online extract run summary log |
-| `interest_states/{user_id}.json` | `interest_assign`, `cluster_refit` | `interest_assign`, `cluster_refit`, dashboard | interest vectors and trigger state |
+| `replay.sqlite.interest_states` | `interest_assign`, `cluster_refit` | `interest_assign`, `cluster_refit`, `recommend_online`, dashboard | touched interest vectors and trigger state |
 | `interest_assignments.jsonl` | `interest_assign` | `replay_pipeline`, dashboard | assignment/pending/outlier log |
 | `refit_requests.jsonl` | `interest_assign` | `cluster_refit`, dashboard fallback | fallback/debug refit request log |
 | `refit_events.jsonl` | `cluster_refit` | `replay_pipeline`, dashboard fallback | fallback/debug refit close/skip result log |
@@ -533,7 +534,7 @@ assignment trigger를 바꿀 때:
 refit algorithm을 바꿀 때:
 
 - `cluster_refit.py`의 input/output 계약을 유지한다.
-- `interest_states/{user_id}.json`의 `interests[].vector` dimension은 online embedding dimension과 같아야 한다.
+- SQLite interest state payload의 `interests[].vector` dimension은 online embedding dimension과 같아야 한다.
 - `refit_events.jsonl`에는 backend, status, request, activeEmbeddingRows, interestCount를 남긴다.
 
 recommendation logic을 바꿀 때:

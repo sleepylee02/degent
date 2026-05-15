@@ -10,14 +10,14 @@ SASRec + Contrastive Loss 기반 적응형 다중 관심사 추천 시스템 구
 python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json 저장
   └─ python3 -m model.batch.extract_canonical → event당 canonical 히든스테이트 1개 추출 → canonical_embeddings.npz 저장
        ↓
-     python3 -m model.batch.cluster → 유저별 UMAP + HDBSCAN → user_interests.npz + outputs/batch/interest_states/{id}.json 저장
+     python3 -m model.batch.cluster → 유저별 UMAP + HDBSCAN → user_interests.npz + state.sqlite interest state 저장
        ↓
      python3 -m model.batch.export_clusters → dashboard table 저장
        ↓
      python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
 
 streaming/replay path:
-python3 -m model.stream.seed_pre_t_state → cutoff 이전 user state seed 생성
+python3 -m model.stream.seed_pre_t_state → cutoff 이전 user state를 SQLite seed store에 생성
        ↓
 python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
        ↓
@@ -47,8 +47,8 @@ python3 -m model.stream.extract_online → raw user state 갱신 + active positi
 | `common/dataset.py` | 데이터 로드, 전처리, Dataset |
 | `common/sasrec.py` | SASRecCL 모델, Contrastive Loss |
 | `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
-| `stream/state.py` | online user raw event state, positive projection, state JSON 저장/로드 |
-| `stream/seed_pre_t_state.py` | cutoff 이전 rating history로 replay-ready user state를 seed하고 기존 interest state의 processed raw event를 표시 |
+| `stream/state.py` | online user raw event state, positive projection, legacy state JSON 저장/로드 |
+| `stream/seed_pre_t_state.py` | cutoff 이전 rating history로 replay-ready user state를 SQLite seed store에 seed하고 기존 interest state의 processed raw event를 표시 |
 | `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback, genre labeling 포함 |
@@ -101,7 +101,8 @@ python3 -m model.batch.cluster \
   --run-id temporal_2022 \
   --embeddings outputs/pre/temporal_2022/canonical_embeddings.npz \
   --output outputs/pre/temporal_2022/user_interests.npz \
-  --interest-state-dir outputs/pre/temporal_2022/interest_states
+  --state-db outputs/pre/temporal_2022/state.sqlite \
+  --reset-state-db
 
 # 2-4. 배치 클러스터링 단일 유저 테스트
 python3 -m model.batch.cluster --user-id 28
@@ -114,8 +115,7 @@ python3 -m model.stream.seed_pre_t_state \
   --run-id temporal_2022 \
   --max-rated-at-exclusive 2022-01-01T00:00:00Z \
   --item2idx outputs/pre/temporal_2022/item2idx.json \
-  --state-dir outputs/pre/temporal_2022/user_states \
-  --interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --state-db outputs/pre/temporal_2022/state.sqlite \
   --summary outputs/pre/temporal_2022/pre_summary.json
 
 # 2-6. online interest assignment/refit trigger smoke test
@@ -135,8 +135,8 @@ python3 -m model.stream.replay_pipeline --reset-output --generate-events --repla
 
 # 2-10-1. Temporal 2022 post-T seeded replay smoke
 python3 -m model.stream.replay_pipeline \
-  --run-id temporal_2022_replay_smoke \
-  --output-root outputs/post/temporal_2022 \
+  --run-id temporal_2022_replay_events_5 \
+  --output-root outputs/post/temporal_2022_events_5 \
   --reset-output \
   --generate-events \
   --start-rated-at 2022-01-01T00:00:00Z \
@@ -144,8 +144,8 @@ python3 -m model.stream.replay_pipeline \
   --speed 100 \
   --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
   --item2idx outputs/pre/temporal_2022/item2idx.json \
-  --seed-user-state-dir outputs/pre/temporal_2022/user_states \
-  --seed-interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --seed-state-db outputs/pre/temporal_2022/state.sqlite \
+  --seed-run-id temporal_2022 \
   --cluster-backend cpu \
   --skip-refit
 
@@ -239,7 +239,8 @@ git diff <old_commit>..<new_commit> -- model/
 | extract_canonical: output | `outputs/canonical_embeddings.npz` | event당 embedding 1개를 저장하는 기본 출력 경로 |
 | stream: min_ratings_for_zscore | 3 | online positive projection에서 z-score를 적용하기 전 optimistic cold-start 기준 |
 | stream: output | `outputs/stream/online_embeddings.npz` | active positive online embedding 기본 출력 경로 |
-| stream: state_dir | `outputs/stream/user_states/` | user별 raw event state JSON 저장 경로 |
+| stream: state_db | `--runtime-db` 값 | user별 raw event state와 interest state SQLite 저장 경로 |
+| stream: state_dir | unset | legacy/debug용 per-user JSON 저장 경로 |
 | interest_assign: similarity_threshold | 0.2 | nearest interest cosine similarity가 이 값보다 낮으면 outlier |
 | interest_assign: refit_min_events | 20 | no-interest/pending event 기반 refit request 최소 이벤트 수 |
 | interest_assign: assign_trigger_count | 50 | refit 이후 assign 누적 수 기반 refit request 기준 |
@@ -271,23 +272,20 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/pre/temporal_2022/item2idx.json` | Temporal 2022 pre-T item vocabulary |
 | `outputs/pre/temporal_2022/canonical_embeddings.npz` | Temporal 2022 pre-T canonical embeddings |
 | `outputs/pre/temporal_2022/user_interests.npz` | Temporal 2022 pre-T batch cluster visualization/export source |
-| `outputs/pre/temporal_2022/user_states/{user_id}.json` | Temporal 2022 replay 시작용 pre-T user state |
-| `outputs/pre/temporal_2022/interest_states/{user_id}.json` | Temporal 2022 replay 시작용 pre-T interest state |
+| `outputs/pre/temporal_2022/state.sqlite` | Temporal 2022 replay 시작용 pre-T user/interest seed state store. pre seed는 compressed user state payload와 interest state를 보존하고 event row 테이블은 펼치지 않는다 |
 | `outputs/pre/temporal_2022/pre_summary.json` | Temporal 2022 pre-T user state seed summary |
-| `outputs/post/temporal_2022/replay.sqlite` | Temporal 2022 post-T replay runtime/state SQLite store |
-| `outputs/post/temporal_2022/replay_summary.json` | Temporal 2022 post-T replay summary entrypoint |
-| `outputs/post/temporal_2022/user_states/{user_id}.json` | Temporal 2022 post-T replay 중 갱신된 user state |
-| `outputs/post/temporal_2022/interest_states/{user_id}.json` | Temporal 2022 post-T replay 중 갱신된 interest state |
-| `outputs/post/temporal_2022/online_embeddings.npz` | Temporal 2022 post-T replay-scoped online embeddings |
+| `outputs/post/temporal_2022_events_5/replay.sqlite` | Temporal 2022 post-T 5-event smoke SQLite store |
+| `outputs/post/temporal_2022_events_1000/replay_summary.json` | Temporal 2022 post-T 1000-event replay summary entrypoint |
+| `outputs/post/temporal_2022_events_100_recommend/stream_recommendations.jsonl` | Temporal 2022 post-T 100-event replay recommendation output |
+| `outputs/post/temporal_2022_full/replay.sqlite` | Temporal 2022 full post-T replay SQLite store |
 | `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |
 | `outputs/user_interests.npz` | batch cluster visualization/export source. `labels_user_ids`, `labels_timepoints`, `labels`, `umap_z`, `win_*` 배열을 저장 |
-| `outputs/batch/interest_states/{user_id}.json` | 배치 클러스터링 결과 interest state. interest vector와 `interests[k].topGenres`에 클러스터별 상위 장르 포함 |
+| `outputs/batch/state.sqlite` | 배치 클러스터링 결과 interest state 기본 저장 DB. interest vector와 `interests[k].topGenres`에 클러스터별 상위 장르 포함 |
 | `outputs/recommendations.csv` | batch recommendation table. `batch/recommend.py` 실행 시 생성 |
 | `outputs/recommendations.npz` | batch recommendation arrays. `batch/recommend.py` 실행 시 생성 |
-| `outputs/stream/user_states/{user_id}.json` | user별 raw rating event와 현재 positive projection state |
+| `outputs/stream/state.sqlite` 또는 지정한 runtime DB | standalone stream user/interest state store |
 | `outputs/stream/online_embeddings.npz` | active positive online embedding `embeddings(N,128)`, `user_ids(N,)`, `raw_event_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)`, `status(N,)` |
 | `outputs/stream/online_embedding_events.jsonl` | online ingest/extract run summary event log |
-| `outputs/stream/interest_states/{user_id}.json` | user별 interest vectors, pending raw event ids, assignment/refit trigger state |
 | `outputs/stream/interest_assignments.jsonl` | online embedding별 assignment/pending/outlier 결과 log |
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/stream/refit_events.jsonl` | refit request 소비/skip/close 결과 log |
@@ -297,8 +295,6 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/replay_demo/replay_events.jsonl` | event-level replay progress, processing latency, lag, assignment/refit count log |
 | `outputs/stream/replay_demo/replay.sqlite` | SQLite runtime/state store. run/event/stage/user/interest/refit/embedding index 기록 |
 | `outputs/stream/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint. `paths.replayDb` 포함 |
-| `outputs/stream/replay_demo/user_states/{user_id}.json` | replay run에 격리된 user raw/positive state |
-| `outputs/stream/replay_demo/interest_states/{user_id}.json` | replay run에 격리된 user interest state |
 | `outputs/stream/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding |
 | `outputs/stream/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
 | `outputs/stream/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
@@ -329,7 +325,7 @@ git diff <old_commit>..<new_commit> -- model/
 `batch/recommend.py`와 `stream/recommend_online.py`는 top-K 후보를 생성하지만 Recall@K/NDCG@K 평가 파이프라인은 아직 없다.
 
 **batch recommendation 입력 계약 정리**
-현재 `batch/cluster.py`는 interest vector를 `outputs/batch/interest_states/{user_id}.json`에 저장하고, `outputs/user_interests.npz`는 dashboard/export용 label/UMAP 배열 중심이다. `batch/recommend.py`는 interest vector 배열이 들어 있는 NPZ 포맷을 읽도록 구현되어 있어, 현재 batch cluster 산출물과 바로 연결하려면 JSON interest state loader 또는 별도 export가 필요하다. Streaming/replay 추천은 `stream/recommend_online.py`가 현재 주 경로다.
+현재 `batch/cluster.py`는 interest vector를 SQLite state store에 저장하고, `outputs/user_interests.npz`는 dashboard/export용 label/UMAP 배열 중심이다. `batch/recommend.py`는 interest vector 배열이 들어 있는 NPZ 포맷을 읽도록 구현되어 있어, 현재 batch cluster 산출물과 바로 연결하려면 SQLite interest state loader 또는 별도 export가 필요하다. Streaming/replay 추천은 `stream/recommend_online.py`가 현재 주 경로다.
 
 **online positive policy 고도화**
 Phase 3 stream path는 raw rating을 모두 저장하고, 현재까지 관측된 user history 기준 z-score positive projection을 재검증한다. 실제 서비스 정책에서는 threshold, running statistics, 유보 상태, latency budget을 추가 비교해야 한다.

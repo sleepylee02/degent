@@ -8,6 +8,7 @@ import shutil
 
 from tqdm import tqdm
 
+import model.stream.runtime_store as runtime_store
 from model.common.dataset import parse_ts
 from model.common.runtime import (
     append_metric,
@@ -37,6 +38,7 @@ from model.stream.state import (
 
 
 SEED_SUMMARY_VERSION = "pre_t_user_state_seed.v1"
+SEED_USER_EVENT_ROWS_STORED = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,7 +55,19 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ratings", type=Path, default=Path("data/ratings_drop_processed.jsonl"))
     parser.add_argument("--item2idx", type=Path, default=Path("outputs/item2idx.json"))
-    parser.add_argument("--state-dir", type=Path, default=Path("outputs/pre/temporal_2022/user_states"))
+    parser.add_argument("--state-db", type=Path, default=Path("outputs/pre/temporal_2022/state.sqlite"))
+    parser.add_argument(
+        "--interest-state-db",
+        type=Path,
+        default=None,
+        help="SQLite interest state store to mark pre-T active rawEventIds as processed. Defaults to --state-db.",
+    )
+    parser.add_argument(
+        "--state-dir",
+        type=Path,
+        default=None,
+        help="Optional legacy per-user JSON user state output directory.",
+    )
     parser.add_argument(
         "--interest-state-dir",
         type=Path,
@@ -75,7 +89,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reset-state-dir",
         action="store_true",
-        help="Remove state-dir before writing seeded states.",
+        help="Remove legacy state-dir before writing seeded JSON states.",
+    )
+    parser.add_argument(
+        "--reset-state-db",
+        action="store_true",
+        help="Remove state-db before writing seeded SQLite states.",
     )
     return parser.parse_args()
 
@@ -109,14 +128,28 @@ def write_json(path: Path, record: dict[str, Any]) -> Path:
 def maybe_mark_interest_processed(
     *,
     interest_state_dir: Path | None,
+    interest_state_db: Path | None,
+    interest_state_conn: Any | None,
+    run_id: str,
     user_id: int,
     processed_raw_event_ids: list[int],
 ) -> bool:
-    if interest_state_dir is None:
-        return False
+    path = None if interest_state_dir is None else interest_path_for_user(interest_state_dir, user_id)
+    state = None
+    if interest_state_conn is not None:
+        payload = runtime_store.fetch_interest_state_payload_conn(interest_state_conn, run_id=run_id, user_id=user_id)
+        if payload is not None:
+            from model.stream.interest_assign import InterestState
 
-    path = interest_path_for_user(interest_state_dir, user_id)
-    state = load_interest_state(path)
+            state = InterestState.from_dict(payload)
+    elif interest_state_db is not None:
+        payload = runtime_store.fetch_interest_state_payload(interest_state_db, run_id=run_id, user_id=user_id)
+        if payload is not None:
+            from model.stream.interest_assign import InterestState
+
+            state = InterestState.from_dict(payload)
+    if state is None and path is not None:
+        state = load_interest_state(path)
     if state is None:
         return False
 
@@ -133,7 +166,12 @@ def maybe_mark_interest_processed(
     state.refit_request_open = False
     state.refit_reasons = []
     state.updated_at = local_timestamp()
-    save_interest_state(state, path)
+    if interest_state_conn is not None:
+        runtime_store.record_interest_state_conn(interest_state_conn, run_id=run_id, state=state)
+    elif interest_state_db is not None:
+        runtime_store.record_interest_state(interest_state_db, run_id=run_id, state=state)
+    if path is not None:
+        save_interest_state(state, path)
     return True
 
 
@@ -150,9 +188,13 @@ def main() -> None:
 
     ratings_path = resolve_path(root, args.ratings)
     item2idx_path = resolve_path(root, args.item2idx)
-    state_dir = resolve_path(root, args.state_dir)
+    state_db_path = resolve_path(root, args.state_db)
+    interest_state_db_path = (
+        state_db_path if args.interest_state_db is None else resolve_path(root, args.interest_state_db)
+    )
+    state_dir = None if args.state_dir is None else resolve_path(root, args.state_dir)
     interest_state_dir = None if args.interest_state_dir is None else resolve_path(root, args.interest_state_dir)
-    summary_path = resolve_path(root, args.summary) if args.summary else state_dir.parent / "pre_summary.json"
+    summary_path = resolve_path(root, args.summary) if args.summary else state_db_path.parent / "pre_summary.json"
     seq_len = args.seq_len or int(train_model_config.get("max_len", 100))
     cutoff_ts = parse_ts(args.max_rated_at_exclusive)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
@@ -162,15 +204,28 @@ def main() -> None:
         optimistic_cold_start=True,
     )
 
-    if args.reset_state_dir and state_dir.exists():
+    if args.reset_state_db and state_db_path.exists():
+        state_db_path.unlink()
+        for suffix in ("-wal", "-shm"):
+            sidecar = state_db_path.with_name(state_db_path.name + suffix)
+            if sidecar.exists():
+                sidecar.unlink()
+    runtime_store.init_store(state_db_path)
+    if interest_state_db_path != state_db_path:
+        runtime_store.init_store(interest_state_db_path)
+
+    if args.reset_state_dir and state_dir is not None and state_dir.exists():
         shutil.rmtree(state_dir)
-    state_dir.mkdir(parents=True, exist_ok=True)
+    if state_dir is not None:
+        state_dir.mkdir(parents=True, exist_ok=True)
 
     item2idx = load_item2idx(item2idx_path)
     logger.info("Experiment run id: %s", run_id)
     logger.info("Ratings input: %s", ratings_path)
     logger.info("item2idx input: %s", item2idx_path)
-    logger.info("State dir: %s", state_dir)
+    logger.info("State DB: %s", state_db_path)
+    logger.info("Legacy state dir: %s", state_dir)
+    logger.info("Interest state DB: %s", interest_state_db_path)
     logger.info("Interest state dir: %s", interest_state_dir)
     logger.info("Summary output: %s", summary_path)
     logger.info("Max ratedAt exclusive: %s", args.max_rated_at_exclusive)
@@ -206,7 +261,9 @@ def main() -> None:
                     },
                     "seed_config": {
                         "max_rated_at_exclusive": args.max_rated_at_exclusive,
-                        "state_dir": relative_or_absolute(root, state_dir),
+                        "state_db": relative_or_absolute(root, state_db_path),
+                        "interest_state_db": relative_or_absolute(root, interest_state_db_path),
+                        "state_dir": None if state_dir is None else relative_or_absolute(root, state_dir),
                         "interest_state_dir": None
                         if interest_state_dir is None
                         else relative_or_absolute(root, interest_state_dir),
@@ -216,6 +273,8 @@ def main() -> None:
                         "user_id": args.user_id,
                         "positive_policy": positive_policy.to_dict(),
                         "reset_state_dir": bool(args.reset_state_dir),
+                        "reset_state_db": bool(args.reset_state_db),
+                        "sqlite_user_event_rows_stored": SEED_USER_EVENT_ROWS_STORED,
                     },
                 }
             },
@@ -233,57 +292,81 @@ def main() -> None:
     first_rated_at: str | None = None
     last_rated_at: str | None = None
 
-    with ratings_path.open("r", encoding="utf-8") as handle:
-        for line in tqdm(handle, desc="seed pre-T user states"):
-            if not line.strip():
-                continue
-            users_seen += 1
-            entry = json.loads(line)
-            user_id = int(entry["userId"])
-            if args.user_id is not None and user_id != int(args.user_id):
-                continue
+    shared_interest_conn = interest_state_db_path.resolve() == state_db_path.resolve()
+    with runtime_store.connect(state_db_path) as state_conn:
+        with ratings_path.open("r", encoding="utf-8") as handle:
+            for line in tqdm(handle, desc="seed pre-T user states"):
+                if not line.strip():
+                    continue
+                users_seen += 1
+                entry = json.loads(line)
+                user_id = int(entry["userId"])
+                if args.user_id is not None and user_id != int(args.user_id):
+                    continue
 
-            filtered_ratings = cutoff_filter(list(entry["ratings"]), cutoff_ts)
-            if not filtered_ratings:
-                continue
-            users_with_pre_t_events += 1
+                filtered_ratings = cutoff_filter(list(entry["ratings"]), cutoff_ts)
+                if not filtered_ratings:
+                    continue
+                users_with_pre_t_events += 1
 
-            state = build_state_from_rating_history(
-                user_id=user_id,
-                ratings=filtered_ratings,
-                seq_len=seq_len,
-                item2idx=item2idx,
-                positive_policy=positive_policy,
-            )
-            save_user_state(state, state_path_for_user(state_dir, user_id))
+                state = build_state_from_rating_history(
+                    user_id=user_id,
+                    ratings=filtered_ratings,
+                    seq_len=seq_len,
+                    item2idx=item2idx,
+                    positive_policy=positive_policy,
+                )
+                runtime_store.record_user_state_conn(
+                    state_conn,
+                    run_id=run_id,
+                    state=state,
+                    include_event_rows=SEED_USER_EVENT_ROWS_STORED,
+                )
+                if state_dir is not None:
+                    save_user_state(state, state_path_for_user(state_dir, user_id))
 
-            active_raw_event_ids = [event.raw_event_id for event in active_positive_events(state)]
-            if maybe_mark_interest_processed(
-                interest_state_dir=interest_state_dir,
-                user_id=user_id,
-                processed_raw_event_ids=active_raw_event_ids,
-            ):
-                interest_marked_users += 1
+                active_raw_event_ids = [event.raw_event_id for event in active_positive_events(state)]
+                if maybe_mark_interest_processed(
+                    interest_state_dir=interest_state_dir,
+                    interest_state_db=interest_state_db_path,
+                    interest_state_conn=state_conn if shared_interest_conn else None,
+                    run_id=run_id,
+                    user_id=user_id,
+                    processed_raw_event_ids=active_raw_event_ids,
+                ):
+                    interest_marked_users += 1
 
-            seeded_users += 1
-            raw_events += int(state.stats.get("rawEventCount", 0))
-            positive_events += int(state.stats.get("positiveEventCount", 0))
-            active_events += int(state.stats.get("activeEventCount", 0))
-            skipped_unknown_items += int(state.stats.get("skippedUnknownItems", 0))
-            user_first = str(filtered_ratings[0]["ratedAt"])
-            user_last = str(filtered_ratings[-1]["ratedAt"])
-            first_rated_at = user_first if first_rated_at is None else min(first_rated_at, user_first)
-            last_rated_at = user_last if last_rated_at is None else max(last_rated_at, user_last)
+                seeded_users += 1
+                if seeded_users % 1000 == 0:
+                    state_conn.commit()
+                raw_events += int(state.stats.get("rawEventCount", 0))
+                positive_events += int(state.stats.get("positiveEventCount", 0))
+                active_events += int(state.stats.get("activeEventCount", 0))
+                skipped_unknown_items += int(state.stats.get("skippedUnknownItems", 0))
+                user_first = str(filtered_ratings[0]["ratedAt"])
+                user_last = str(filtered_ratings[-1]["ratedAt"])
+                first_rated_at = user_first if first_rated_at is None else min(first_rated_at, user_first)
+                last_rated_at = user_last if last_rated_at is None else max(last_rated_at, user_last)
 
-            if args.limit_users is not None and seeded_users >= int(args.limit_users):
-                break
+                if args.limit_users is not None and seeded_users >= int(args.limit_users):
+                    break
 
+    runtime_store.checkpoint(state_db_path)
     summary = {
         "version": SEED_SUMMARY_VERSION,
         "generatedAt": local_timestamp(),
         "runId": run_id,
         "maxRatedAtExclusive": args.max_rated_at_exclusive,
-        "stateDir": relative_or_absolute(root, state_dir),
+        "stateDb": relative_or_absolute(root, state_db_path),
+        "stateStore": {
+            "kind": "sqlite",
+            "path": relative_or_absolute(root, state_db_path),
+            "runId": run_id,
+            "userEventRowsStored": SEED_USER_EVENT_ROWS_STORED,
+            "counts": runtime_store.count_state_rows(state_db_path, run_id=run_id),
+        },
+        "stateDir": None if state_dir is None else relative_or_absolute(root, state_dir),
+        "interestStateDb": relative_or_absolute(root, interest_state_db_path),
         "interestStateDir": None if interest_state_dir is None else relative_or_absolute(root, interest_state_dir),
         "ratings": relative_or_absolute(root, ratings_path),
         "item2idx": relative_or_absolute(root, item2idx_path),
@@ -325,7 +408,13 @@ def main() -> None:
                 "seed_pre_t_state": {
                     "data_summary": summary,
                     "outputs": {
-                        "state_dir": relative_or_absolute(root, state_dir),
+                        "state_db": file_metadata(
+                            state_db_path,
+                            root=root,
+                            include_sha256=True,
+                            sha256_limit_bytes=hash_limit_bytes,
+                        ),
+                        "state_dir": None if state_dir is None else relative_or_absolute(root, state_dir),
                         "summary": file_metadata(
                             summary_path,
                             root=root,

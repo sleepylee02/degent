@@ -29,7 +29,7 @@ from model.stream.interest_assign import (
     Interest,
     InterestState,
     group_rows_by_user,
-    load_interest_state,
+    load_interest_state_with_seed,
     load_online_embedding_rows,
     make_empty_interest_state,
     save_interest_state,
@@ -51,7 +51,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--embeddings", type=Path, default=Path("outputs/stream/online_embeddings.npz"))
     parser.add_argument("--refit-requests", type=Path, default=Path("outputs/stream/refit_requests.jsonl"))
-    parser.add_argument("--interest-state-dir", type=Path, default=Path("outputs/stream/interest_states"))
+    parser.add_argument("--state-db", type=Path, default=None, help="SQLite interest state store. Defaults to --runtime-db.")
+    parser.add_argument("--seed-state-db", type=Path, default=None, help="Optional pre-T SQLite seed state store.")
+    parser.add_argument("--seed-run-id", type=str, default=None, help="Run id to read from --seed-state-db.")
+    parser.add_argument(
+        "--interest-state-dir",
+        type=Path,
+        default=None,
+        help="Optional legacy per-user JSON interest state directory.",
+    )
     parser.add_argument("--refit-events", type=Path, default=Path("outputs/stream/refit_events.jsonl"))
     parser.add_argument("--cluster-backend", choices=["auto", "gpu", "cpu"], default="auto")
     parser.add_argument("--refit-min-events", type=int, default=20)
@@ -236,9 +244,16 @@ if __name__ == "__main__":
 
     embeddings_path = resolve_path(ROOT, args.embeddings)
     requests_path = resolve_path(ROOT, args.refit_requests)
-    interest_state_dir = resolve_path(ROOT, args.interest_state_dir)
-    refit_events_path = resolve_path(ROOT, args.refit_events)
     runtime_db_path = None if args.runtime_db is None else resolve_path(ROOT, args.runtime_db)
+    state_db_path = runtime_db_path if args.state_db is None else resolve_path(ROOT, args.state_db)
+    seed_state_db_path = None if args.seed_state_db is None else resolve_path(ROOT, args.seed_state_db)
+    seed_run_id = args.seed_run_id or run_id
+    interest_state_dir = None if args.interest_state_dir is None else resolve_path(ROOT, args.interest_state_dir)
+    if state_db_path is None and interest_state_dir is None:
+        interest_state_dir = OUTPUTS_DIR / "stream" / "interest_states"
+    refit_events_path = resolve_path(ROOT, args.refit_events)
+    if state_db_path is not None:
+        runtime_store.init_store(state_db_path)
     if runtime_db_path is not None:
         runtime_store.init_store(runtime_db_path)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
@@ -260,7 +275,9 @@ if __name__ == "__main__":
     logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Online embeddings input: %s", embeddings_path)
     logger.info("Refit requests input: %s", requests_path)
-    logger.info("Interest state directory: %s", interest_state_dir)
+    logger.info("State DB: %s", state_db_path)
+    logger.info("Seed state DB: %s run_id=%s", seed_state_db_path, seed_run_id)
+    logger.info("Legacy interest state directory: %s", interest_state_dir)
     logger.info("Refit events output: %s", refit_events_path)
     logger.info("Cluster backend requested=%s selected=%s fallback_reason=%s", args.cluster_backend, selected_backend, fallback_reason)
 
@@ -288,7 +305,14 @@ if __name__ == "__main__":
                         ),
                     },
                     "refit_config": {
-                        "interest_state_dir": relative_or_absolute(ROOT, interest_state_dir),
+                        "state_db": None if state_db_path is None else relative_or_absolute(ROOT, state_db_path),
+                        "seed_state_db": None
+                        if seed_state_db_path is None
+                        else relative_or_absolute(ROOT, seed_state_db_path),
+                        "seed_run_id": seed_run_id,
+                        "interest_state_dir": None
+                        if interest_state_dir is None
+                        else relative_or_absolute(ROOT, interest_state_dir),
                         "refit_events": relative_or_absolute(ROOT, refit_events_path),
                         "cluster_backend_requested": args.cluster_backend,
                         "cluster_backend_selected": selected_backend,
@@ -329,8 +353,15 @@ if __name__ == "__main__":
         if runtime_db_path is not None:
             request_id = runtime_store.claim_refit_request(runtime_db_path, run_id=run_id, user_id=user_id)
         user_rows = grouped_rows.get(user_id, [])
-        state_path = state_path_for_user(interest_state_dir, user_id)
-        state = load_interest_state(state_path)
+        state_path = None if interest_state_dir is None else state_path_for_user(interest_state_dir, user_id)
+        state = load_interest_state_with_seed(
+            primary_db=state_db_path,
+            primary_run_id=run_id,
+            seed_db=seed_state_db_path,
+            seed_run_id=seed_run_id,
+            state_dir=interest_state_dir,
+            user_id=user_id,
+        )
         if state is None:
             state = make_empty_interest_state(user_id, embedding_dim)
         if state.embedding_dim != embedding_dim:
@@ -341,7 +372,8 @@ if __name__ == "__main__":
             "runId": run_id,
             "userId": user_id,
             "request": request,
-            "statePath": relative_or_absolute(ROOT, state_path),
+            "stateDb": None if state_db_path is None else relative_or_absolute(ROOT, state_db_path),
+            "statePath": None if state_path is None else relative_or_absolute(ROOT, state_path),
             "backendRequested": args.cluster_backend,
             "backendSelected": selected_backend,
             "backendFallbackReason": fallback_reason,
@@ -361,13 +393,21 @@ if __name__ == "__main__":
             state.refit_request_open = False
             state.refit_required = True
             state.updated_at = local_timestamp()
-            save_interest_state(state, state_path)
-            if runtime_db_path is not None:
+            if state_path is not None:
+                save_interest_state(state, state_path)
+            if state_db_path is not None:
+                runtime_store.record_interest_state(
+                    state_db_path,
+                    run_id=run_id,
+                    state=state,
+                    state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+                )
+            if runtime_db_path is not None and runtime_db_path != state_db_path:
                 runtime_store.record_interest_state(
                     runtime_db_path,
                     run_id=run_id,
                     state=state,
-                    state_path=relative_or_absolute(ROOT, state_path),
+                    state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
                 )
             if runtime_db_path is not None:
                 runtime_store.complete_refit_request(
@@ -418,13 +458,21 @@ if __name__ == "__main__":
         base_event["backendFallbackReason"] = fallback_reason
         elapsed = time.time() - user_start
         update_state_after_refit(state, interests=interests, active_raw_event_ids=active_raw_event_ids)
-        save_interest_state(state, state_path)
-        if runtime_db_path is not None:
+        if state_path is not None:
+            save_interest_state(state, state_path)
+        if state_db_path is not None:
+            runtime_store.record_interest_state(
+                state_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+            )
+        if runtime_db_path is not None and runtime_db_path != state_db_path:
             runtime_store.record_interest_state(
                 runtime_db_path,
                 run_id=run_id,
                 state=state,
-                state_path=relative_or_absolute(ROOT, state_path),
+                state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
             )
         refit_count += 1
 
