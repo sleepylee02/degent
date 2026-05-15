@@ -6,6 +6,7 @@ from typing import Any
 import hashlib
 import json
 import logging
+import os
 import re
 import shlex
 import subprocess
@@ -17,11 +18,15 @@ import torch
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_HASH_LIMIT_BYTES = 100 * 1024 * 1024
+DISABLE_FILE_LOG_ENV = "DEGENT_DISABLE_FILE_LOG"
+
+
+def env_flag_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def setup_run_logging(script_name: str, outputs_dir: Path) -> tuple[logging.Logger, Path]:
     logs_dir = outputs_dir / "logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = logs_dir / f"{script_name}_{timestamp}.log"
@@ -37,6 +42,11 @@ def setup_run_logging(script_name: str, outputs_dir: Path) -> tuple[logging.Logg
     stream_handler.setFormatter(formatter)
     logger.addHandler(stream_handler)
 
+    if env_flag_enabled(DISABLE_FILE_LOG_ENV):
+        logger.info("Log file disabled by %s=1", DISABLE_FILE_LOG_ENV)
+        return logger, log_path
+
+    logs_dir.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_path, encoding="utf-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)

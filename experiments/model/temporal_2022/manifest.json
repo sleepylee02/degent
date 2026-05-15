@@ -1,0 +1,464 @@
+{
+  "created_at": "2026-05-15T15:48:36+09:00",
+  "run_id": "temporal_2022",
+  "git": {
+    "commit": "302c729601f37efc365fd045095f46d48eb02cdf",
+    "branch": "full-streaming",
+    "dirty": true,
+    "status_short": [
+      "?? experiments/model/temporal_2022/",
+      "?? experiments/model/temporal_2022_replay_smoke/",
+      "?? outputs/logs/cluster_20260515_173045.log",
+      "?? outputs/logs/extract_canonical_20260515_172830.log",
+      "?? outputs/logs/seed_pre_t_state_20260515_175250.log",
+      "?? outputs/logs/trace_replay_20260515_175023.log",
+      "?? outputs/logs/train_20260515_154836.log"
+    ]
+  },
+  "stages": {
+    "train": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/batch/train.py --run-id temporal_2022 --max-rated-at-exclusive 2022-01-01T00:00:00Z --output-dir outputs/pre/temporal_2022",
+      "log": {
+        "path": "outputs/logs/train_20260515_154836.log",
+        "exists": true,
+        "size_bytes": 848,
+        "mtime_ns": 1778827716876792992
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862000000000
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "training_config": {
+        "epochs": 100,
+        "batch_size": 256,
+        "num_workers": 4,
+        "eval_every": 5,
+        "patience": 10,
+        "seq_len": 100,
+        "stride": 50,
+        "min_interactions": 200,
+        "min_activity_days": 30,
+        "max_rated_at_exclusive": "2022-01-01T00:00:00Z",
+        "artifact_dir": "outputs/pre/temporal_2022",
+        "lr": 0.001,
+        "cl_lambda": 0.1,
+        "seed": 42
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "filtered_user_sequences": 14017,
+        "num_items": 48987,
+        "train_users": 12079,
+        "val_users": 4521,
+        "test_users": 4312,
+        "train_samples": 77612,
+        "val_samples": 34849,
+        "train_batches": 304,
+        "val_batches": 137
+      },
+      "outputs": {
+        "checkpoint": {
+          "path": "outputs/pre/temporal_2022/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 26873918,
+          "mtime_ns": 1778832179654145218,
+          "sha256": "87d2105720b63a673bac3a896fbd539bc069671608cf1492c63cbdd772ed38a6"
+        },
+        "item2idx": {
+          "path": "outputs/pre/temporal_2022/item2idx.json",
+          "exists": true,
+          "size_bytes": 794099,
+          "mtime_ns": 1778832179691145058,
+          "sha256": "d7904e9e1c9ab445677c56722d30fcada56162c3b12491528f71faeeb826eb0e"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 20673,
+          "mtime_ns": 1778832179634145304,
+          "sha256": "6141bda1206548fa166427be48cfaabc7d139a800eae08c75b440f28a05033fa"
+        },
+        "best_checkpoint": {
+          "path": "outputs/pre/temporal_2022/sasrec_cl_best.pt",
+          "exists": true,
+          "size_bytes": 26874098,
+          "mtime_ns": 1778832179618145374,
+          "sha256": "e9467d83d15076a4b3fb469c27e8a517199e257f1232196a833bffa461c13aaf"
+        }
+      },
+      "early_stopping": {
+        "monitor": "Recall@10",
+        "patience": 10,
+        "best_epoch": 100,
+        "best_recall_at_10": 0.09641596602485007,
+        "stopped_early": false
+      },
+      "final_metrics": {
+        "stage": "train",
+        "epoch": 100,
+        "loss": 6.843326359987259,
+        "ce_loss": 6.742263376712799,
+        "contrastive_loss": 1.0106297118687315,
+        "recall_at_10": 0.09641596602485007,
+        "ndcg_at_10": 0.04790853351352544,
+        "best_recall_at_10": 0.09641596602485007,
+        "best_epoch": 100,
+        "no_improve": 0,
+        "early_stop": false
+      }
+    },
+    "extract_canonical": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/batch/extract_canonical.py --run-id temporal_2022 --max-rated-at-exclusive 2022-01-01T00:00:00Z --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt --item2idx outputs/pre/temporal_2022/item2idx.json --output outputs/pre/temporal_2022/canonical_embeddings.npz",
+      "log": {
+        "path": "outputs/logs/extract_canonical_20260515_172830.log",
+        "exists": true,
+        "size_bytes": 1090,
+        "mtime_ns": 1778833710015782709
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862000000000
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        },
+        "checkpoint": {
+          "path": "outputs/pre/temporal_2022/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 26873918,
+          "mtime_ns": 1778832179654145218,
+          "sha256": "87d2105720b63a673bac3a896fbd539bc069671608cf1492c63cbdd772ed38a6"
+        },
+        "item2idx": {
+          "path": "outputs/pre/temporal_2022/item2idx.json",
+          "exists": true,
+          "size_bytes": 794099,
+          "mtime_ns": 1778832179691145058,
+          "sha256": "d7904e9e1c9ab445677c56722d30fcada56162c3b12491528f71faeeb826eb0e"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "extraction_config": {
+        "batch_size": 256,
+        "num_workers": 4,
+        "min_interactions": 1000,
+        "min_activity_days": 30,
+        "max_rated_at_exclusive": "2022-01-01T00:00:00Z",
+        "limit_users": null,
+        "user_id": null,
+        "embedding_contract": "canonical_event_v1"
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 48987,
+        "canonical_users": 604,
+        "samples": 883179,
+        "batches": 3450,
+        "users_seen": 200948,
+        "filtered_users": 604,
+        "kept_users": 604,
+        "cutoff_excluded_events": 1688295,
+        "total_positive_events": 883179,
+        "kept_events": 883179,
+        "skipped_unknown_items": 0,
+        "skipped_unknown_item_users": 0
+      },
+      "outputs": {
+        "canonical_embeddings": {
+          "path": "outputs/pre/temporal_2022/canonical_embeddings.npz",
+          "exists": true,
+          "size_bytes": 565236612,
+          "mtime_ns": 1778833836320041966,
+          "sha256": null,
+          "sha256_skipped": "size_exceeds_limit",
+          "sha256_limit_bytes": 104857600
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 21137,
+          "mtime_ns": 1778833836344041827,
+          "sha256": "d7da62cc87738639810d3f754239337b989189700d0b853cfef21cfdbf091d6b"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_canonical",
+        "embedding_rows": 883179,
+        "embedding_dim": 128,
+        "unique_users": 604,
+        "unique_user_events": true,
+        "nan_embedding_rows": 0,
+        "max_history_len": 100,
+        "invalid_context_rows": 0,
+        "users_seen": 200948,
+        "filtered_users": 604,
+        "kept_users": 604,
+        "cutoff_excluded_events": 1688295,
+        "total_positive_events": 883179,
+        "kept_events": 883179,
+        "skipped_unknown_items": 0,
+        "skipped_unknown_item_users": 0
+      }
+    },
+    "cluster": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/batch/cluster.py --run-id temporal_2022 --embeddings outputs/pre/temporal_2022/canonical_embeddings.npz --output outputs/pre/temporal_2022/user_interests.npz --interest-state-dir outputs/pre/temporal_2022/interest_states",
+      "log": {
+        "path": "outputs/logs/cluster_20260515_173045.log",
+        "exists": true,
+        "size_bytes": 564,
+        "mtime_ns": 1778833847702976055
+      },
+      "inputs": {
+        "embeddings": {
+          "path": "outputs/pre/temporal_2022/canonical_embeddings.npz",
+          "exists": true,
+          "size_bytes": 565236612,
+          "mtime_ns": 1778833836320041966
+        }
+      },
+      "clustering_config": {
+        "user_id": null,
+        "top_n": null,
+        "stride": 1,
+        "window_size": 100,
+        "window_step": 10,
+        "min_cluster_size": 10,
+        "cluster_n_components": 10,
+        "viz_n_components": 3,
+        "random_state": 42,
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "output": "outputs/pre/temporal_2022/user_interests.npz",
+        "interest_state_dir": "outputs/pre/temporal_2022/interest_states"
+      },
+      "data_summary": {
+        "initial_embedding_rows": 883179,
+        "initial_unique_users": 604,
+        "dropped_nan_rows": 0,
+        "filtered_embedding_rows": 883179,
+        "filtered_unique_users": 604
+      },
+      "outputs": {
+        "interest_state_dir": "outputs/pre/temporal_2022/interest_states",
+        "viz_npz": {
+          "path": "outputs/pre/temporal_2022/user_interests.npz",
+          "exists": true,
+          "size_bytes": 33779114,
+          "mtime_ns": 1778834973354990569,
+          "sha256": "96d3660dd83bc76913b38e4af2e0718c2c5a8f696190c37d66d2c5f3278a9e4e"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 21521,
+          "mtime_ns": 1778834973383990967,
+          "sha256": "aea85d8ba4e151ecf501b6cef9ae41dbac4ed5bbf6ee6d9afd6f593be7feec30"
+        }
+      },
+      "summary_metrics": {
+        "stage": "cluster",
+        "input_embedding_rows": 883179,
+        "input_unique_users": 604,
+        "dropped_nan_rows": 0,
+        "clustered_users": 604,
+        "filtered_embedding_rows": 883179,
+        "filtered_unique_users": 604,
+        "elapsed_seconds": 1123.4961521625519,
+        "cluster_backend_selected": "gpu",
+        "k_min": 2,
+        "k_max": 199,
+        "k_mean": 33.038079470198674,
+        "k_median": 31.0
+      }
+    },
+    "seed_pre_t_state": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/seed_pre_t_state.py --run-id temporal_2022 --max-rated-at-exclusive 2022-01-01T00:00:00Z --item2idx outputs/pre/temporal_2022/item2idx.json --state-dir outputs/pre/temporal_2022/user_states --interest-state-dir outputs/pre/temporal_2022/interest_states --summary outputs/pre/temporal_2022/pre_summary.json",
+      "log": {
+        "path": "outputs/logs/seed_pre_t_state_20260515_175250.log",
+        "exists": true,
+        "size_bytes": 866,
+        "mtime_ns": 1778835170660148611
+      },
+      "inputs": {
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        },
+        "item2idx": {
+          "path": "outputs/pre/temporal_2022/item2idx.json",
+          "exists": true,
+          "size_bytes": 794099,
+          "mtime_ns": 1778832179691145058,
+          "sha256": "d7904e9e1c9ab445677c56722d30fcada56162c3b12491528f71faeeb826eb0e"
+        }
+      },
+      "schemas": {
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "seed_config": {
+        "max_rated_at_exclusive": "2022-01-01T00:00:00Z",
+        "state_dir": "outputs/pre/temporal_2022/user_states",
+        "interest_state_dir": "outputs/pre/temporal_2022/interest_states",
+        "summary": "outputs/pre/temporal_2022/pre_summary.json",
+        "seq_len": 100,
+        "limit_users": null,
+        "user_id": null,
+        "positive_policy": {
+          "name": "observed_user_zscore_v1",
+          "minRatingsForZscore": 3,
+          "zThreshold": 0.0,
+          "optimisticColdStart": true
+        },
+        "reset_state_dir": false
+      },
+      "data_summary": {
+        "version": "pre_t_user_state_seed.v1",
+        "generatedAt": "2026-05-15T17:58:58+09:00",
+        "runId": "temporal_2022",
+        "maxRatedAtExclusive": "2022-01-01T00:00:00Z",
+        "stateDir": "outputs/pre/temporal_2022/user_states",
+        "interestStateDir": "outputs/pre/temporal_2022/interest_states",
+        "ratings": "data/ratings_drop_processed.jsonl",
+        "item2idx": "outputs/pre/temporal_2022/item2idx.json",
+        "seqLen": 100,
+        "positivePolicy": {
+          "name": "observed_user_zscore_v1",
+          "minRatingsForZscore": 3,
+          "zThreshold": 0.0,
+          "optimisticColdStart": true
+        },
+        "usersSeen": 200948,
+        "usersWithPreTEvents": 193617,
+        "seededUsers": 193617,
+        "interestMarkedUsers": 604,
+        "rawEvents": 30228068,
+        "positiveEvents": 16430076,
+        "activeEvents": 16424669,
+        "skippedUnknownItems": 5407,
+        "firstRatedAt": "1995-01-09T11:46:44Z",
+        "lastRatedAt": "2021-12-31T23:59:54Z",
+        "limitUsers": null,
+        "userId": null
+      },
+      "outputs": {
+        "state_dir": "outputs/pre/temporal_2022/user_states",
+        "summary": {
+          "path": "outputs/pre/temporal_2022/pre_summary.json",
+          "exists": true,
+          "size_bytes": 912,
+          "mtime_ns": 1778835538545106723,
+          "sha256": "594a9c4e860d42ee4302cf8ce7253a7464aca695995b3f3a1f0258b2011e5c44"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 21867,
+          "mtime_ns": 1778835538545106723,
+          "sha256": "b56e01bc52b7d027400681dc23117f8269edceee40eebfcf97c60a78a3aa634f"
+        }
+      },
+      "summary_metrics": {
+        "stage": "seed_pre_t_state",
+        "max_rated_at_exclusive": "2022-01-01T00:00:00Z",
+        "users_seen": 200948,
+        "users_with_pre_t_events": 193617,
+        "seeded_users": 193617,
+        "interest_marked_users": 604,
+        "raw_events": 30228068,
+        "positive_events": 16430076,
+        "active_events": 16424669,
+        "skipped_unknown_items": 5407
+      }
+    }
+  },
+  "updated_at": "2026-05-15T17:58:58+09:00"
+}

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,7 @@ import numpy as np
 
 import model.stream.runtime_store as runtime_store
 from model.common.runtime import (
+    DISABLE_FILE_LOG_ENV,
     append_metric,
     command_line,
     ensure_experiment_run,
@@ -231,7 +233,10 @@ def run_command(
             command=cmd,
         )
     try:
-        subprocess.run(cmd, cwd=root, check=True)
+        env = os.environ.copy()
+        if stage is not None:
+            env[DISABLE_FILE_LOG_ENV] = "1"
+        subprocess.run(cmd, cwd=root, check=True, env=env)
     except Exception as exc:
         if runtime_db is not None and attempt_id is not None:
             runtime_store.finish_stage_attempt(

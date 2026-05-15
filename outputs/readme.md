@@ -4,8 +4,8 @@
 
 Git 추적 정책:
 
-- 추적 가능: `outputs/readme.md`, `outputs/logs/*.log`
-- 추적 제외: checkpoint, embedding, clustering result, plot 같은 재생성 가능한 대형 산출물
+- 추적 가능: `outputs/readme.md`, `.gitkeep` placeholder
+- 추적 제외: checkpoint, embedding, clustering result, plot, runtime log 같은 재생성 가능한 산출물
 
 주요 산출물 계약은 `model/README.md`와 `docs/artifacts.md`를 따른다.
 

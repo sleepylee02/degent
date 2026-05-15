@@ -78,7 +78,7 @@
 | `outputs/post/temporal_2022/online_embeddings.npz` | temporal post-T replay-scoped online embeddings | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022` | regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
-| `outputs/logs/` | tracked runtime logs | model scripts | append/regenerate |
+| `outputs/logs/` | local runtime logs, git ignored except `.gitkeep` | model scripts | append/regenerate |
 | `outputs/latest_model_run_id.txt` | local run pointer | model scripts | regenerate |
 | `experiments/model/<run_id>/manifest.json` | experiment metadata | model scripts | append/update |
 | `experiments/model/<run_id>/metrics.jsonl` | experiment metrics | model scripts | append |

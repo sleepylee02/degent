@@ -70,7 +70,7 @@ degent/
 │   │   ├── eda_processed.py #     정제 후 데이터 EDA 스크립트
 │   │   └── outputs/         #     분석 결과물 (리포트, 차트)
 │   └── raw/                 #   raw 데이터 EDA (보존용)
-├── outputs/                 # 모델/stream 산출물 (대형 산출물은 git 추적 제외, readme/logs는 보존 가능)
+├── outputs/                 # 모델/stream 산출물 (대형 산출물과 실행 로그는 git 추적 제외)
 │   ├── pre/                 #   temporal cutoff 이전 batch/model/state 산출물 (e.g. temporal_2022/)
 │   ├── post/                #   temporal cutoff 이후 replay/runtime 산출물 (e.g. temporal_2022/)
 │   └── stream/              #   default/standalone streaming/replay 산출물

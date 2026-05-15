@@ -80,7 +80,7 @@ pre-T:  ratedAt < T
 post-T: ratedAt >= T
 ```
 
-신규 temporal run의 모델 관련 산출물은 `outputs/pre/temporal_2022/` 아래에 모으고, replay runtime 산출물은 `outputs/post/temporal_2022/`에 격리한다. 기존 `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz` 같은 루트 경로는 default/legacy 호환 경로로 유지한다.
+신규 temporal run의 모델 관련 산출물은 `outputs/pre/temporal_2022/` 아래에 모은다. Replay runtime 산출물은 실행 범위가 드러나도록 `outputs/post/temporal_2022_events_1000/`, `outputs/post/temporal_2022_events_100_recommend/`, `outputs/post/temporal_2022_full/`처럼 별도 root에 격리한다. 기존 `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz` 같은 루트 경로는 default/legacy 호환 경로로 유지한다.
 
 Pre-T 모델과 state 생성:
 
@@ -116,11 +116,12 @@ Post-T seeded replay:
 
 ```bash
 .venv/bin/python -m model.stream.replay_pipeline \
-  --run-id temporal_2022_replay \
-  --output-root outputs/post/temporal_2022 \
+  --run-id temporal_2022_replay_events_1000 \
+  --output-root outputs/post/temporal_2022_events_1000 \
   --reset-output \
   --generate-events \
   --start-rated-at 2022-01-01T00:00:00Z \
+  --limit-events 1000 \
   --speed 100 \
   --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
   --item2idx outputs/pre/temporal_2022/item2idx.json \
@@ -129,6 +130,8 @@ Post-T seeded replay:
   --cluster-backend auto \
   --recommend
 ```
+
+`--limit-events`를 쓰는 replay는 output root 이름에 `events_<N>`을 넣는다. 추천을 함께 생성하는 run은 `events_<N>_recommend`를 붙인다. 전체 post-T replay는 `outputs/post/temporal_2022_full/`처럼 `full`을 붙여 smoke/partial run과 분리한다. `--reset-output`은 지정한 output root를 지우고 다시 만들기 때문에, 보존할 결과는 새 root 이름으로 실행한다.
 
 `seed_pre_t_state`는 `user_states/{user_id}.json`을 T 직전 상태로 만들고, `interest_states/{user_id}.json`이 이미 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. 이렇게 해야 post-T 첫 이벤트 처리 때 pre-T active snapshot row가 새 이벤트처럼 assignment/refit 대상으로 보이지 않는다.
 

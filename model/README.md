@@ -186,7 +186,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `stream/replay_pipeline.py --recommend`는 각 event 처리 이후 `stream/recommend_online.py`를 호출하고 replay scope 안의 `stream_recommendations.jsonl`에 append한다.
 - `stream/runtime_report.py`는 replay 실행 후 `replay.sqlite`만 읽어 dominant stage latency, behind-schedule event, refit terminal status, repeated embedding/assignment signal을 markdown 또는 JSON으로 요약한다.
 - 현재 GPU 검증된 `.venv` 조합은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2`다. 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
-- 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
+- 실행 로그는 로컬 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장되며 git 추적 대상이 아니다. `replay_pipeline`이 event별 하위 stage CLI를 호출할 때는 로그 파일 폭증을 막기 위해 child stage file log를 끄고, stage 결과는 `replay.sqlite`와 replay-scoped JSONL artifact에 기록한다.
 
 ---
 
@@ -259,7 +259,7 @@ git diff <old_commit>..<new_commit> -- model/
 
 ## 산출물
 
-모델 가중치/임베딩/시각화 산출물은 프로젝트 루트의 `outputs/`에 저장된다. `outputs/readme.md`와 `outputs/logs/*.log`는 실행 기록 보존용으로 추적될 수 있고, 가중치/임베딩/플롯은 git 추적에서 제외한다.
+모델 가중치/임베딩/시각화 산출물은 프로젝트 루트의 `outputs/`에 저장된다. `outputs/readme.md`와 `.gitkeep` placeholder만 추적하고, 가중치/임베딩/플롯/실행 로그는 git 추적에서 제외한다.
 
 | 파일 | 설명 |
 |---|---|
@@ -307,7 +307,7 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/embeddings.npz` | 삭제된 overlap-window extract entrypoint가 만들던 legacy 산출물. 현재 공식 경로는 `canonical_embeddings.npz` |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
-| `outputs/logs/*.log` | 스크립트별 실행 로그 |
+| `outputs/logs/*.log` | 로컬 스크립트별 실행 로그. git 추적 제외 |
 | `experiments/model/<run_id>/manifest.json` | run별 config, git 상태, 입력/출력 metadata |
 | `experiments/model/<run_id>/metrics.jsonl` | run별 metric 기록 |
 | `experiments/model/<run_id>/notes.md` | run별 해석 메모 |

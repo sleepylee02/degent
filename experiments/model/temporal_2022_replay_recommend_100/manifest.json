@@ -1,0 +1,610 @@
+{
+  "created_at": "2026-05-15T18:15:55+09:00",
+  "run_id": "temporal_2022_replay_recommend_100",
+  "git": {
+    "commit": "302c729601f37efc365fd045095f46d48eb02cdf",
+    "branch": "full-streaming",
+    "dirty": true,
+    "status_short": [
+      "M .gitignore",
+      " M PROJECT_GUIDE.md",
+      " M docs/artifacts.md",
+      " M docs/streaming-e2e-pipeline.md",
+      " M model/README.md",
+      " M model/common/runtime.py",
+      " M model/stream/trace_replay.py",
+      "D  outputs/logs/cluster_20260409_025002.log",
+      "D  outputs/logs/cluster_20260410_154728.log",
+      "D  outputs/logs/cluster_refit_20260506_123541.log",
+      "D  outputs/logs/cluster_refit_20260506_123727.log",
+      "D  outputs/logs/cluster_refit_20260506_125615.log",
+      "D  outputs/logs/cluster_refit_20260506_130519.log",
+      "D  outputs/logs/cluster_refit_20260506_130538.log",
+      "D  outputs/logs/cluster_refit_20260506_132954.log",
+      "D  outputs/logs/cluster_refit_20260506_134857.log",
+      "D  outputs/logs/cluster_refit_20260506_141324.log",
+      "D  outputs/logs/cluster_refit_20260506_141330.log",
+      "D  outputs/logs/cluster_refit_20260506_141804.log",
+      "D  outputs/logs/cluster_refit_20260506_141809.log",
+      "D  outputs/logs/cluster_refit_20260508_113215.log",
+      "D  outputs/logs/cluster_refit_20260508_113245.log",
+      "D  outputs/logs/cluster_refit_20260508_114951.log",
+      "D  outputs/logs/cluster_refit_20260510_163213.log",
+      "D  outputs/logs/cluster_refit_20260510_163249.log",
+      "D  outputs/logs/cluster_refit_20260510_163311.log",
+      "D  outputs/logs/cluster_refit_20260510_164300.log",
+      "D  outputs/logs/cluster_refit_20260510_164317.log",
+      "D  outputs/logs/cluster_refit_20260510_164329.log",
+      "D  outputs/logs/cluster_refit_20260510_164347.log",
+      "D  outputs/logs/cluster_refit_20260510_170756.log",
+      "D  outputs/logs/cluster_refit_20260510_171017.log",
+      "D  outputs/logs/cluster_refit_20260510_171033.log",
+      "D  outputs/logs/cluster_refit_20260515_094835.log",
+      "D  outputs/logs/cluster_refit_20260515_095532.log",
+      "D  outputs/logs/cluster_refit_20260515_100117.log",
+      "D  outputs/logs/cluster_refit_20260515_101403.log",
+      "D  outputs/logs/cluster_refit_20260515_101546.log",
+      "D  outputs/logs/cluster_refit_20260515_101557.log",
+      "D  outputs/logs/cluster_refit_20260515_101609.log",
+      "D  outputs/logs/cluster_refit_20260515_101730.log",
+      "D  outputs/logs/cluster_refit_20260515_101742.log",
+      "D  outputs/logs/cluster_refit_20260515_101754.log",
+      "D  outputs/logs/extract_20260409_020726.log",
+      "D  outputs/logs/extract_canonical_20260504_203406.log",
+      "D  outputs/logs/extract_canonical_20260504_204449.log",
+      "D  outputs/logs/extract_canonical_20260505_130446.log",
+      "D  outputs/logs/extract_online_20260505_114746.log",
+      "D  outputs/logs/extract_online_20260505_122435.log",
+      "D  outputs/logs/extract_online_20260506_104730.log",
+      "D  outputs/logs/extract_online_20260506_105007.log",
+      "D  outputs/logs/extract_online_20260506_141321.log",
+      "D  outputs/logs/extract_online_20260506_141327.log",
+      "D  outputs/logs/extract_online_20260506_141800.log",
+      "D  outputs/logs/extract_online_20260506_141806.log",
+      "D  outputs/logs/extract_online_20260508_113208.log",
+      "D  outputs/logs/extract_online_20260508_113237.log",
+      "D  outputs/logs/extract_online_20260508_114943.log",
+      "D  outputs/logs/extract_online_20260510_163243.log",
+      "D  outputs/logs/extract_online_20260510_163306.log",
+      "D  outputs/logs/extract_online_20260510_164255.log",
+      "D  outputs/logs/extract_online_20260510_164312.log",
+      "D  outputs/logs/extract_online_20260510_164342.log",
+      "D  outputs/logs/extract_online_20260510_170752.log",
+      "D  outputs/logs/extract_online_20260510_171013.log",
+      "D  outputs/logs/extract_online_20260510_171029.log",
+      "D  outputs/logs/extract_online_20260514_170518.log",
+      "D  outputs/logs/extract_online_20260514_170524.log",
+      "D  outputs/logs/extract_online_20260514_170530.log",
+      "D  outputs/logs/extract_online_20260514_170537.log",
+      "D  outputs/logs/extract_online_20260514_170543.log",
+      "D  outputs/logs/extract_online_20260515_094711.log",
+      "D  outputs/logs/extract_online_20260515_094717.log",
+      "D  outputs/logs/extract_online_20260515_094817.log",
+      "D  outputs/logs/extract_online_20260515_094823.log",
+      "D  outputs/logs/extract_online_20260515_094829.log",
+      "D  outputs/logs/extract_online_20260515_095515.log",
+      "D  outputs/logs/extract_online_20260515_095521.log",
+      "D  outputs/logs/extract_online_20260515_095526.log",
+      "D  outputs/logs/extract_online_20260515_100100.log",
+      "D  outputs/logs/extract_online_20260515_100106.log",
+      "D  outputs/logs/extract_online_20260515_100112.log",
+      "D  outputs/logs/extract_online_20260515_101246.log",
+      "D  outputs/logs/extract_online_20260515_101340.log",
+      "D  outputs/logs/extract_online_20260515_101350.log",
+      "D  outputs/logs/extract_online_20260515_101358.log",
+      "D  outputs/logs/extract_online_20260515_101410.log",
+      "D  outputs/logs/extract_online_20260515_101418.log",
+      "D  outputs/logs/extract_online_20260515_101524.log",
+      "D  outputs/logs/extract_online_20260515_101532.log",
+      "D  outputs/logs/extract_online_20260515_101540.log",
+      "D  outputs/logs/extract_online_20260515_101552.log",
+      "D  outputs/logs/extract_online_20260515_101604.log",
+      "D  outputs/logs/extract_online_20260515_101709.log",
+      "D  outputs/logs/extract_online_20260515_101717.log",
+      "D  outputs/logs/extract_online_20260515_101725.log",
+      "D  outputs/logs/extract_online_20260515_101736.log",
+      "D  outputs/logs/extract_online_20260515_101748.log",
+      "D  outputs/logs/interest_assign_20260506_114802.log",
+      "D  outputs/logs/interest_assign_20260506_114835.log",
+      "D  outputs/logs/interest_assign_20260506_115026.log",
+      "D  outputs/logs/interest_assign_20260506_141324.log",
+      "D  outputs/logs/interest_assign_20260506_141329.log",
+      "D  outputs/logs/interest_assign_20260506_141803.log",
+      "D  outputs/logs/interest_assign_20260506_141809.log",
+      "D  outputs/logs/interest_assign_20260508_113213.log",
+      "D  outputs/logs/interest_assign_20260508_113242.log",
+      "D  outputs/logs/interest_assign_20260508_114949.log",
+      "D  outputs/logs/interest_assign_20260510_163247.log",
+      "D  outputs/logs/interest_assign_20260510_163310.log",
+      "D  outputs/logs/interest_assign_20260510_164258.log",
+      "D  outputs/logs/interest_assign_20260510_164316.log",
+      "D  outputs/logs/interest_assign_20260510_164346.log",
+      "D  outputs/logs/interest_assign_20260510_170755.log",
+      "D  outputs/logs/interest_assign_20260510_171016.log",
+      "D  outputs/logs/interest_assign_20260510_171032.log",
+      "D  outputs/logs/interest_assign_20260514_170522.log",
+      "D  outputs/logs/interest_assign_20260514_170528.log",
+      "D  outputs/logs/interest_assign_20260514_170534.log",
+      "D  outputs/logs/interest_assign_20260514_170541.log",
+      "D  outputs/logs/interest_assign_20260514_170547.log",
+      "D  outputs/logs/interest_assign_20260515_094715.log",
+      "D  outputs/logs/interest_assign_20260515_094721.log",
+      "D  outputs/logs/interest_assign_20260515_094821.log",
+      "D  outputs/logs/interest_assign_20260515_094827.log",
+      "D  outputs/logs/interest_assign_20260515_094833.log",
+      "D  outputs/logs/interest_assign_20260515_095519.log",
+      "D  outputs/logs/interest_assign_20260515_095524.log",
+      "D  outputs/logs/interest_assign_20260515_095530.log",
+      "D  outputs/logs/interest_assign_20260515_100104.log",
+      "D  outputs/logs/interest_assign_20260515_100110.log",
+      "D  outputs/logs/interest_assign_20260515_100115.log",
+      "D  outputs/logs/interest_assign_20260515_101250.log",
+      "D  outputs/logs/interest_assign_20260515_101346.log",
+      "D  outputs/logs/interest_assign_20260515_101354.log",
+      "D  outputs/logs/interest_assign_20260515_101402.log",
+      "D  outputs/logs/interest_assign_20260515_101414.log",
+      "D  outputs/logs/interest_assign_20260515_101422.log",
+      "D  outputs/logs/interest_assign_20260515_101528.log",
+      "D  outputs/logs/interest_assign_20260515_101536.log",
+      "D  outputs/logs/interest_assign_20260515_101544.log",
+      "D  outputs/logs/interest_assign_20260515_101556.log",
+      "D  outputs/logs/interest_assign_20260515_101608.log",
+      "D  outputs/logs/interest_assign_20260515_101713.log",
+      "D  outputs/logs/interest_assign_20260515_101721.log",
+      "D  outputs/logs/interest_assign_20260515_101729.log",
+      "D  outputs/logs/interest_assign_20260515_101740.log",
+      "D  outputs/logs/interest_assign_20260515_101752.log",
+      "D  outputs/logs/recommend_online_20260515_101252.log",
+      "D  outputs/logs/recommend_online_20260515_101348.log",
+      "D  outputs/logs/recommend_online_20260515_101356.log",
+      "D  outputs/logs/recommend_online_20260515_101407.log",
+      "D  outputs/logs/recommend_online_20260515_101416.log",
+      "D  outputs/logs/recommend_online_20260515_101424.log",
+      "D  outputs/logs/recommend_online_20260515_101530.log",
+      "D  outputs/logs/recommend_online_20260515_101538.log",
+      "D  outputs/logs/recommend_online_20260515_101550.log",
+      "D  outputs/logs/recommend_online_20260515_101601.log",
+      "D  outputs/logs/recommend_online_20260515_101715.log",
+      "D  outputs/logs/recommend_online_20260515_101723.log",
+      "D  outputs/logs/recommend_online_20260515_101734.log",
+      "D  outputs/logs/recommend_online_20260515_101746.log",
+      "D  outputs/logs/recommend_online_20260515_101809.log",
+      "D  outputs/logs/replay_pipeline_20260506_141320.log",
+      "D  outputs/logs/replay_pipeline_20260506_141759.log",
+      "D  outputs/logs/replay_pipeline_20260508_113204.log",
+      "D  outputs/logs/replay_pipeline_20260508_114941.log",
+      "D  outputs/logs/replay_pipeline_20260510_163240.log",
+      "D  outputs/logs/replay_pipeline_20260510_164254.log",
+      "D  outputs/logs/replay_pipeline_20260510_170750.log",
+      "D  outputs/logs/replay_pipeline_20260510_171011.log",
+      "D  outputs/logs/trace_replay_20260514_170515.log",
+      "D  outputs/logs/trace_replay_20260515_094709.log",
+      "D  outputs/logs/trace_replay_20260515_094815.log",
+      "D  outputs/logs/trace_replay_20260515_095513.log",
+      "D  outputs/logs/trace_replay_20260515_100058.log",
+      "D  outputs/logs/trace_replay_20260515_101244.log",
+      "D  outputs/logs/trace_replay_20260515_101338.log",
+      "D  outputs/logs/trace_replay_20260515_101522.log",
+      "D  outputs/logs/trace_replay_20260515_101707.log",
+      "D  outputs/logs/train_20260408_093452.log",
+      " M outputs/readme.md",
+      "?? experiments/model/temporal_2022/",
+      "?? experiments/model/temporal_2022_replay_recommend_100/",
+      "?? experiments/model/temporal_2022_replay_smoke/",
+      "?? outputs/logs/",
+      "?? outputs/post/",
+      "?? outputs/pre/",
+      "?? outputs/stream/"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/extract_online.py --run-id temporal_2022_replay_recommend_100 --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --checkpoint /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/sasrec_cl.pt --item2idx /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/item2idx.json --state-dir /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/user_states --output /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/online_embeddings.npz --event-log /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/online_embedding_events.jsonl --event-json '{\"userId\": 93249, \"movieId\": 2959, \"rating\": 4.5, \"ratedAt\": \"2022-01-01T00:06:43Z\"}' --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/replay.sqlite --event-id 14849125",
+      "log": {
+        "path": "outputs/logs/extract_online_20260515_183736.log",
+        "exists": false,
+        "size_bytes": 802,
+        "mtime_ns": 1778836639178713487
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862000000000
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962000000000
+        },
+        "checkpoint": {
+          "path": "outputs/pre/temporal_2022/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 26873918,
+          "mtime_ns": 1778832179654145218,
+          "sha256": "87d2105720b63a673bac3a896fbd539bc069671608cf1492c63cbdd772ed38a6"
+        },
+        "item2idx": {
+          "path": "outputs/pre/temporal_2022/item2idx.json",
+          "exists": true,
+          "size_bytes": 794099,
+          "mtime_ns": 1778832179691145058,
+          "sha256": "d7904e9e1c9ab445677c56722d30fcada56162c3b12491528f71faeeb826eb0e"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775554755050862757,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/post/temporal_2022_recommend_100/user_states",
+        "output": "outputs/post/temporal_2022_recommend_100/online_embeddings.npz",
+        "event_log": "outputs/post/temporal_2022_recommend_100/online_embedding_events.jsonl",
+        "bootstrap_user_id": null,
+        "event_jsonl": null,
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 256
+      },
+      "runtime": {
+        "device": "cuda:0",
+        "device_label": "cuda:0 (NVIDIA GeForce RTX 3090)",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 48987,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 93249,
+            "statePath": "outputs/post/temporal_2022_recommend_100/user_states/93249.json",
+            "rawEventCount": 5,
+            "positiveEventCount": 4,
+            "activeEventCount": 4,
+            "droppedEventCount": 1,
+            "skippedUnknownItems": 0,
+            "ratingMean": 4.9,
+            "ratingStd": 0.2,
+            "positiveReason": "zscore",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 4
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/post/temporal_2022_recommend_100/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 5242,
+          "mtime_ns": 1778837858524654788,
+          "sha256": "c6ec5fd2f989085823b7144310c61d6113d47a4c4cc305588e10987c5f0b5229"
+        },
+        "event_log": {
+          "path": "outputs/post/temporal_2022_recommend_100/online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 18651,
+          "mtime_ns": 1778837858542654585,
+          "sha256": "965213f869268c347b3e9914ef85ab131525c688c781d652a4685e6f26d29d38"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022_replay_recommend_100/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 30409,
+          "mtime_ns": 1778837858542654585,
+          "sha256": "a31a922dc82e3fb7974b345bad974a225f560dfb0a4384909c4b5a874f8bf24b"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 1,
+        "embedding_rows": 4,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 4,
+        "nan_embedding_rows": 0,
+        "max_history_len": 4,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true
+      }
+    },
+    "interest_assign": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/interest_assign.py --run-id temporal_2022_replay_recommend_100 --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/online_embeddings.npz --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/interest_states --assignments /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/interest_assignments.jsonl --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 20 --assign-trigger-count 50 --outlier-trigger-count 10 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/replay.sqlite --event-id 14849125",
+      "log": {
+        "path": "outputs/logs/interest_assign_20260515_183739.log",
+        "exists": false,
+        "size_bytes": 966,
+        "mtime_ns": 1778836636579718538
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/post/temporal_2022_recommend_100/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 5242,
+          "mtime_ns": 1778837858524654788
+        }
+      },
+      "assignment_config": {
+        "interest_state_dir": "outputs/post/temporal_2022_recommend_100/interest_states",
+        "assignments": "outputs/post/temporal_2022_recommend_100/interest_assignments.jsonl",
+        "refit_requests": "outputs/post/temporal_2022_recommend_100/refit_requests.jsonl",
+        "similarity_threshold": 0.2,
+        "refit_min_events": 20,
+        "assign_trigger_count": 50,
+        "outlier_trigger_count": 10
+      },
+      "data_summary": {
+        "active_embedding_rows": 4,
+        "processed_users": 1,
+        "user_summaries": [
+          {
+            "userId": 93249,
+            "inputRows": 4,
+            "interestCount": 0,
+            "pendingBefore": 4,
+            "pendingAfter": 4,
+            "processedBefore": 0,
+            "processedAfter": 0,
+            "refitRequired": false,
+            "refitReasons": [],
+            "statuses": {
+              "pending_no_interest": 4
+            },
+            "statePath": "outputs/post/temporal_2022_recommend_100/interest_states/93249.json"
+          }
+        ]
+      },
+      "outputs": {
+        "assignments": {
+          "path": "outputs/post/temporal_2022_recommend_100/interest_assignments.jsonl",
+          "exists": true,
+          "size_bytes": 1589950,
+          "mtime_ns": 1778837859627642331,
+          "sha256": "2be3afcc00618598e5264faf6ddba04019e913ac9bc061b1305d33e55bb02e4d"
+        },
+        "refit_requests": {
+          "path": "outputs/post/temporal_2022_recommend_100/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 1982,
+          "mtime_ns": 1778837785128510030,
+          "sha256": "98ee683ac30ecc5160859c79bcb1359430ecb6097741162275c8523bcb88b267"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022_replay_recommend_100/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 30634,
+          "mtime_ns": 1778837859636642230,
+          "sha256": "d8c8caebf5ca6afc37d34b3f31a931ad4f33fa244e66bd16c7c47ed7b7f0628f"
+        }
+      },
+      "summary_metrics": {
+        "stage": "interest_assign",
+        "input_rows": 4,
+        "processed_users": 1,
+        "assignment_records": 4,
+        "refit_requests": 0,
+        "status_counts": {
+          "pending_no_interest": 4,
+          "pending_refit_required": 13,
+          "already_processed": 290,
+          "assigned": 1
+        },
+        "embedding_dim": 128
+      }
+    },
+    "cluster_refit": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/cluster_refit.py --run-id temporal_2022_replay_recommend_100 --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/online_embeddings.npz --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/refit_requests.jsonl --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/interest_states --refit-events /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/refit_events.jsonl --cluster-backend auto --refit-min-events 20 --min-cluster-size 10 --cluster-dim 10 --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --user-id 141319 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/replay.sqlite --event-id 22502791",
+      "log": {
+        "path": "outputs/logs/cluster_refit_20260515_183626.log",
+        "exists": false,
+        "size_bytes": 1120,
+        "mtime_ns": 1778836619884750785
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/post/temporal_2022_recommend_100/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 24058,
+          "mtime_ns": 1778837784010523479
+        },
+        "refit_requests": {
+          "path": "outputs/post/temporal_2022_recommend_100/refit_requests.jsonl",
+          "exists": true,
+          "size_bytes": 1982,
+          "mtime_ns": 1778837785128510030
+        }
+      },
+      "refit_config": {
+        "interest_state_dir": "outputs/post/temporal_2022_recommend_100/interest_states",
+        "refit_events": "outputs/post/temporal_2022_recommend_100/refit_events.jsonl",
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "refit_min_events": 20,
+        "min_cluster_size": 10,
+        "cluster_dim": 10,
+        "random_state": 42,
+        "user_id": 141319,
+        "limit_users": null
+      },
+      "data_summary": {
+        "active_embedding_rows": 32,
+        "active_embedding_users": 1,
+        "user_summaries": [
+          {
+            "recordedAt": "2026-05-15T18:36:28+09:00",
+            "runId": "temporal_2022_replay_recommend_100",
+            "userId": 141319,
+            "request": {
+              "recordedAt": "2026-05-15T18:36:25+09:00",
+              "runId": "temporal_2022_replay_recommend_100",
+              "userId": 141319,
+              "status": "open",
+              "reasons": [
+                "no_interest_pending_events"
+              ],
+              "pendingRawEventCount": 32,
+              "assignedSinceLastRefit": 0,
+              "outlierSinceLastRefit": 0,
+              "refitMinEvents": 20,
+              "assignTriggerCount": 50,
+              "outlierTriggerCount": 10
+            },
+            "statePath": "outputs/post/temporal_2022_recommend_100/interest_states/141319.json",
+            "backendRequested": "auto",
+            "backendSelected": "gpu",
+            "backendFallbackReason": null,
+            "activeEmbeddingRows": 32,
+            "status": "closed",
+            "refitElapsedSec": 0.2010047435760498,
+            "interestCount": 1,
+            "processedRawEventCount": 32,
+            "clusterSummary": {
+              "nClusters": 0,
+              "interestCount": 1,
+              "noiseCount": 32,
+              "fallbackUsed": true,
+              "labelCounts": {
+                "-1": 32
+              },
+              "clusterSizes": {},
+              "reducedDim": 10,
+              "nNeighbors": 15
+            }
+          }
+        ]
+      },
+      "outputs": {
+        "refit_events": {
+          "path": "outputs/post/temporal_2022_recommend_100/refit_events.jsonl",
+          "exists": true,
+          "size_bytes": 6287,
+          "mtime_ns": 1778837788572468684,
+          "sha256": "8becd8aa78ce5ebe7dfdedb3fbd3ea298e1a4d0eeaae54d3524e8a359ec00446"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022_replay_recommend_100/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 19914,
+          "mtime_ns": 1778837788572468684,
+          "sha256": "fb198b18b4adeb34b3c0ff6d6247fa9639f9eea965a4abcfb15fc604e1557337"
+        }
+      },
+      "summary_metrics": {
+        "stage": "cluster_refit",
+        "open_requests": 1,
+        "selected_requests": 1,
+        "refit_count": 1,
+        "skipped_count": 0,
+        "cluster_backend_requested": "auto",
+        "cluster_backend_selected": "gpu",
+        "backend_fallback_reason": null,
+        "elapsed_sec": 0.22672724723815918,
+        "embedding_dim": 128
+      }
+    },
+    "recommend_online": {
+      "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/recommend_online.py --run-id temporal_2022_replay_recommend_100 --interest-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/interest_states --user-state-dir /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/user_states --checkpoint /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/sasrec_cl.pt --item2idx /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/item2idx.json --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --output-jsonl /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/stream_recommendations.jsonl --top-k 20 --user-id 93249 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/replay.sqlite --event-id 14849124",
+      "log": {
+        "path": "outputs/logs/recommend_online_20260515_183735.log",
+        "exists": false,
+        "size_bytes": 126,
+        "mtime_ns": 1778836637673716412
+      },
+      "inputs": {
+        "checkpoint": {
+          "path": "outputs/pre/temporal_2022/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 26873918,
+          "mtime_ns": 1778832179654145218
+        },
+        "item2idx": {
+          "path": "outputs/pre/temporal_2022/item2idx.json",
+          "exists": true,
+          "size_bytes": 794099,
+          "mtime_ns": 1778832179691145058
+        }
+      },
+      "recommend_config": {
+        "interest_state_dir": "/home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/interest_states",
+        "user_state_dir": "/home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/user_states",
+        "output_jsonl": "/home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_recommend_100/stream_recommendations.jsonl",
+        "top_k": 20,
+        "user_ids": [
+          93249
+        ],
+        "include_seen": false,
+        "normalize": false
+      },
+      "data_summary": {
+        "target_users": 1,
+        "eligible_users": 0,
+        "skipped_users": 1,
+        "skip_reasons": {
+          "93249": "empty_interests"
+        }
+      },
+      "outputs": {
+        "stream_recommendations": {
+          "path": "outputs/post/temporal_2022_recommend_100/stream_recommendations.jsonl",
+          "exists": true,
+          "size_bytes": 167007,
+          "mtime_ns": 1778837840385861256,
+          "sha256": "d01d87e73ecb5fa2b1eba427a73743d090d59fccac6b22e789d310387ce0a6a1"
+        },
+        "metrics": {
+          "path": "experiments/model/temporal_2022_replay_recommend_100/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 30092,
+          "mtime_ns": 1778837855713686583,
+          "sha256": "6093afcef11f9beb68fec3803463ead1564e59fcd96d865ded0b973f05f40367"
+        }
+      },
+      "summary_metrics": {
+        "stage": "recommend_online",
+        "target_users": 1,
+        "eligible_users": 0,
+        "skipped_users": 1,
+        "users_with_recommendations": 0,
+        "recommendation_rows": 0,
+        "candidate_items": 0,
+        "top_k": 20,
+        "include_seen": false,
+        "normalize": false
+      }
+    }
+  },
+  "updated_at": "2026-05-15T18:37:39+09:00"
+}
