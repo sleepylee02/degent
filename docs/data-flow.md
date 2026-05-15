@@ -52,6 +52,7 @@ data/**/raw/
         -> replay/bin/rating_replay
         -> outputs/stream/replay_demo/replay_input_events.jsonl
         -> python3 -m model.stream.replay_pipeline --speed N
+        -> outputs/stream/replay_demo/replay.sqlite
         -> outputs/stream/replay_demo/ingress_events.jsonl
         -> outputs/stream/replay_demo/replay_summary.json
         -> outputs/stream/replay_demo/replay_events.jsonl
@@ -185,6 +186,7 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 - `outputs/stream/refit_events.jsonl`
 - `outputs/stream/stream_recommendations.jsonl`
 - `outputs/stream/replay_demo/replay_input_events.jsonl`
+- `outputs/stream/replay_demo/replay.sqlite`
 - `outputs/stream/replay_demo/ingress_events.jsonl`
 - `outputs/stream/replay_demo/replay_summary.json`
 - `outputs/stream/replay_demo/replay_events.jsonl`
@@ -213,7 +215,7 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 
 `outputs/stream/stream_recommendations.jsonl`은 current streaming interest state에서 생성한 top-K 추천 결과다. Trace replay에서 `--recommend`를 사용하면 같은 추천 결과가 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 격리된다.
 
-Trace replay artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths`가 있으면 해당 경로를 우선 사용한다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+Trace replay artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Replay runtime state, payload, metadata, stage metric, refit lifecycle은 `replay.sqlite`에 기록된다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고 DB에는 metadata와 row index를 남긴다. Dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths.replayDb`가 있으면 SQLite를 우선 사용한다. 기존 JSONL/JSON artifact는 fallback/debug 경로다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 7. Dashboard input
 
@@ -236,6 +238,7 @@ Cluster explorer 입력 파일은 `dashboard/README.md`의 입력 스키마를 �
 Replay monitor 입력은 trace replay artifact다.
 
 - `outputs/stream/replay_demo/replay_summary.json`
+- `outputs/stream/replay_demo/replay.sqlite`
 - `outputs/stream/replay_demo/ingress_events.jsonl`
 - `outputs/stream/replay_demo/replay_events.jsonl`
 - `outputs/stream/replay_demo/interest_assignments.jsonl`

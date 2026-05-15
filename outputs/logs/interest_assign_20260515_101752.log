@@ -1,0 +1,9 @@
+2026-05-15 10:17:52 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/interest_assign_20260515_101752.log
+2026-05-15 10:17:52 | INFO | Experiment run id: sqlite_runtime_e2e_smoke
+2026-05-15 10:17:52 | INFO | Experiment metadata directory: /home/sleepylee/Desktop/1proj/a.live/degent/experiments/model/sqlite_runtime_e2e_smoke
+2026-05-15 10:17:52 | INFO | Online embeddings input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz
+2026-05-15 10:17:52 | INFO | Interest state directory: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states
+2026-05-15 10:17:52 | INFO | Assignments output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_assignments.jsonl
+2026-05-15 10:17:52 | INFO | Refit requests output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/refit_requests.jsonl
+2026-05-15 10:17:53 | INFO | Loaded active online embedding rows: 3 users=1 dim=128
+2026-05-15 10:17:53 | INFO | Processed interest state: {'userId': 28, 'inputRows': 3, 'interestCount': 0, 'pendingBefore': 3, 'pendingAfter': 4, 'processedBefore': 0, 'processedAfter': 0, 'refitRequired': True, 'refitReasons': ['no_interest_pending_events'], 'statuses': {'pending_refit_required': 3}, 'statePath': 'outputs/stream/replay_demo/interest_states/28.json'}

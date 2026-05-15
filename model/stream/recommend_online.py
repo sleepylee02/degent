@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+import model.stream.runtime_store as runtime_store
 from model.batch.recommend import (
     build_candidate_index,
     load_item2idx,
@@ -60,6 +61,8 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use cosine-normalized dot product instead of raw dot product.",
     )
+    parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
+    parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
     return parser.parse_args()
 
 
@@ -167,6 +170,9 @@ if __name__ == "__main__":
     item2idx_path = resolve_path(ROOT, args.item2idx)
     movies_path = resolve_path(ROOT, args.movies)
     output_jsonl_path = resolve_path(ROOT, args.output_jsonl)
+    runtime_db_path = None if args.runtime_db is None else resolve_path(ROOT, args.runtime_db)
+    if runtime_db_path is not None:
+        runtime_store.init_store(runtime_db_path)
 
     if args.top_k <= 0:
         raise ValueError("--top-k must be positive")
@@ -229,7 +235,62 @@ if __name__ == "__main__":
 
     eligible_users = sorted(interests_by_user)
     if not eligible_users:
-        raise SystemExit("No users with valid interest vectors. Run cluster_refit first.")
+        append_jsonl(output_jsonl_path, [])
+        if runtime_db_path is not None:
+            runtime_store.record_recommendations(
+                runtime_db_path,
+                run_id=run_id,
+                records=[],
+                event_id=args.event_id,
+                top_k=args.top_k,
+                normalize=args.normalize,
+                include_seen=args.include_seen,
+            )
+        metric_record = {
+            "stage": "recommend_online",
+            "target_users": len(target_user_ids),
+            "eligible_users": 0,
+            "skipped_users": len(skip_reasons),
+            "users_with_recommendations": 0,
+            "recommendation_rows": 0,
+            "candidate_items": 0,
+            "top_k": args.top_k,
+            "include_seen": args.include_seen,
+            "normalize": args.normalize,
+        }
+        append_metric(run_dir, metric_record)
+        update_experiment_manifest(
+            run_dir,
+            {
+                "stages": {
+                    "recommend_online": {
+                        "data_summary": {
+                            "target_users": len(target_user_ids),
+                            "eligible_users": 0,
+                            "skipped_users": len(skip_reasons),
+                            "skip_reasons": {str(uid): reason for uid, reason in skip_reasons.items()},
+                        },
+                        "outputs": {
+                            "stream_recommendations": file_metadata(
+                                output_jsonl_path,
+                                root=ROOT,
+                                include_sha256=True,
+                                sha256_limit_bytes=hash_limit_bytes,
+                            ),
+                            "metrics": file_metadata(
+                                run_dir / "metrics.jsonl",
+                                root=ROOT,
+                                include_sha256=True,
+                                sha256_limit_bytes=hash_limit_bytes,
+                            ),
+                        },
+                        "summary_metrics": metric_record,
+                    }
+                },
+            },
+        )
+        logger.info("No users with valid interest vectors. Saved 0 recommendation rows → %s", output_jsonl_path)
+        raise SystemExit(0)
 
     item2idx, idx2item = load_item2idx(item2idx_path)
     item_embeddings = load_item_embeddings(checkpoint_path, normalize=args.normalize)
@@ -297,6 +358,16 @@ if __name__ == "__main__":
         )
 
     append_jsonl(output_jsonl_path, output_records)
+    if runtime_db_path is not None:
+        runtime_store.record_recommendations(
+            runtime_db_path,
+            run_id=run_id,
+            records=output_records,
+            event_id=args.event_id,
+            top_k=args.top_k,
+            normalize=args.normalize,
+            include_seen=args.include_seen,
+        )
     logger.info("Saved %d recommendation rows → %s", len(output_records), output_jsonl_path)
 
     metric_record = {

@@ -13,6 +13,24 @@
 
 ## Done
 
+- Temporal Cutoff 2020 Pipeline Deep Dive
+  - owner: sleepylee / LLM
+  - plan: `plan/done/temporal_cutoff_2020_pipeline_deep_dive.md`
+  - files: `eda/processed/temporal_cutoff_2020_deep_dive.py`, `eda/processed/outputs/`, `todo.md`
+  - status: 2020년 전후 T 후보를 현재 train/canonical/stream/refit 파이프라인 기준으로 재분석. `q90_2020=2020-10-29T23:59:59Z` 기준 post 3,190,916 events, train users 13,273, canonical users 545, item vocab 44,342, known item 92.34%, online rows/event proxy 254. `git diff --check` 통과.
+
+- SQLite Runtime State Store
+  - owner: sleepylee / LLM
+  - plan: `plan/done/sqlite_runtime_state_store.md`
+  - files: `model/stream/runtime_store.py`, `model/stream/runtime_report.py`, `model/stream/trace_replay.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/common/cluster.py`, `dashboard/cluster_dashboard.py`, `docs/`, `README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: `replay.sqlite` runtime/state store, stream stage DB dual-write, dashboard SQLite reader, runtime report 완료. 최종 `sqlite_runtime_e2e_smoke`에서 5/5 events, refit closed/skipped 1/2, recommendation rows 5, dashboard SQLite reader, runtime_report, `git diff --check` 확인.
+
+- Temporal Cutoff T Candidate EDA
+  - owner: sleepylee / LLM
+  - plan: `plan/done/temporal_cutoff_t_candidate_eda.md`
+  - files: `eda/processed/temporal_cutoff_eda.py`, `eda/processed/outputs/`, `todo.md`
+  - status: focused EDA script/report 생성 완료. 1차 추천 T 후보는 stress `2018-10-14T23:59:59Z`, balanced `2019-10-29T23:59:59Z`, conservative `2020-10-29T23:59:59Z`. `git diff --check` 통과.
+
 - Trace Replay Replacement
   - owner: sleepylee / LLM
   - plan: `plan/done/trace_replay_replacement.md`

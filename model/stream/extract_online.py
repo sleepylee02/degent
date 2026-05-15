@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import model.stream.runtime_store as runtime_store
 from model.common.canonical import build_canonical_item_window
 from model.common.dataset import build_genre_map
 from model.common.runtime import (
@@ -61,6 +62,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state-dir", type=Path, default=Path("outputs/stream/user_states"))
     parser.add_argument("--output", type=Path, default=Path("outputs/stream/online_embeddings.npz"))
     parser.add_argument("--event-log", type=Path, default=Path("outputs/stream/online_embedding_events.jsonl"))
+    parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
+    parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
     parser.add_argument("--bootstrap-user-id", type=int, default=None)
     parser.add_argument("--event-json", type=str, default=None, help="Single event JSON with userId/movieId/rating/ratedAt.")
     parser.add_argument("--event-jsonl", type=Path, default=None, help="JSONL events with userId/movieId/rating/ratedAt.")
@@ -359,8 +362,11 @@ if __name__ == "__main__":
     state_dir = resolve_path(ROOT, args.state_dir)
     output_path = resolve_path(ROOT, args.output)
     event_log_path = resolve_path(ROOT, args.event_log)
+    runtime_db_path = None if args.runtime_db is None else resolve_path(ROOT, args.runtime_db)
     compare_canonical_path = None if args.compare_canonical is None else resolve_path(ROOT, args.compare_canonical)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if runtime_db_path is not None:
+        runtime_store.init_store(runtime_db_path)
 
     seq_len = args.seq_len or int(train_model_config.get("max_len", 100))
     d_model = args.d_model or int(train_model_config.get("d_model", 128))
@@ -523,6 +529,13 @@ if __name__ == "__main__":
     state_summaries = []
     for user_id, state in sorted(states.items()):
         state_path = save_user_state(state, state_path_for_user(state_dir, user_id))
+        if runtime_db_path is not None:
+            runtime_store.record_user_state(
+                runtime_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=str(state_path),
+            )
         arrays = extract_state_embeddings(
             state,
             model,
@@ -556,6 +569,15 @@ if __name__ == "__main__":
 
     np.savez(output_path, **online_arrays)
     logger.info("Saved online embeddings: %s", output_path)
+    if runtime_db_path is not None:
+        runtime_store.record_embedding_snapshot(
+            runtime_db_path,
+            run_id=run_id,
+            kind="online_embeddings",
+            path=str(output_path),
+            arrays=online_arrays,
+            scope="touched_users",
+        )
 
     compare_summary = None
     if compare_canonical_path is not None:

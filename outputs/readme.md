@@ -23,6 +23,7 @@ Streaming Phase 3 산출물은 `outputs/stream/` 아래에 둔다.
 Streaming trace replay demo 산출물은 `outputs/stream/replay_demo/` 아래에 격리한다. 이 경로는 기본 Phase 3~4-1 산출물을 덮어쓰지 않고, replay dashboard가 읽는 파일 계약이다.
 
 - `outputs/stream/replay_demo/replay_input_events.jsonl`: timestamp-sorted replay input event stream
+- `outputs/stream/replay_demo/replay.sqlite`: replay-scoped runtime/state/control-plane store. event progress, stage attempts, user/interest payload, assignment, refit lifecycle, recommendation metadata, embedding snapshot index를 기록
 - `outputs/stream/replay_demo/ingress_events.jsonl`: trace-clock event emit schedule/lag 로그
 - `outputs/stream/replay_demo/replay_events.jsonl`: event-level replay progress, processing/end-to-end lag, assignment/refit count 로그
 - `outputs/stream/replay_demo/replay_summary.json`: dashboard stable entrypoint. speed, trace span, scheduled span, target/actual throughput을 포함
@@ -35,4 +36,4 @@ Streaming trace replay demo 산출물은 `outputs/stream/replay_demo/` 아래에
 - `outputs/stream/replay_demo/refit_events.jsonl`: replay-scoped refit close/skip 결과 로그
 - `outputs/stream/replay_demo/stream_recommendations.jsonl`: `replay_pipeline --recommend` 사용 시 replay-scoped top-K 추천 결과 로그
 
-Replay dashboard는 위 파일을 읽기만 하며 생성/수정/삭제하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+Replay dashboard는 `replay_summary.json`의 `paths.replayDb`가 있으면 SQLite를 우선 읽고, 기존 JSONL/JSON 파일은 fallback/debug 경로로 사용한다. 위 파일을 읽기만 하며 생성/수정/삭제하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.

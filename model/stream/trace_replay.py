@@ -13,6 +13,7 @@ import time
 
 import numpy as np
 
+import model.stream.runtime_store as runtime_store
 from model.common.runtime import (
     append_metric,
     command_line,
@@ -39,6 +40,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default=None)
     parser.add_argument("--output-root", type=Path, default=Path("outputs/stream/replay_demo"))
     parser.add_argument("--input-events", type=Path, default=None)
+    parser.add_argument(
+        "--runtime-db",
+        type=Path,
+        default=None,
+        help="SQLite runtime/state store path. Defaults to <output-root>/replay.sqlite.",
+    )
     parser.add_argument("--reset-output", action="store_true", help="Remove output-root before the trace replay run.")
     parser.add_argument("--max-events", type=int, default=None)
     parser.add_argument(
@@ -146,9 +153,40 @@ def read_jsonl_slice(path: Path, start: int) -> list[dict[str, Any]]:
     return read_jsonl(path)[start:]
 
 
-def run_command(cmd: list[str], *, root: Path, logger: Any) -> None:
+def run_command(
+    cmd: list[str],
+    *,
+    root: Path,
+    logger: Any,
+    runtime_db: Path | None = None,
+    run_id: str | None = None,
+    event_id: int | None = None,
+    stage: str | None = None,
+) -> None:
     logger.info("Running: %s", " ".join(cmd))
-    subprocess.run(cmd, cwd=root, check=True)
+    attempt_id = None
+    if runtime_db is not None and run_id is not None and stage is not None:
+        attempt_id = runtime_store.start_stage_attempt(
+            runtime_db,
+            run_id=run_id,
+            event_id=event_id,
+            stage=stage,
+            command=cmd,
+        )
+    try:
+        subprocess.run(cmd, cwd=root, check=True)
+    except Exception as exc:
+        if runtime_db is not None and attempt_id is not None:
+            runtime_store.finish_stage_attempt(
+                runtime_db,
+                attempt_id=attempt_id,
+                status="failed",
+                error_type=exc.__class__.__name__,
+                error_message=str(exc),
+            )
+        raise
+    if runtime_db is not None and attempt_id is not None:
+        runtime_store.finish_stage_attempt(runtime_db, attempt_id=attempt_id, status="completed")
 
 
 def generated_paths(output_root: Path) -> dict[str, Path]:
@@ -157,6 +195,7 @@ def generated_paths(output_root: Path) -> dict[str, Path]:
         "ingress_events": output_root / "ingress_events.jsonl",
         "replay_events": output_root / "replay_events.jsonl",
         "replay_summary": output_root / "replay_summary.json",
+        "replay_db": output_root / "replay.sqlite",
         "user_state_dir": output_root / "user_states",
         "interest_state_dir": output_root / "interest_states",
         "online_embeddings": output_root / "online_embeddings.npz",
@@ -279,6 +318,7 @@ def build_summary(
             "replayInputEvents": relative_or_absolute(root, paths["replay_input_events"]),
             "ingressEvents": relative_or_absolute(root, paths["ingress_events"]),
             "replayEvents": relative_or_absolute(root, paths["replay_events"]),
+            "replayDb": relative_or_absolute(root, paths["replay_db"]),
             "onlineEmbeddings": relative_or_absolute(root, paths["online_embeddings"]),
             "onlineEmbeddingEvents": relative_or_absolute(root, paths["online_embedding_events"]),
             "interestAssignments": relative_or_absolute(root, paths["interest_assignments"]),
@@ -319,10 +359,15 @@ def main() -> None:
 
     paths = generated_paths(output_root)
     paths["replay_input_events"] = input_events_path
+    runtime_db_path = resolve_path(root, args.runtime_db) if args.runtime_db else paths["replay_db"]
+    assert runtime_db_path is not None
+    paths["replay_db"] = runtime_db_path
+    runtime_store.init_store(runtime_db_path)
 
     logger.info("Experiment run id: %s", run_id)
     logger.info("Output root: %s", output_root)
     logger.info("Replay input events: %s", input_events_path)
+    logger.info("Runtime DB: %s", runtime_db_path)
     logger.info("Trace replay speed: %.6g", speed)
 
     if args.generate_events:
@@ -364,6 +409,24 @@ def main() -> None:
     end_to_end_lags: list[float] = []
     unique_users_seen: set[int] = set()
     processed_events = 0
+    current_event_id: int | None = None
+
+    runtime_store.upsert_run(
+        runtime_db_path,
+        run_id=run_id,
+        status="running",
+        speed=speed,
+        output_root=relative_or_absolute(root, output_root),
+        summary_path=relative_or_absolute(root, paths["replay_summary"]),
+        started_at=started_at,
+    )
+    runtime_store.record_artifact(
+        runtime_db_path,
+        run_id=run_id,
+        kind="replay_input_events",
+        path=relative_or_absolute(root, input_events_path),
+        row_count=len(events),
+    )
 
     append_jsonl(
         paths["replay_events"],
@@ -385,6 +448,7 @@ def main() -> None:
 
     try:
         for ordinal, event in enumerate(events):
+            current_event_id = int(event["eventId"])
             event_trace_ts = float(event["ratedAtTs"])
             scheduled_offset_sec = max(0.0, (event_trace_ts - trace_start_ts) / speed)
             scheduled_monotonic = wall_start_mono + scheduled_offset_sec
@@ -414,9 +478,27 @@ def main() -> None:
                 "behindSchedule": behind_schedule,
             }
             append_jsonl(paths["ingress_events"], ingress_record)
+            runtime_store.record_input_event(runtime_db_path, run_id=run_id, event=ingress_record)
+            runtime_store.record_event_progress(
+                runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                status="emitted",
+                scheduled_at=format_dt(scheduled_at_dt),
+                emitted_at=format_dt(emitted_dt),
+                injector_lag_sec=injector_lag_sec,
+                behind_schedule=behind_schedule,
+            )
 
             event_start = time.time()
             processing_started_dt = datetime.now().astimezone()
+            runtime_store.record_event_progress(
+                runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                status="processing",
+                processing_started_at=format_dt(processing_started_dt),
+            )
             before_assignment_lines = count_jsonl(paths["interest_assignments"])
             before_refit_request_lines = count_jsonl(paths["refit_requests"])
             before_refit_event_lines = count_jsonl(paths["refit_events"])
@@ -449,9 +531,17 @@ def main() -> None:
                     str(args.z_threshold),
                     "--batch-size",
                     str(args.online_batch_size),
+                    "--runtime-db",
+                    str(runtime_db_path),
+                    "--event-id",
+                    str(current_event_id),
                 ],
                 root=root,
                 logger=logger,
+                runtime_db=runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                stage="extract_online",
             )
 
             active_rows = npz_row_count(paths["online_embeddings"])
@@ -478,9 +568,17 @@ def main() -> None:
                     str(args.assign_trigger_count),
                     "--outlier-trigger-count",
                     str(args.outlier_trigger_count),
+                    "--runtime-db",
+                    str(runtime_db_path),
+                    "--event-id",
+                    str(current_event_id),
                 ],
                 root=root,
                 logger=logger,
+                runtime_db=runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                stage="interest_assign",
             )
 
             new_assignment_records = read_jsonl_slice(paths["interest_assignments"], before_assignment_lines)
@@ -516,9 +614,17 @@ def main() -> None:
                             str(resolve_path(root, args.movies)),
                             "--user-id",
                             str(user_id),
+                            "--runtime-db",
+                            str(runtime_db_path),
+                            "--event-id",
+                            str(current_event_id),
                         ],
                         root=root,
                         logger=logger,
+                        runtime_db=runtime_db_path,
+                        run_id=run_id,
+                        event_id=current_event_id,
+                        stage="cluster_refit",
                     )
 
             before_recommend_lines = count_jsonl(paths["stream_recommendations"])
@@ -545,10 +651,22 @@ def main() -> None:
                     str(args.recommend_top_k),
                     "--user-id",
                     str(int(event["userId"])),
+                    "--runtime-db",
+                    str(runtime_db_path),
+                    "--event-id",
+                    str(current_event_id),
                 ]
                 if args.recommend_normalize:
                     recommend_cmd.append("--normalize")
-                run_command(recommend_cmd, root=root, logger=logger)
+                run_command(
+                    recommend_cmd,
+                    root=root,
+                    logger=logger,
+                    runtime_db=runtime_db_path,
+                    run_id=run_id,
+                    event_id=current_event_id,
+                    stage="recommend_online",
+                )
 
             processed_dt = datetime.now().astimezone()
             processed_mono = time.monotonic()
@@ -584,6 +702,29 @@ def main() -> None:
             totals["maxProcessingLagSec"] = processing_summary["max"]
             totals["meanEndToEndLagSec"] = e2e_summary["mean"]
             totals["maxEndToEndLagSec"] = e2e_summary["max"]
+            runtime_store.record_event_progress(
+                runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                status="completed",
+                processed_at=format_dt(processed_dt),
+                processing_lag_sec=processing_lag_sec,
+                end_to_end_lag_sec=end_to_end_lag_sec,
+                behind_schedule=behind_schedule,
+            )
+            runtime_store.record_runtime_metric(
+                runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                queue_depth=0,
+                refit_backlog=totals["refitRequestsOpened"] - totals["refitClosed"] - totals["refitSkipped"],
+                throughput_events_per_sec=processed_events / max(time.time() - start_time, 1e-9),
+                notes={
+                    "activeEmbeddingRows": active_rows,
+                    "assignmentStatusCounts": dict(assignment_status_counts),
+                    "recommendationRows": new_recommend_rows,
+                },
+            )
 
             append_jsonl(
                 paths["replay_events"],
@@ -644,6 +785,15 @@ def main() -> None:
             root=root,
         )
         write_json(paths["replay_summary"], summary)
+        runtime_store.upsert_run(
+            runtime_db_path,
+            run_id=run_id,
+            status="completed",
+            ended_at=ended_at,
+            speed=speed,
+            output_root=relative_or_absolute(root, output_root),
+            summary_path=relative_or_absolute(root, paths["replay_summary"]),
+        )
         append_jsonl(
             paths["replay_events"],
             {
@@ -676,6 +826,7 @@ def main() -> None:
                             "replay_summary": file_metadata(paths["replay_summary"], root=root, include_sha256=True),
                             "replay_events": file_metadata(paths["replay_events"], root=root, include_sha256=True),
                             "ingress_events": file_metadata(paths["ingress_events"], root=root, include_sha256=True),
+                            "replay_db": file_metadata(paths["replay_db"], root=root, include_sha256=True),
                         },
                         "summary_metrics": summary,
                     }
@@ -701,6 +852,14 @@ def main() -> None:
                 "error": f"{exc.__class__.__name__}: {exc}",
             },
         )
+        if current_event_id is not None:
+            runtime_store.record_event_progress(
+                runtime_db_path,
+                run_id=run_id,
+                event_id=current_event_id,
+                status="failed",
+                failed_attempts=1,
+            )
         summary = build_summary(
             run_id=run_id,
             status="failed",
@@ -721,6 +880,15 @@ def main() -> None:
         )
         summary["error"] = f"{exc.__class__.__name__}: {exc}"
         write_json(paths["replay_summary"], summary)
+        runtime_store.upsert_run(
+            runtime_db_path,
+            run_id=run_id,
+            status="failed",
+            ended_at=ended_at,
+            speed=speed,
+            output_root=relative_or_absolute(root, output_root),
+            summary_path=relative_or_absolute(root, paths["replay_summary"]),
+        )
         raise
 
 

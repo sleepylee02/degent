@@ -8,6 +8,7 @@ import json
 
 import numpy as np
 
+import model.stream.runtime_store as runtime_store
 from model.common.runtime import (
     append_metric,
     command_line,
@@ -145,6 +146,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--refit-min-events", type=int, default=20)
     parser.add_argument("--assign-trigger-count", type=int, default=50)
     parser.add_argument("--outlier-trigger-count", type=int, default=10)
+    parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
+    parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
     return parser.parse_args()
 
 
@@ -448,6 +451,9 @@ if __name__ == "__main__":
     interest_state_dir = resolve_path(ROOT, args.interest_state_dir)
     assignments_path = resolve_path(ROOT, args.assignments)
     refit_requests_path = resolve_path(ROOT, args.refit_requests)
+    runtime_db_path = None if args.runtime_db is None else resolve_path(ROOT, args.runtime_db)
+    if runtime_db_path is not None:
+        runtime_store.init_store(runtime_db_path)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
 
     logger.info("Experiment run id: %s", run_id)
@@ -516,6 +522,13 @@ if __name__ == "__main__":
             run_id=run_id,
         )
         save_interest_state(state, state_path)
+        if runtime_db_path is not None:
+            runtime_store.record_interest_state(
+                runtime_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=relative_or_absolute(ROOT, state_path),
+            )
 
         all_assignment_records.extend(assignment_records)
         if refit_request is not None:
@@ -543,6 +556,14 @@ if __name__ == "__main__":
     append_jsonl(assignments_path, all_assignment_records)
     if refit_request_records:
         append_jsonl(refit_requests_path, refit_request_records)
+    if runtime_db_path is not None:
+        runtime_store.record_assignments(
+            runtime_db_path,
+            run_id=run_id,
+            records=all_assignment_records,
+            event_id=args.event_id,
+        )
+        runtime_store.open_refit_requests(runtime_db_path, run_id=run_id, records=refit_request_records)
 
     status_counts: dict[str, int] = {}
     for record in all_assignment_records:

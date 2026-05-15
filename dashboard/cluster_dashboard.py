@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 from collections import Counter
 from pathlib import Path
@@ -25,6 +26,7 @@ NOISE_LABEL = -1
 REPLAY_PATH_KEYS = {
     "ingressEvents": "ingress_events.jsonl",
     "replayEvents": "replay_events.jsonl",
+    "replayDb": "replay.sqlite",
     "onlineEmbeddings": "online_embeddings.npz",
     "interestAssignments": "interest_assignments.jsonl",
     "refitRequests": "refit_requests.jsonl",
@@ -343,6 +345,154 @@ def records_to_frame(records: list[dict[str, Any]]) -> pd.DataFrame:
     if not records:
         return pd.DataFrame()
     return pd.json_normalize(records)
+
+
+def load_sqlite_replay_frames(db_path: Path) -> dict[str, pd.DataFrame]:
+    if not db_path.exists():
+        return {}
+
+    conn = sqlite3.connect(db_path)
+    try:
+        replay_events = pd.read_sql_query(
+            """
+            SELECT
+                ep.updated_at AS recordedAt,
+                'trace_event' AS stage,
+                ep.status AS status,
+                ie.event_id AS eventId,
+                ie.replay_order AS replayOrder,
+                ie.user_id AS userId,
+                ie.movie_id AS movieId,
+                ie.rated_at AS ratedAt,
+                ie.rated_at_ts AS ratedAtTs,
+                ep.scheduled_at AS scheduledAt,
+                ep.emitted_at AS emittedAt,
+                ep.processing_started_at AS processingStartedAt,
+                ep.processed_at AS processedAt,
+                ep.injector_lag_sec AS injectorLagSec,
+                ep.processing_lag_sec AS processingLagSec,
+                ep.end_to_end_lag_sec AS endToEndLagSec,
+                ep.behind_schedule AS behindSchedule,
+                ep.failed_attempts AS failedAttempts
+            FROM event_progress ep
+            LEFT JOIN input_events ie
+                ON ie.run_id = ep.run_id AND ie.event_id = ep.event_id
+            ORDER BY ie.replay_order, ep.event_id
+            """,
+            conn,
+        )
+        stage_attempts = pd.read_sql_query(
+            """
+            SELECT
+                started_at AS recordedAt,
+                run_id AS runId,
+                event_id AS eventId,
+                stage,
+                status,
+                latency_sec AS latencySec,
+                attempt_no AS attemptNo,
+                error_type AS errorType,
+                error_message AS errorMessage
+            FROM stage_attempts
+            ORDER BY attempt_id
+            """,
+            conn,
+        )
+        assignments = pd.read_sql_query(
+            """
+            SELECT
+                created_at AS recordedAt,
+                run_id AS runId,
+                event_id AS eventId,
+                user_id AS userId,
+                raw_event_id AS rawEventId,
+                movie_id AS movieId,
+                status,
+                interest_id AS assignedInterestId,
+                similarity,
+                already_processed AS alreadyProcessed,
+                reason
+            FROM assignments
+            ORDER BY created_at, user_id, raw_event_id
+            """,
+            conn,
+        )
+        refit_requests = pd.read_sql_query(
+            """
+            SELECT
+                opened_at AS recordedAt,
+                request_id AS requestId,
+                run_id AS runId,
+                user_id AS userId,
+                status,
+                opened_at AS openedAt,
+                running_at AS runningAt,
+                closed_at AS closedAt,
+                pending_count AS pendingRawEventCount,
+                assigned_since_last_refit AS assignedSinceLastRefit,
+                outlier_since_last_refit AS outlierSinceLastRefit,
+                attempt_count AS attemptCount,
+                superseded_by AS supersededBy,
+                error_type AS errorType,
+                error_message AS errorMessage
+            FROM refit_requests
+            ORDER BY opened_at, request_id
+            """,
+            conn,
+        )
+        refit_events = pd.read_sql_query(
+            """
+            SELECT
+                ended_at AS recordedAt,
+                request_id AS requestId,
+                run_id AS runId,
+                user_id AS userId,
+                status,
+                latency_sec AS latencySec,
+                active_embedding_rows AS activeEmbeddingRows,
+                interest_count AS interestCount,
+                backend AS backendSelected,
+                skip_reason AS reason,
+                error_type AS errorType,
+                error_message AS errorMessage
+            FROM refit_attempts
+            ORDER BY attempt_id
+            """,
+            conn,
+        )
+        recommendations = pd.read_sql_query(
+            """
+            SELECT
+                rr.run_id AS runId,
+                rr.user_id AS userId,
+                rr.rank,
+                rr.movie_id AS movieId,
+                rr.item_idx AS itemIdx,
+                rr.score,
+                rr.best_interest_id AS bestClusterId,
+                r.top_k AS topK,
+                r.normalize,
+                r.include_seen AS includeSeen
+            FROM recommendation_rows rr
+            LEFT JOIN recommendation_runs r
+                ON r.recommendation_run_id = rr.recommendation_run_id
+            ORDER BY rr.recommendation_run_id, rr.user_id, rr.rank
+            """,
+            conn,
+        )
+    except Exception:
+        return {}
+    finally:
+        conn.close()
+
+    return {
+        "replay_events": replay_events,
+        "stage_attempts": stage_attempts,
+        "assignments": assignments,
+        "refit_requests": refit_requests,
+        "refit_events": refit_events,
+        "recommendations": recommendations,
+    }
 
 
 def load_replay_recommendations(path: Path) -> pd.DataFrame:
@@ -1034,17 +1184,33 @@ def render_replay_dashboard() -> None:
     try:
         summary = load_json(summary_path)
         paths = replay_paths_from_summary(summary)
-        replay_events = records_to_frame(load_jsonl_records(paths["replayEvents"]))
-        assignments = records_to_frame(load_jsonl_records(paths["interestAssignments"]))
-        refit_requests = records_to_frame(load_jsonl_records(paths["refitRequests"]))
-        refit_events = records_to_frame(load_jsonl_records(paths["refitEvents"]))
-        recommendations = records_to_frame(load_jsonl_records(paths["streamRecommendations"]))
+        sqlite_frames = load_sqlite_replay_frames(paths["replayDb"])
+        if sqlite_frames:
+            replay_events = sqlite_frames["replay_events"]
+            stage_attempts = sqlite_frames["stage_attempts"]
+            assignments = sqlite_frames["assignments"]
+            refit_requests = sqlite_frames["refit_requests"]
+            refit_events = sqlite_frames["refit_events"]
+            recommendations = sqlite_frames["recommendations"]
+            replay_source = "SQLite runtime store"
+        else:
+            replay_events = records_to_frame(load_jsonl_records(paths["replayEvents"]))
+            stage_attempts = pd.DataFrame()
+            assignments = records_to_frame(load_jsonl_records(paths["interestAssignments"]))
+            refit_requests = records_to_frame(load_jsonl_records(paths["refitRequests"]))
+            refit_events = records_to_frame(load_jsonl_records(paths["refitEvents"]))
+            recommendations = records_to_frame(load_jsonl_records(paths["streamRecommendations"]))
+            replay_source = "JSONL fallback"
     except Exception as exc:
         st.error(f"Failed to load replay artifacts: {exc}")
         st.stop()
 
+    st.caption(f"Replay data source: {replay_source}")
     render_replay_summary(summary, paths)
     render_replay_events(replay_events, int(max_rows))
+    if not stage_attempts.empty:
+        with st.expander("Stage attempts", expanded=False):
+            st.dataframe(stage_attempts.tail(int(max_rows)), use_container_width=True, hide_index=True)
     render_assignment_refit_view(assignments, refit_requests, refit_events, int(max_rows))
     render_recommendations_view(recommendations, int(max_rows))
     render_interest_state_browser(paths["interestStateDir"])

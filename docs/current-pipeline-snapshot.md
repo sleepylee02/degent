@@ -396,25 +396,31 @@ python3 -m model.stream.replay_pipeline \
 
 Replay pipeline은 새 모델 로직을 구현하지 않는다. replay input의 `ratedAtTs`를 trace clock으로 삼고, `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed` 기준으로 event를 emit한 뒤 기존 streaming CLI를 event 단위로 호출한다.
 
+`outputs/stream/replay_demo/replay.sqlite`는 runtime state/control-plane 정본이다. Payload, state summary, assignment, refit lifecycle, stage latency, recommendation metadata, embedding snapshot row index를 SQLite에 기록한다. Checkpoint, `online_embeddings.npz`, canonical/batch embedding matrix 같은 대형 vector artifact는 파일 정본으로 유지하고 SQLite에는 metadata/index만 둔다.
+
+`python3 -m model.stream.runtime_report --db outputs/stream/replay_demo/replay.sqlite`는 이 DB를 읽어 dominant stage latency, event lag, refit lifecycle, repeated processing signal, user state progress를 markdown/JSON으로 요약한다. 이는 dashboard 입력 정본은 아니고, replay 후 문제 포인트를 빠르게 찾기 위한 read-only 분석 도구다.
+
 Event 처리 순서:
 
 1. `replay_input_events.jsonl`의 다음 event에 대해 `scheduledAt` 계산
 2. schedule이 미래면 sleep, 이미 지났으면 behind schedule로 기록
 3. `ingress_events.jsonl`에 emitted event record append
-4. `model.stream.extract_online` 호출
-5. `online_embeddings.npz` row 수 확인
-6. `model.stream.interest_assign` 호출
-7. 새로 append된 `refit_requests.jsonl` request를 읽음
-8. request user별로 `model.stream.cluster_refit` 호출
-9. `--recommend`가 있으면 event user에 대해 `model.stream.recommend_online` 호출
-10. `replay_events.jsonl`에 `stage=trace_event` progress/lag record append
-11. 전체 완료 시 `replay_summary.json` 저장
+4. `replay.sqlite`에 input/event progress 기록
+5. `model.stream.extract_online` 호출 및 user state/embedding snapshot index DB 기록
+6. `online_embeddings.npz` row 수 확인
+7. `model.stream.interest_assign` 호출 및 assignment/interest state/refit open DB 기록
+8. 새로 append된 `refit_requests.jsonl` request를 읽음
+9. request user별로 `model.stream.cluster_refit` 호출 및 refit lifecycle DB 갱신
+10. `--recommend`가 있으면 event user에 대해 `model.stream.recommend_online` 호출 및 recommendation metadata DB 기록
+11. `replay_events.jsonl`에 `stage=trace_event` progress/lag record append
+12. 전체 완료 시 `replay_summary.json` 저장
 
 주요 replay artifact:
 
 - `replay_input_events.jsonl`
 - `ingress_events.jsonl`
 - `replay_events.jsonl`
+- `replay.sqlite`
 - `replay_summary.json`
 - `user_states/{user_id}.json`
 - `online_embeddings.npz`
@@ -442,11 +448,13 @@ Replay monitor branch:
 
 ```text
 outputs/stream/replay_demo/replay_summary.json
+  -> summary.paths.replayDb
+  -> outputs/stream/replay_demo/replay.sqlite
   -> summary.paths.*
   -> dashboard/cluster_dashboard.py Replay monitor
 ```
 
-Dashboard는 replay/stream state를 만들거나 수정하지 않는다. Replay monitor는 `replay_summary.json`의 `paths` 값을 stable entrypoint로 삼고, 있으면 해당 path를 우선 사용한다.
+Dashboard는 replay/stream state를 만들거나 수정하지 않는다. Replay monitor는 `replay_summary.json`의 `paths` 값을 stable entrypoint로 삼고, `paths.replayDb`가 있으면 SQLite runtime store를 우선 사용한다. DB가 없으면 기존 JSONL artifact를 fallback으로 읽는다.
 
 ## 6. 현재 문제 포인트
 
@@ -459,21 +467,19 @@ Dashboard는 replay/stream state를 만들거나 수정하지 않는다. Replay 
 - `model.batch.recommend --interest-state-dir outputs/batch/interest_states` 지원
 - 또는 `model.batch.export_interest_vectors` 같은 변환 entrypoint 추가
 
-### P0. Refit request lifecycle이 append-only log에 의존
+### Resolved. Refit request lifecycle이 append-only log에 의존
 
-`cluster_refit`은 `refit_requests.jsonl`에서 `status=open`인 request를 읽지만, request log 자체에 closed record를 쓰지는 않는다. State와 `refit_events.jsonl`에는 닫힘이 남지만, standalone으로 `cluster_refit`을 다시 돌릴 때 오래된 open request를 다시 볼 수 있다.
+1차 SQLite runtime store 도입 후 trace replay 기준 refit lifecycle 정본은 `replay.sqlite`의 `refit_requests`와 `refit_attempts`다. `interest_assign`은 request를 `open`으로 만들고, `cluster_refit`은 `running -> closed/skipped/failed`로 갱신한다. 기존 `refit_requests.jsonl`과 `refit_events.jsonl`은 fallback/debug log로 남는다.
 
-Trace replay pipeline은 "이번 event 이후 새로 append된 request"만 처리해서 이 문제를 일부 피한다. 하지만 standalone 운용 기준으로는 request open/closed lifecycle을 더 명확히 해야 한다.
+잔여 후보:
 
-수정 후보:
+- standalone JSONL-only 운용을 계속 지원할지 결정
+- skipped 이후 재시도 정책을 `retryAfterRawEventCount` 같은 명시 필드로 분리
+- 오래된 open request를 supersede하는 정책을 더 큰 replay에서 검증
 
-- `refit_requests.jsonl`에 `closed` 또는 `superseded` event를 append
-- `cluster_refit`이 interest state의 `refitRequestOpen`도 함께 확인
-- request id를 도입해서 request와 close event를 연결
+### P1. Refit skipped 상태 처리
 
-### P0. Refit skipped 상태 처리
-
-`cluster_refit`이 active row 부족으로 `skipped`를 남기는 경우, state/request 상태가 계속 open으로 남을 수 있다. 그러면 반복 skip이나 새 request block이 발생할 수 있다.
+SQLite lifecycle 기준으로 `skipped`는 terminal 상태로 기록된다. 현재 3-event smoke에서는 active row 부족으로 `skipped=1`이 기록되고 request는 더 이상 open으로 남지 않는다. 다만 skipped를 영구 종료로 볼지, 조건부 retry 대상으로 볼지는 아직 정책화가 덜 되어 있다.
 
 수정 후보:
 
@@ -543,8 +549,8 @@ Streaming threshold, refit trigger, cluster backend, recommend option이 여러 
 
 ## 7. 바로 이어질 작업 제안
 
-1. Batch recommendation bridge를 먼저 정리한다. 현재 batch cluster 결과로 추천까지 이어지는 길이 끊겨 있으므로, `model.batch.recommend`가 JSON interest state를 읽게 하는 것이 가장 직접적이다.
-2. Refit request lifecycle을 정리한다. `open -> closed/skipped/superseded`가 request log와 state 양쪽에서 일관되게 보이게 만든다.
+1. Representative contention replay를 여러 profile로 실행한다. 예: high `--speed`, refit on/off, `--recommend`, single-user 집중 replay.
+2. `runtime_report` 결과를 기준으로 병목을 분류한다. stage latency, event lag, refit terminal status, repeated embedding signal을 우선 본다.
 3. Streaming embedding snapshot/delta 의미를 분리한다. 최소한 replay summary와 assignment log에서 snapshot으로 인한 재처리 record를 구분한다.
-4. Representative replay를 `--reset-output --recommend`로 다시 실행하고 dashboard가 읽는 artifact를 기준 run으로 고정한다.
+4. Batch recommendation bridge를 정리한다. 현재 batch cluster 결과로 추천까지 이어지는 길이 끊겨 있으므로, `model.batch.recommend`가 JSON interest state를 읽게 하는 것이 가장 직접적이다.
 5. 이후 실제 추천 품질 평가를 붙인다. Batch/stream 추천 둘 다 `seen` 제외, top-K, score normalization 정책을 같은 기준으로 비교해야 한다.

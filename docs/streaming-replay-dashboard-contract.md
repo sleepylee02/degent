@@ -1,6 +1,6 @@
 # Streaming Replay/Dashboard Contract
 
-이 문서는 trace-clock replay runner와 dashboard가 공유하는 파일 기반 인터페이스 계약이다.
+이 문서는 trace-clock replay runner와 dashboard가 공유하는 replay artifact 인터페이스 계약이다. 현재 우선 경로는 SQLite runtime store이며, 기존 JSONL/JSON/NPZ 파일은 fallback/debug와 대형 vector artifact 정본으로 유지한다.
 
 ## Version
 
@@ -10,6 +10,7 @@
 
 - Trace replay owns writes under `outputs/stream/replay_demo/`.
 - Dashboard reads `outputs/stream/replay_demo/` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
+- When `replay_summary.json` contains `paths.replayDb`, dashboard must prefer SQLite runtime store reads and fall back to JSONL/JSON artifacts only when the DB is absent or unreadable.
 - Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
 ## Default Root
@@ -37,6 +38,7 @@ outputs/stream/refit_events.jsonl
 outputs/stream/replay_demo/replay_input_events.jsonl
 outputs/stream/replay_demo/ingress_events.jsonl
 outputs/stream/replay_demo/replay_events.jsonl
+outputs/stream/replay_demo/replay.sqlite
 outputs/stream/replay_demo/replay_summary.json
 outputs/stream/replay_demo/user_states/{user_id}.json
 outputs/stream/replay_demo/interest_states/{user_id}.json
@@ -47,6 +49,36 @@ outputs/stream/replay_demo/refit_requests.jsonl
 outputs/stream/replay_demo/refit_events.jsonl
 outputs/stream/replay_demo/stream_recommendations.jsonl
 ```
+
+## SQLite Runtime Store
+
+`replay.sqlite` is the runtime/state/control-plane store for a replay run. It does not replace large vector/checkpoint artifacts. Large matrices such as `online_embeddings.npz`, canonical embeddings, model checkpoints, and batch outputs remain file-backed; SQLite stores payloads, state summaries, lifecycle rows, metrics, artifact metadata, and embedding row indexes.
+
+Dashboard-readable tables:
+
+| table | role |
+|---|---|
+| `runs` | run status, speed, output root, summary path |
+| `input_events` | replay input event identity and original payload |
+| `event_progress` | event schedule/emit/process timestamps and lag metrics |
+| `stage_attempts` | per-stage status, latency, command, failure metadata |
+| `runtime_metrics` | queue/backlog/throughput snapshots |
+| `user_states` | user state payload and raw/positive counts |
+| `user_raw_events` | raw rating events by user |
+| `user_positive_events` | current positive projection rows by user |
+| `interest_states` | interest state payload, pending/processed/refit flags |
+| `interest_vectors` | small interest vectors as `float32` BLOBs |
+| `assignments` | assignment/pending/outlier/already-processed records |
+| `refit_requests` | refit lifecycle: `open`, `running`, `closed`, `skipped`, `failed`, `superseded` |
+| `refit_attempts` | refit attempt result, backend, skip/error metadata |
+| `embedding_snapshots` | file-backed embedding snapshot metadata |
+| `embedding_rows` | snapshot row index for user/raw event/movie rows |
+| `recommendation_runs` | recommendation run metadata |
+| `recommendation_rows` | top-K recommendation rows |
+
+Runtime DB writes use SQLite WAL mode and a busy timeout so dashboard reads can occur while replay is running. Dashboard is still read-only and must not mutate this DB.
+
+`model.stream.runtime_report` is a read-only consumer of the same DB. It may be used to generate markdown/json bottleneck summaries, but report output is not a required dashboard input.
 
 ## Replay Input Event JSONL
 
@@ -181,6 +213,8 @@ Trace replay fields:
 
 `replay_summary.json` is the stable summary entrypoint for Phase 6.
 
+When `paths.replayDb` exists, dashboard must prefer SQLite runtime store reads for replay monitor tables. JSONL files remain fallback/debug artifacts.
+
 Required fields:
 
 ```json
@@ -221,6 +255,7 @@ Required fields:
     "replayInputEvents": "outputs/stream/replay_demo/replay_input_events.jsonl",
     "ingressEvents": "outputs/stream/replay_demo/ingress_events.jsonl",
     "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
+    "replayDb": "outputs/stream/replay_demo/replay.sqlite",
     "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
     "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
     "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
@@ -264,6 +299,7 @@ Phase 6 should tolerate either `movieId` or `recommendedMovieId` as the recommen
 
 Phase 6 may read:
 
+- `replay.sqlite`
 - `replay_summary.json`
 - `ingress_events.jsonl`
 - `replay_events.jsonl`
@@ -280,3 +316,4 @@ Phase 6 must not mutate these files.
 - No offline recommendation evaluation metrics.
 - No dashboard-driven mutation of stream state.
 - No direct editing of generated replay artifacts.
+- No Kafka/Flink/Postgres/Redis/Kubernetes/vector DB requirement for this local replay contract.

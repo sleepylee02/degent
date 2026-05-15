@@ -52,6 +52,7 @@
 | `outputs/stream/stream_recommendations.jsonl` | streaming recommendation log | `python3 -m model.stream.recommend_online` | append/regenerate |
 | `outputs/stream/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
 | `outputs/stream/replay_demo/ingress_events.jsonl` | trace replay event emit log with schedule/lag | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
+| `outputs/stream/replay_demo/replay.sqlite` | SQLite runtime/state store for trace replay run/event/stage/state/refit/embedding index | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
 | `outputs/stream/replay_demo/replay_summary.json` | trace replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
 | `outputs/stream/replay_demo/replay_events.jsonl` | event-level trace replay progress and lag log | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
 | `outputs/stream/replay_demo/user_states/{user_id}.json` | replay-scoped user state | `python3 -m model.stream.replay_pipeline` | regenerate |

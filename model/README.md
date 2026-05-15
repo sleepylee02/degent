@@ -50,6 +50,8 @@ python3 -m model.stream.extract_online → raw user state 갱신 + active positi
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback, genre labeling 포함 |
 | `stream/recommend_online.py` | streaming interest state를 읽어 top-K 추천 JSONL append |
+| `stream/runtime_store.py` | `replay.sqlite` schema/init/upsert/query helper. runtime state, payload, lifecycle, metric 기록 |
+| `stream/runtime_report.py` | `replay.sqlite`를 읽어 stage latency, event lag, refit lifecycle, assignment/repeated-processing을 요약 |
 | `stream/trace_replay.py` | replay input event를 `--speed N` trace clock으로 주입하고 event-level lag/throughput metric 기록 |
 | `stream/replay_pipeline.py` | `trace_replay.py`를 실행하는 공식 replay entrypoint 호환 래퍼 |
 | `IMPLEMENTATION_STATUS.md` | 모델 구현 현황, 산출물 상태, 보류 보완 후보 |
@@ -101,6 +103,9 @@ python3 -m model.stream.replay_pipeline --reset-output --generate-events --repla
 # 2-11. trace-clock replay + online recommendation smoke test
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --recommend --recommend-top-k 20 --run-id trace_replay_with_recommend
 
+# 2-12. replay runtime DB 병목/상태 report
+python3 -m model.stream.runtime_report --db outputs/stream/replay_demo/replay.sqlite --top-events 10
+
 # 3. 클러스터링 (배치, 전체 유저)
 python3 -m model.batch.cluster
 
@@ -130,6 +135,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `batch/cluster.py`와 `stream/cluster_refit.py`는 `model.common.cluster`의 backend 선택 로직을 공유한다. `auto`는 cuML/CUDA runtime probe가 통과하면 GPU를 사용하고, GPU가 불가하거나 실행 중 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 - `stream/replay_pipeline.py`는 `trace_replay.py` entrypoint로 동작한다. `--speed N`은 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event를 주입한다.
 - `stream/replay_pipeline.py --recommend`는 각 event 처리 이후 `stream/recommend_online.py`를 호출하고 replay scope 안의 `stream_recommendations.jsonl`에 append한다.
+- `stream/runtime_report.py`는 replay 실행 후 `replay.sqlite`만 읽어 dominant stage latency, behind-schedule event, refit terminal status, repeated embedding/assignment signal을 markdown 또는 JSON으로 요약한다.
 - 현재 GPU 검증된 `.venv` 조합은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `cuda-toolkit==12.1.1`, `cupy-cuda12x==13.6.0`, `scikit-learn==1.7.2`다. 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
 - 실행 로그는 `outputs/logs/<script>_YYYYmmdd_HHMMSS.log`에 저장된다.
 
@@ -226,7 +232,8 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
 | `outputs/stream/replay_demo/ingress_events.jsonl` | trace scheduler가 event를 emit한 시각과 `scheduledAt`/`injectorLagSec` log |
 | `outputs/stream/replay_demo/replay_events.jsonl` | event-level replay progress, processing latency, lag, assignment/refit count log |
-| `outputs/stream/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint |
+| `outputs/stream/replay_demo/replay.sqlite` | SQLite runtime/state store. run/event/stage/user/interest/refit/embedding index 기록 |
+| `outputs/stream/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint. `paths.replayDb` 포함 |
 | `outputs/stream/replay_demo/user_states/{user_id}.json` | replay run에 격리된 user raw/positive state |
 | `outputs/stream/replay_demo/interest_states/{user_id}.json` | replay run에 격리된 user interest state |
 | `outputs/stream/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding |

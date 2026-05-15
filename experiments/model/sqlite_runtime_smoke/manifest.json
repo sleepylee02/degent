@@ -1,0 +1,348 @@
+{
+  "created_at": "2026-05-15T09:47:11+09:00",
+  "run_id": "sqlite_runtime_smoke",
+  "git": {
+    "commit": "dafc962a7e70da0b1ae7bed0fdf6ff27ee073f9d",
+    "branch": "full-streaming",
+    "dirty": true,
+    "status_short": [
+      "M dashboard/cluster_dashboard.py",
+      " M model/stream/cluster_refit.py",
+      " M model/stream/extract_online.py",
+      " M model/stream/interest_assign.py",
+      " M model/stream/recommend_online.py",
+      " M model/stream/trace_replay.py",
+      " M todo.md",
+      "?? experiments/model/sqlite_runtime_smoke/",
+      "?? model/stream/runtime_store.py",
+      "?? outputs/logs/extract_online_20260515_094711.log",
+      "?? outputs/logs/extract_online_20260515_094717.log",
+      "?? outputs/logs/interest_assign_20260515_094715.log",
+      "?? outputs/logs/interest_assign_20260515_094721.log",
+      "?? outputs/logs/trace_replay_20260515_094709.log",
+      "?? plan/active/sqlite_runtime_state_store.md"
+    ]
+  },
+  "stages": {
+    "extract_online": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/extract_online.py --run-id sqlite_runtime_smoke --movies /home/sleepylee/Desktop/1proj/a.live/degent/data/movies_processed_drop.csv --checkpoint /home/sleepylee/Desktop/1proj/a.live/degent/outputs/sasrec_cl.pt --item2idx /home/sleepylee/Desktop/1proj/a.live/degent/outputs/item2idx.json --state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/user_states --output /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz --event-log /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embedding_events.jsonl --event-json '{\"userId\": 28, \"movieId\": 1476, \"rating\": 4.0, \"ratedAt\": \"2000-06-19T17:36:56Z\"}' --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256 --runtime-db /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/replay.sqlite --event-id 1",
+      "log": {
+        "path": "outputs/logs/extract_online_20260515_094717.log",
+        "exists": true,
+        "size_bytes": 767,
+        "mtime_ns": 1778806037465026323
+      },
+      "inputs": {
+        "movies": {
+          "path": "data/movies_processed_drop.csv",
+          "exists": true,
+          "size_bytes": 24901018,
+          "mtime_ns": 1775374862056883703
+        },
+        "ratings": {
+          "path": "data/ratings_drop_processed.jsonl",
+          "exists": true,
+          "size_bytes": 2233410097,
+          "mtime_ns": 1775374962957207895
+        },
+        "checkpoint": {
+          "path": "outputs/sasrec_cl.pt",
+          "exists": true,
+          "size_bytes": 30324286,
+          "mtime_ns": 1775609561000000000,
+          "sha256": "8ed3a1c9c646f1dc9628ef5fa8c31192505d0ab8f76b6f378cf793fce9ca8759"
+        },
+        "item2idx": {
+          "path": "outputs/item2idx.json",
+          "exists": true,
+          "size_bytes": 908573,
+          "mtime_ns": 1775667841000000000,
+          "sha256": "e9538460cdb05e8b152e641016c8318d2d80c88f37db2b49743dbbb38bb686f2"
+        }
+      },
+      "schemas": {
+        "movies_processed": {
+          "path": "schemas/ml32m/processed/movies_processed.v2.schema.yaml",
+          "exists": true,
+          "size_bytes": 2431,
+          "mtime_ns": 1775374126342616514,
+          "sha256": "cb7452c05b338887401f4e627a65edd69742dc228a6681cf7b19184e5f3f5c7f",
+          "version": "v2"
+        },
+        "ratings_drop_processed": {
+          "path": "schemas/ml32m/processed/ratings_drop_processed.v1.schema.yaml",
+          "exists": true,
+          "size_bytes": 1212,
+          "mtime_ns": 1775374185724340667,
+          "sha256": "aa7f17a267fbca0d32b6447c5406fd47708d3d354c9985023bbe153010fa17f6",
+          "version": "v1"
+        }
+      },
+      "model_config": {
+        "architecture": "SASRecCL",
+        "d_model": 128,
+        "num_heads": 2,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "max_len": 100
+      },
+      "online_config": {
+        "state_dir": "outputs/stream/replay_demo/user_states",
+        "output": "outputs/stream/replay_demo/online_embeddings.npz",
+        "event_log": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+        "bootstrap_user_id": null,
+        "event_jsonl": null,
+        "min_ratings_for_zscore": 3,
+        "z_threshold": 0.0,
+        "batch_size": 256
+      },
+      "runtime": {
+        "device": "cpu",
+        "device_label": "cpu",
+        "torch_version": "2.5.1+cu121"
+      },
+      "data_summary": {
+        "movies_rows": 77647,
+        "unique_genres": 19,
+        "num_items": 55726,
+        "processed_users": 1,
+        "state_summaries": [
+          {
+            "userId": 28,
+            "statePath": "outputs/stream/replay_demo/user_states/28.json",
+            "rawEventCount": 2,
+            "positiveEventCount": 2,
+            "activeEventCount": 2,
+            "droppedEventCount": 0,
+            "skippedUnknownItems": 0,
+            "ratingMean": 2.5,
+            "ratingStd": 1.5,
+            "positiveReason": "cold_start",
+            "positivePolicy": {
+              "name": "observed_user_zscore_v1",
+              "minRatingsForZscore": 3,
+              "zThreshold": 0.0,
+              "optimisticColdStart": true
+            },
+            "embeddingRows": 2
+          }
+        ]
+      },
+      "outputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 3898,
+          "mtime_ns": 1778806039482180533,
+          "sha256": "a1bd12671a98528bbdcb1c9a85dbd81bad2cfa0814bb70f41e04a62a12dc4ed1"
+        },
+        "event_log": {
+          "path": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+          "exists": true,
+          "size_bytes": 1648,
+          "mtime_ns": 1778806039491637713,
+          "sha256": "20f311942b3fa2a49d67d59562adcb76afb2aa0f94617c68e1c4f94638499252"
+        },
+        "metrics": {
+          "path": "experiments/model/sqlite_runtime_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 859,
+          "mtime_ns": 1778806039491637713,
+          "sha256": "c3b5bb78b7f4bf3283d54701d65e9db1691cbf56725913809afc2b67011f0a09"
+        }
+      },
+      "summary_metrics": {
+        "stage": "extract_online",
+        "processed_users": 1,
+        "input_events": 1,
+        "embedding_rows": 2,
+        "embedding_dim": 128,
+        "unique_users": 1,
+        "row_count": 2,
+        "nan_embedding_rows": 0,
+        "max_history_len": 2,
+        "invalid_history_rows": 0,
+        "invalid_context_rows": 0,
+        "all_rows_active": true
+      }
+    },
+    "interest_assign": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/interest_assign.py --run-id sqlite_runtime_smoke --embeddings /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz --interest-state-dir /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states --assignments /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_assignments.jsonl --refit-requests /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --runtime-db /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/replay.sqlite --event-id 1",
+      "log": {
+        "path": "outputs/logs/interest_assign_20260515_094721.log",
+        "exists": true,
+        "size_bytes": 924,
+        "mtime_ns": 1778806041342808863
+      },
+      "inputs": {
+        "online_embeddings": {
+          "path": "outputs/stream/replay_demo/online_embeddings.npz",
+          "exists": true,
+          "size_bytes": 3898,
+          "mtime_ns": 1778806039482180533
+        }
+      },
+      "assignment_config": {
+        "interest_state_dir": "outputs/stream/replay_demo/interest_states",
+        "assignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+        "refit_requests": "outputs/stream/replay_demo/refit_requests.jsonl",
+        "similarity_threshold": 0.2,
+        "refit_min_events": 3,
+        "assign_trigger_count": 3,
+        "outlier_trigger_count": 3
+      },
+      "data_summary": {
+        "active_embedding_rows": 2,
+        "processed_users": 1,
+        "user_summaries": [
+          {
+            "userId": 28,
+            "inputRows": 2,
+            "interestCount": 0,
+            "pendingBefore": 1,
+            "pendingAfter": 2,
+            "processedBefore": 0,
+            "processedAfter": 0,
+            "refitRequired": false,
+            "refitReasons": [],
+            "statuses": {
+              "pending_no_interest": 2
+            },
+            "statePath": "outputs/stream/replay_demo/interest_states/28.json"
+          }
+        ]
+      },
+      "outputs": {
+        "assignments": {
+          "path": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "exists": true,
+          "size_bytes": 976,
+          "mtime_ns": 1778806041371626411,
+          "sha256": "641842198b68279c2936f8ae3db760f4bb7e2d8219968153f9412854326006e1"
+        },
+        "refit_requests": {
+          "path": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "exists": false
+        },
+        "metrics": {
+          "path": "experiments/model/sqlite_runtime_smoke/metrics.jsonl",
+          "exists": true,
+          "size_bytes": 1084,
+          "mtime_ns": 1778806041378626369,
+          "sha256": "18dd8870636a69513b3cac5b3d95a5876374b416d78356be75ecfa5249c4c397"
+        }
+      },
+      "summary_metrics": {
+        "stage": "interest_assign",
+        "input_rows": 2,
+        "processed_users": 1,
+        "assignment_records": 2,
+        "refit_requests": 0,
+        "status_counts": {
+          "pending_no_interest": 2
+        },
+        "embedding_dim": 128
+      }
+    },
+    "trace_replay": {
+      "command": "/home/sleepylee/Desktop/1proj/a.live/degent/model/stream/replay_pipeline.py --reset-output --generate-events --replay-user-id 28 --limit-events 2 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --run-id sqlite_runtime_smoke",
+      "log": {
+        "path": "outputs/logs/trace_replay_20260515_094709.log",
+        "exists": true,
+        "size_bytes": 4531,
+        "mtime_ns": 1778806040331632661
+      },
+      "inputs": {
+        "replay_input_events": {
+          "path": "outputs/stream/replay_demo/replay_input_events.jsonl",
+          "exists": true,
+          "size_bytes": 399,
+          "mtime_ns": 1778806030476126649,
+          "sha256": "46c144f5622428b6202432c5d2d39296f01c71858298e96ab6b1b23f45f53d9d"
+        }
+      },
+      "outputs": {
+        "replay_summary": {
+          "path": "outputs/stream/replay_demo/replay_summary.json",
+          "exists": true,
+          "size_bytes": 2041,
+          "mtime_ns": 1778806041988351803,
+          "sha256": "3298d133c79ab9e26d47ba10aa9a7fd3718ae81d1decf1e13174160aea4473d5"
+        },
+        "replay_events": {
+          "path": "outputs/stream/replay_demo/replay_events.jsonl",
+          "exists": true,
+          "size_bytes": 2537,
+          "mtime_ns": 1778806041993622675,
+          "sha256": "80330a7a08eca59fc8cedb3d2ab33fbabde611ef3a9221f30608935cb0ce10d8"
+        },
+        "ingress_events": {
+          "path": "outputs/stream/replay_demo/ingress_events.jsonl",
+          "exists": true,
+          "size_bytes": 950,
+          "mtime_ns": 1778806036128657965,
+          "sha256": "763b80530a8b4fffbe6dc61284e1318e5ba3134e1965e1d49b0cd3330b09eeb2"
+        },
+        "replay_db": {
+          "path": "outputs/stream/replay_demo/replay.sqlite",
+          "exists": true,
+          "size_bytes": 184320,
+          "mtime_ns": 1778806040326891892,
+          "sha256": "e3f56e998fafcaac2ea93ac52f6bcf2457e9cf06db0704c4c1ccf16030d2675a"
+        }
+      },
+      "summary_metrics": {
+        "version": "stream_trace_replay_summary.v1",
+        "runId": "sqlite_runtime_smoke",
+        "status": "completed",
+        "startedAt": "2026-05-15T09:47:10+09:00",
+        "endedAt": "2026-05-15T09:47:21+09:00",
+        "elapsedSec": 11.507102251052856,
+        "inputEvents": 2,
+        "processedEvents": 2,
+        "uniqueUsers": 1,
+        "speed": 100.0,
+        "traceStartTs": 961436216.0,
+        "traceEndTs": 961436216.0,
+        "traceStartRatedAt": "2000-06-19T17:36:56Z",
+        "traceEndRatedAt": "2000-06-19T17:36:56Z",
+        "traceSpanSec": 0.0,
+        "scheduledSpanSec": 0.0,
+        "throughputEventsPerSec": 0.17380570332700462,
+        "targetEventsPerSec": null,
+        "refitBackend": "cpu",
+        "totals": {
+          "activeEmbeddingRows": 3,
+          "assignmentRecords": 3,
+          "refitRequestsOpened": 0,
+          "refitClosed": 0,
+          "refitSkipped": 0,
+          "recommendationRows": 0,
+          "behindScheduleEvents": 2,
+          "refitBackend": "cpu",
+          "maxInjectorLagSec": 5.652657580998493,
+          "meanInjectorLagSec": 2.8365393139974913,
+          "maxProcessingLagSec": 5.8413101459955215,
+          "meanProcessingLagSec": 5.729517118499643,
+          "maxEndToEndLagSec": 11.493967726994015,
+          "meanEndToEndLagSec": 8.566056432497135
+        },
+        "paths": {
+          "replayInputEvents": "outputs/stream/replay_demo/replay_input_events.jsonl",
+          "ingressEvents": "outputs/stream/replay_demo/ingress_events.jsonl",
+          "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
+          "replayDb": "outputs/stream/replay_demo/replay.sqlite",
+          "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
+          "onlineEmbeddingEvents": "outputs/stream/replay_demo/online_embedding_events.jsonl",
+          "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
+          "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
+          "refitEvents": "outputs/stream/replay_demo/refit_events.jsonl",
+          "userStateDir": "outputs/stream/replay_demo/user_states",
+          "interestStateDir": "outputs/stream/replay_demo/interest_states",
+          "streamRecommendations": "outputs/stream/replay_demo/stream_recommendations.jsonl"
+        }
+      }
+    }
+  },
+  "updated_at": "2026-05-15T09:47:22+09:00"
+}

@@ -1,0 +1,13 @@
+2026-05-15 09:55:26 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/extract_online_20260515_095526.log
+2026-05-15 09:55:26 | INFO | Experiment run id: sqlite_runtime_refit_smoke
+2026-05-15 09:55:26 | INFO | Experiment metadata directory: /home/sleepylee/Desktop/1proj/a.live/degent/experiments/model/sqlite_runtime_refit_smoke
+2026-05-15 09:55:26 | INFO | State directory: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/user_states
+2026-05-15 09:55:26 | INFO | Online embedding output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz
+2026-05-15 09:55:26 | INFO | Event log output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embedding_events.jsonl
+2026-05-15 09:55:26 | INFO | Selected torch device: cpu
+2026-05-15 09:55:26 | INFO | PyTorch version: 2.5.1+cu121
+2026-05-15 09:55:28 | INFO | Loaded movies: 77647 | unique genres: 19
+2026-05-15 09:55:28 | INFO | Loaded item2idx: 55726 items
+2026-05-15 09:55:28 | INFO | Loaded checkpoint onto cpu
+2026-05-15 09:55:28 | INFO | Processed user state: {'userId': 28, 'statePath': 'outputs/stream/replay_demo/user_states/28.json', 'rawEventCount': 3, 'positiveEventCount': 2, 'activeEventCount': 2, 'droppedEventCount': 1, 'skippedUnknownItems': 0, 'ratingMean': 3.0, 'ratingStd': 1.4142135623730951, 'positiveReason': 'zscore', 'positivePolicy': {'name': 'observed_user_zscore_v1', 'minRatingsForZscore': 3, 'zThreshold': 0.0, 'optimisticColdStart': True}, 'embeddingRows': 2}
+2026-05-15 09:55:28 | INFO | Saved online embeddings: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/online_embeddings.npz

@@ -114,7 +114,7 @@ rating event를 online user state로 반영하고, active positive embedding을 
 
 | 항목 | 내용 |
 |---|---|
-| 담당 파일 | `model/stream/state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py` |
+| 담당 파일 | `model/stream/state.py`, `model/stream/runtime_store.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py` |
 | Input | C 파트 model artifact, `data/ratings_drop_processed.jsonl` 또는 E 파트 trace replay event |
 | Output | `outputs/stream/user_states/`, `outputs/stream/online_embeddings.npz`, `outputs/stream/interest_states/`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`, `outputs/stream/refit_events.jsonl`, `outputs/stream/stream_recommendations.jsonl` |
 | Endpoint | `python3 -m model.stream.*` |
@@ -142,7 +142,7 @@ rating event를 online user state로 반영하고, active positive embedding을 
 |---|---|
 | 담당 파일 | `replay/`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `docs/streaming-replay-dashboard-contract.md`, `replay/README.md` |
 | Input | `data/ratings_drop_processed.jsonl`, C 파트 model artifact |
-| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl` |
+| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `replay.sqlite`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl` |
 | Endpoint | `make -C replay`, `replay/bin/rating_replay`, `python3 -m model.stream.replay_pipeline --speed N` |
 | 넘기는 기준 | 모든 replay demo artifact는 `outputs/stream/replay_demo/` 아래에 격리되어야 함 |
 
@@ -152,12 +152,12 @@ rating event를 online user state로 반영하고, active positive embedding을 
 |---|---|---|---|
 | build replay binary | `replay/Makefile`, `replay/cpp/` | C++ source | `replay/bin/rating_replay` |
 | generate replay input | `replay/bin/rating_replay` | `data/ratings_drop_processed.jsonl` | `outputs/stream/replay_demo/replay_input_events.jsonl` |
-| trace replay runner | `model/stream/replay_pipeline.py` | replay input events, model artifact, `--speed N` | `outputs/stream/replay_demo/replay_summary.json`, `ingress_events.jsonl`, `replay_events.jsonl`, replay-scoped states/logs, optional `stream_recommendations.jsonl` |
+| trace replay runner | `model/stream/replay_pipeline.py` | replay input events, model artifact, `--speed N` | `outputs/stream/replay_demo/replay_summary.json`, `replay.sqlite`, `ingress_events.jsonl`, `replay_events.jsonl`, replay-scoped states/logs, optional `stream_recommendations.jsonl` |
 
 ### E 파트가 F 파트에 넘기는 것
 
 - 필수 entrypoint: `outputs/stream/replay_demo/replay_summary.json`
-- 추가 read files: `ingress_events.jsonl`, `replay_events.jsonl`, `interest_assignments.jsonl`, `refit_requests.jsonl`, `refit_events.jsonl`, `interest_states/{user_id}.json`, `stream_recommendations.jsonl`
+- 추가 read files: `replay.sqlite` 우선, 없으면 `ingress_events.jsonl`, `replay_events.jsonl`, `interest_assignments.jsonl`, `refit_requests.jsonl`, `refit_events.jsonl`, `interest_states/{user_id}.json`, `stream_recommendations.jsonl`
 - 세부 파일 계약: `docs/streaming-replay-dashboard-contract.md`
 
 ## F. Dashboard

@@ -1,0 +1,8 @@
+2026-05-15 10:18:09 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/recommend_online_20260515_101809.log
+2026-05-15 10:18:09 | INFO | Experiment run id: sqlite_runtime_e2e_smoke
+2026-05-15 10:18:09 | INFO | Interest state dir: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states
+2026-05-15 10:18:09 | INFO | User state dir: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/user_states
+2026-05-15 10:18:09 | INFO | Target users: 1
+2026-05-15 10:18:09 | INFO | Loaded checkpoint: 55727 items | candidates: 55726
+2026-05-15 10:18:09 | INFO | Recommended user 28: 5 items | top score=6.0090
+2026-05-15 10:18:09 | INFO | Saved 5 recommendation rows → /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/stream_recommendations.jsonl

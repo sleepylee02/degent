@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-14 기준으로 replay 공식 경로는 N배속 trace-clock runner다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다.
+2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle은 `outputs/stream/replay_demo/replay.sqlite`에 기록하고, JSONL/JSON/NPZ artifact는 fallback/debug와 대형 vector 파일 정본으로 유지한다.
 
 검증 command:
 
@@ -94,6 +94,16 @@ outputs/stream/replay_demo/
 
 기본 stream 산출물인 `outputs/stream/online_embeddings.npz`, `outputs/stream/user_states/`, `outputs/stream/interest_states/`를 덮어쓰지 않는다.
 
+Replay가 끝난 뒤 runtime/control-plane 상태는 SQLite report로 바로 요약할 수 있다.
+
+```bash
+.venv/bin/python -m model.stream.runtime_report \
+  --db outputs/stream/replay_demo/replay.sqlite \
+  --top-events 10
+```
+
+이 report는 dominant stage latency, event lag, refit lifecycle, already-processed/repeated embedding signal, user state progress를 `replay.sqlite`만 보고 출력한다.
+
 ## Mental Model
 
 ```text
@@ -101,6 +111,7 @@ ratings_drop_processed.jsonl
   -> replay/bin/rating_replay
   -> replay_input_events.jsonl
   -> replay_pipeline --speed N trace clock
+     -> replay.sqlite
      -> ingress_events.jsonl
      -> extract_online
         -> user_states/{user_id}.json
@@ -119,7 +130,7 @@ ratings_drop_processed.jsonl
   -> replay_summary.json
 ```
 
-`replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, 기존 stream CLI를 event 단위로 호출하는 trace replay runner다.
+`replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, 기존 stream CLI를 event 단위로 호출하는 trace replay runner다. 각 stage CLI에는 `--runtime-db`와 `--event-id`를 넘겨 같은 SQLite store에 runtime/state payload를 dual-write한다.
 
 ## Stage 0. Replay Input Generation
 
@@ -270,6 +281,7 @@ Output:
 - `interest_states/{user_id}.json`
 - `interest_assignments.jsonl`
 - `refit_requests.jsonl`
+- `replay.sqlite`의 `interest_states`, `interest_vectors`, `assignments`, `refit_requests`
 
 동작:
 
@@ -289,7 +301,7 @@ assignment status:
 | `already_processed` | 이전 refit/assign에서 이미 처리한 raw event |
 | `outlier` | similarity threshold 미만 또는 invalid similarity |
 
-`refit_requests.jsonl`은 append-only 후보 log다. 현재 구현은 user별 `refit_request_open` flag로 중복 open request를 막는다.
+`refit_requests.jsonl`은 fallback/debug용 append-only 후보 log다. Trace replay에서 현재 open/running/closed/skipped/failed request의 정본은 SQLite `refit_requests` table이다. 현재 구현은 user별 `refit_request_open` flag와 DB lifecycle로 중복 open request를 막는다.
 
 ## Stage 4. Cluster Refit
 
@@ -307,6 +319,7 @@ Output:
 
 - updated `interest_states/{user_id}.json`
 - `refit_events.jsonl`
+- `replay.sqlite`의 `refit_requests`, `refit_attempts`, `interest_states`, `interest_vectors`
 
 동작:
 
@@ -317,7 +330,7 @@ Output:
 5. label `-1` noise는 interest vector에서 제외한다.
 6. 전부 noise거나 sample 부족이면 전체 mean fallback interest 1개를 만든다.
 7. 기존 interest vector를 replace하고 pending/refit flags를 clear한다.
-8. request 처리 결과를 `refit_events.jsonl`에 `closed` 또는 `skipped`로 남긴다.
+8. request 처리 결과를 DB lifecycle에 `closed`, `skipped`, `failed`로 반영하고 `refit_events.jsonl`에도 fallback/debug log를 남긴다.
 
 backend behavior:
 
@@ -342,6 +355,7 @@ Input:
 Output:
 
 - `stream_recommendations.jsonl`
+- `replay.sqlite`의 `recommendation_runs`, `recommendation_rows`
 
 동작:
 
@@ -362,9 +376,12 @@ Consumer/producer:
 
 Output:
 
+- `replay.sqlite`
 - `ingress_events.jsonl`
 - `replay_events.jsonl`
 - `replay_summary.json`
+
+`replay.sqlite`는 replay runtime/state/control-plane store다. `runs`, `input_events`, `event_progress`, `stage_attempts`, `runtime_metrics`, `user_states`, `interest_states`, `assignments`, `refit_requests`, `refit_attempts`, `embedding_snapshots`, `embedding_rows`, `recommendation_runs`, `recommendation_rows`를 기록한다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고, SQLite에는 path, dtype, shape, row index 같은 metadata를 둔다.
 
 `ingress_events.jsonl`은 event 주입 시각과 trace clock 기준 schedule/lag를 append한다.
 
@@ -386,6 +403,9 @@ Output:
   "targetEventsPerSec": 15.625,
   "throughputEventsPerSec": 0.158,
   "refitBackend": "auto",
+  "paths": {
+    "replayDb": "outputs/stream/replay_demo/replay.sqlite"
+  },
   "totals": {
     "activeEmbeddingRows": 10,
     "assignmentRecords": 10,
@@ -408,14 +428,16 @@ Output:
 | artifact | written by | consumed by | role |
 |---|---|---|---|
 | `replay_input_events.jsonl` | replay generator | `replay_pipeline` | timestamp-sorted replay source |
+| `replay.sqlite` | `replay_pipeline`, stream stages | dashboard/humans | runtime state, payload, metadata, lifecycle, metric store |
+| `runtime_report` output | `model.stream.runtime_report` | humans/notes | optional markdown/json bottleneck report from `replay.sqlite` |
 | `ingress_events.jsonl` | `replay_pipeline` | dashboard/humans | trace-clock event emit log |
 | `user_states/{user_id}.json` | `extract_online` | `extract_online` | raw events + positive projection state |
 | `online_embeddings.npz` | `extract_online` | `interest_assign`, `cluster_refit` | current active positive embedding snapshot |
 | `online_embedding_events.jsonl` | `extract_online` | humans/debugging | online extract run summary log |
 | `interest_states/{user_id}.json` | `interest_assign`, `cluster_refit` | `interest_assign`, `cluster_refit`, dashboard | interest vectors and trigger state |
 | `interest_assignments.jsonl` | `interest_assign` | `replay_pipeline`, dashboard | assignment/pending/outlier log |
-| `refit_requests.jsonl` | `interest_assign` | `cluster_refit`, dashboard | open refit request log |
-| `refit_events.jsonl` | `cluster_refit` | `replay_pipeline`, dashboard | refit close/skip result log |
+| `refit_requests.jsonl` | `interest_assign` | `cluster_refit`, dashboard fallback | fallback/debug refit request log |
+| `refit_events.jsonl` | `cluster_refit` | `replay_pipeline`, dashboard fallback | fallback/debug refit close/skip result log |
 | `stream_recommendations.jsonl` | `recommend_online` | dashboard | replay-scoped top-K recommendation log |
 | `replay_events.jsonl` | `replay_pipeline` | dashboard | replay progress log |
 | `replay_summary.json` | `replay_pipeline` | dashboard | stable replay entrypoint |
@@ -457,6 +479,7 @@ recommendation logic을 바꿀 때:
 dashboard를 바꿀 때:
 
 - `replay_summary.json`의 `paths`를 우선 사용한다.
+- `paths.replayDb`가 있으면 SQLite를 우선 읽고, 기존 JSONL/JSON은 fallback으로 사용한다.
 - replay/stream 내부 Python 함수에 직접 의존하지 않는다.
 - dashboard는 replay artifact를 수정하지 않는다.
 

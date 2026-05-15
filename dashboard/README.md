@@ -75,8 +75,9 @@ Stable entrypoint:
 
 - `outputs/stream/replay_demo/replay_summary.json`
 
-`replay_summary.json`에 `paths`가 있으면 해당 경로를 우선 사용하고, 없으면 아래 기본 경로를 fallback으로 사용한다.
+`replay_summary.json`에 `paths`가 있으면 해당 경로를 우선 사용한다. `paths.replayDb`가 가리키는 SQLite runtime store가 있으면 그 DB를 우선 읽고, 없으면 아래 JSONL 파일들을 fallback으로 사용한다.
 
+- `outputs/stream/replay_demo/replay.sqlite`
 - `outputs/stream/replay_demo/replay_events.jsonl`
 - `outputs/stream/replay_demo/ingress_events.jsonl`
 - `outputs/stream/replay_demo/interest_assignments.jsonl`
@@ -90,6 +91,7 @@ Replay monitor에서 표시하는 내용:
 - run status, processed/input events, unique users, elapsed, target/actual throughput, speed
 - trace replay event timeline, scheduled/emitted/processed time, injector/processing/end-to-end latency, active embedding rows, assignment status counts
 - assignment status counts, open refit requests, closed/skipped refit events
+- SQLite runtime store가 있으면 stage attempts, refit lifecycle, assignment/recommendation metadata를 DB에서 우선 표시
 - user별 interest count, pending/processed event count, refit trigger state
 - replay recommendation row 수, unique user/movie 수, top score 추천 테이블
 

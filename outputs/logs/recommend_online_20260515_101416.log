@@ -1,0 +1,7 @@
+2026-05-15 10:14:16 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/recommend_online_20260515_101416.log
+2026-05-15 10:14:16 | INFO | Experiment run id: sqlite_runtime_e2e_smoke
+2026-05-15 10:14:16 | INFO | Interest state dir: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/interest_states
+2026-05-15 10:14:16 | INFO | User state dir: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/user_states
+2026-05-15 10:14:16 | INFO | Target users: 1
+2026-05-15 10:14:16 | INFO | Skipped user 28: empty_interests
+2026-05-15 10:14:16 | INFO | No users with valid interest vectors. Saved 0 recommendation rows → /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_demo/stream_recommendations.jsonl
