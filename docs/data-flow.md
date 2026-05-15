@@ -31,6 +31,8 @@ data/**/raw/
         -> outputs/viz/
         -> dashboard/cluster_dashboard.py Cluster explorer
      -> streaming/replay/recommend branch:
+        -> python3 -m model.stream.seed_pre_t_state  (temporal cutoff run)
+        -> outputs/pre/<run_label>/user_states/{user_id}.json
         -> python3 -m model.stream.extract_online
         -> outputs/stream/user_states/{user_id}.json
         -> outputs/stream/online_embeddings.npz
@@ -159,6 +161,7 @@ python3 preprocess/process_rating/process_ratings_drop.py
 python3 -m model.batch.train
 python3 -m model.batch.extract_canonical
 python3 -m model.batch.cluster
+python3 -m model.stream.seed_pre_t_state --max-rated-at-exclusive 2022-01-01T00:00:00Z
 python3 -m model.batch.export_clusters
 python3 -m model.batch.visualize_clusters
 python3 -m model.stream.extract_online
@@ -176,6 +179,12 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 - `outputs/canonical_embeddings.npz`
 - `outputs/user_interests.npz`
 - `outputs/batch/interest_states/{user_id}.json`
+- `outputs/pre/temporal_2022/sasrec_cl.pt`
+- `outputs/pre/temporal_2022/item2idx.json`
+- `outputs/pre/temporal_2022/canonical_embeddings.npz`
+- `outputs/pre/temporal_2022/user_states/{user_id}.json`
+- `outputs/pre/temporal_2022/interest_states/{user_id}.json`
+- `outputs/pre/temporal_2022/pre_summary.json`
 - `data/clustering/user_clusters.parquet`
 - `outputs/stream/user_states/{user_id}.json`
 - `outputs/stream/online_embeddings.npz`
@@ -207,6 +216,8 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 
 모델 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 `experiments/model/<run_id>/`에 남긴다.
 
+Temporal cutoff run은 모델 관련 산출물을 `outputs/pre/<run_label>/` 아래에 모은다. 예: `T=2022-01-01T00:00:00Z` run은 `outputs/pre/temporal_2022/`에 pre-T checkpoint/item2idx/canonical/user state/interest state를 저장하고, post-T replay runtime은 `outputs/post/temporal_2022/`에 격리한다.
+
 `outputs/canonical_embeddings.npz`는 event 하나당 embedding 하나를 보장하는 batch 산출물이고 현재 `batch/cluster.py`의 기본 입력이다. 과거 overlap-window 추출 산출물인 `outputs/embeddings.npz`는 legacy artifact로만 취급한다. `outputs/stream/online_embeddings.npz`는 raw rating을 모두 user state에 저장한 뒤 현재까지 관측된 positive projection에서 생성한 active online embedding이다.
 
 `outputs/stream/interest_assignments.jsonl`과 `outputs/stream/refit_requests.jsonl`은 active online embedding을 interest state에 연결하기 위한 stream 산출물이다. Phase 4는 refit request만 기록하고 실제 UMAP/HDBSCAN refit은 실행하지 않는다.
@@ -214,6 +225,8 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 `outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 `interest_states/{user_id}.json`의 interest vectors를 replace한다. `--cluster-backend auto`는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 
 `outputs/stream/stream_recommendations.jsonl`은 current streaming interest state에서 생성한 top-K 추천 결과다. Trace replay에서 `--recommend`를 사용하면 같은 추천 결과가 `outputs/stream/replay_demo/stream_recommendations.jsonl`에 격리된다.
+
+`model.stream.seed_pre_t_state`는 temporal cutoff 이전 rating history로 replay 시작용 user state를 생성한다. 기존 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시해 post-T replay에서 과거 active event가 신규 assignment처럼 처리되지 않게 한다.
 
 Trace replay artifact는 `outputs/stream/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Replay runtime state, payload, metadata, stage metric, refit lifecycle은 `replay.sqlite`에 기록된다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고 DB에는 metadata와 row index를 남긴다. Dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths.replayDb`가 있으면 SQLite를 우선 사용한다. 기존 JSONL/JSON artifact는 fallback/debug 경로다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 

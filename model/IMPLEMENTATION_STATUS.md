@@ -18,12 +18,13 @@
 
 | 단계 | 상태 | 구현 파일 | 현재 범위 | 체크할 점 |
 |---|---:|---|---|---|
-| 입력 데이터 로드/필터링 | [~] | `common/dataset.py` | `movies_processed_drop.csv`, `ratings_drop_processed.jsonl` 로드, rating z-score 기반 positive 필터링, 활동 기간/상호작용 수 필터링 | 실제 파일과 스키마 일치 검증 로직은 별도 없음 |
+| 입력 데이터 로드/필터링 | [~] | `common/dataset.py` | `movies_processed_drop.csv`, `ratings_drop_processed.jsonl` 로드, rating z-score 기반 positive 필터링, 활동 기간/상호작용 수 필터링, optional `max_rated_at_exclusive` temporal cutoff | 실제 파일과 스키마 일치 검증 로직은 별도 없음 |
 | 시계열 split/Dataset | [~] | `common/dataset.py` | global timestamp split, sliding window 샘플 생성, padding, 장르 multi-hot tensor 생성 | 평가 프로토콜이 next-item last label 중심이라 negative sampling/후보군 정의 확인 필요 |
 | SASRec + Contrastive Loss | [x] | `common/sasrec.py` | item/genre/position embedding, causal Transformer encoder, weight tying score, item masking augmentation, InfoNCE loss | 모델 구조 자체는 구현됨 |
-| 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, loss/CE/CL 분리 기록, Recall@10 기준 early stopping, 마지막/best checkpoint와 item2idx 저장, run metadata 기록 코드 | test 평가, scheduler, 튜닝 sweep는 없음 |
+| 학습 | [~] | `batch/train.py` | CLI hyperparameter, device 선택, train/val loop, loss/CE/CL 분리 기록, Recall@10 기준 early stopping, 마지막/best checkpoint와 item2idx 저장, run metadata 기록, cutoff와 run-scoped output dir 지원 | test 평가, scheduler, 튜닝 sweep는 없음 |
 | legacy overlap 히든스테이트 추출 | [~] | 제거됨 | 과거 overlap-window extract가 `outputs/embeddings.npz`를 만들었으나 현재 공식 entrypoint는 아님 | 기존 artifact는 historical evidence로만 보존 |
-| canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록 | 현재 batch cluster 기본 입력 |
+| canonical event embedding 추출 | [x] | `batch/extract_canonical.py`, `common/canonical.py` | split 없는 전체 positive sequence에서 event 하나당 hidden state 하나를 추출, `event_idx`/`rated_at`/`history_len` metadata와 함께 `canonical_embeddings.npz` 저장, run metadata 기록, cutoff와 explicit checkpoint/item2idx path 지원 | 현재 batch cluster 기본 입력 |
+| pre-T user state seed | [x] | `stream/seed_pre_t_state.py` | temporal cutoff 이전 rating history로 replay-ready user state를 생성하고, 기존 interest state가 있으면 pre-T active raw event를 processed로 표시 | Temporal 2022 E2E smoke/full run으로 규모 검증 필요 |
 | online embedding / user state | [x] | `stream/state.py`, `stream/extract_online.py` | raw rating event를 모두 user state에 저장하고, 현재까지 관측된 user history 기준 positive projection을 재검증한 뒤 active positive canonical embedding을 `outputs/stream/online_embeddings.npz`로 저장 | 실제 checkpoint smoke는 로컬 `outputs/item2idx.json` 존재가 필요함 |
 | interest assign / refit trigger | [x] | `stream/interest_assign.py` | active online embedding을 user별 interest state에 cosine nearest-interest로 assign하고, no-interest/pending/outlier/event-count 기준 refit request를 기록 | 실제 refit은 Phase 4-1 이후 범위 |
 | triggered cluster refit | [x] | `stream/cluster_refit.py` | Phase 4 refit request를 소비해 user별 active online embeddings 전체를 UMAP+HDBSCAN으로 refit하고 interest state를 replace | `auto`는 cuML/CUDA runtime 가능 시 GPU, 불가하거나 auto GPU refit 실패 시 CPU fallback |
@@ -41,6 +42,7 @@
 - `outputs/sasrec_cl.pt`: 학습 checkpoint 존재. 로그 기준 2026-04-08 09:34:52부터 20 epoch 학습, epoch 20 validation `Recall@10=0.0406`, `NDCG@10=0.0197`.
 - `outputs/sasrec_cl_best.pt`: 최신 `batch/train.py`는 validation `Recall@10`이 개선될 때 best checkpoint를 저장한다. 기존 산출물 존재 여부는 최신 코드로 재학습 후 확인한다.
 - `outputs/item2idx.json`: 학습 vocabulary 존재. 로그 기준 item 수 55,726.
+- `outputs/pre/temporal_2022/`: 신규 temporal cutoff run 권장 root. pre-T checkpoint, item2idx, canonical embeddings, user state, interest state, `pre_summary.json`을 이 아래에 모은다.
 - `outputs/embeddings.npz`: legacy overlap-window extract artifact. shape `(763772, 128)`, dtype `float32`, unique user 622로 확인됐으나 현재 재생성 entrypoint는 제거됐다.
 - `outputs/canonical_embeddings.npz`: canonical extract 기본 출력 경로이며 현재 `batch/cluster.py` 기본 입력이다. Phase 2 smoke test에서는 `outputs/test_canonical_embeddings.npz`로 별도 저장해 검증했다.
 - `outputs/batch/interest_states/{user_id}.json`: batch cluster가 저장하는 user별 interest state. interest vector와 genre label을 포함한다.

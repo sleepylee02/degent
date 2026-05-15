@@ -87,7 +87,7 @@ raw 데이터를 모델 학습 가능한 CSV/JSONL로 바꾸는 파트다.
 |---|---|
 | 담당 파일 | `model/batch/`, `model/common/`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md` |
 | Input | `data/ratings_drop_processed.jsonl`, B 파트 validation 결과 |
-| Output | `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz`, `outputs/user_interests.npz`, `outputs/batch/interest_states/`, `data/clustering/user_clusters.parquet`, `outputs/viz/`, run metadata |
+| Output | `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz`, `outputs/user_interests.npz`, `outputs/batch/interest_states/`, optional run-scoped `outputs/pre/<run_label>/`, `data/clustering/user_clusters.parquet`, `outputs/viz/`, run metadata |
 | Endpoint | `python3 -m model.batch.*` |
 | 넘기는 기준 | 모델 artifact와 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`이 같은 run 기준으로 남아야 함 |
 
@@ -104,7 +104,7 @@ raw 데이터를 모델 학습 가능한 CSV/JSONL로 바꾸는 파트다.
 
 ### C 파트가 D/E/F 파트에 넘기는 것
 
-- D 파트: `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, 필요 시 `outputs/canonical_embeddings.npz`
+- D 파트: `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, 필요 시 `outputs/canonical_embeddings.npz`. Temporal run은 `outputs/pre/<run_label>/sasrec_cl.pt`, `item2idx.json`, `canonical_embeddings.npz`, `interest_states/`를 넘긴다.
 - E 파트: replay orchestration에 필요한 model artifact
 - F 파트: `data/clustering/user_clusters.parquet`를 Cluster explorer가 읽음. 이 파일은 `model/batch/export_clusters.py`로 재생성
 
@@ -114,9 +114,9 @@ rating event를 online user state로 반영하고, active positive embedding을 
 
 | 항목 | 내용 |
 |---|---|
-| 담당 파일 | `model/stream/state.py`, `model/stream/runtime_store.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py` |
+| 담당 파일 | `model/stream/state.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py` |
 | Input | C 파트 model artifact, `data/ratings_drop_processed.jsonl` 또는 E 파트 trace replay event |
-| Output | `outputs/stream/user_states/`, `outputs/stream/online_embeddings.npz`, `outputs/stream/interest_states/`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`, `outputs/stream/refit_events.jsonl`, `outputs/stream/stream_recommendations.jsonl` |
+| Output | `outputs/stream/user_states/`, `outputs/stream/online_embeddings.npz`, `outputs/stream/interest_states/`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`, `outputs/stream/refit_events.jsonl`, `outputs/stream/stream_recommendations.jsonl`, optional pre-T `outputs/pre/<run_label>/user_states/` |
 | Endpoint | `python3 -m model.stream.*` |
 | 넘기는 기준 | user state, online embedding, assignment/refit log가 같은 output scope 안에서 만들어져야 함 |
 
@@ -124,6 +124,7 @@ rating event를 online user state로 반영하고, active positive embedding을 
 
 | step | 파일 | Input | Output |
 |---|---|---|---|
+| pre-T state seed | `model/stream/seed_pre_t_state.py` | `data/ratings_drop_processed.jsonl`, `item2idx.json`, optional existing interest state dir | cutoff-scoped `user_states/{user_id}.json`, `pre_summary.json`, marked `processedRawEventIds` in existing interest states |
 | online extract | `model/stream/extract_online.py` | rating events, `outputs/sasrec_cl.pt`, `outputs/item2idx.json` | `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl` |
 | interest assign | `model/stream/interest_assign.py` | `outputs/stream/online_embeddings.npz`, existing `outputs/stream/interest_states/` | `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl` |
 | cluster refit | `model/stream/cluster_refit.py` | `outputs/stream/refit_requests.jsonl`, `outputs/stream/online_embeddings.npz` | updated `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/refit_events.jsonl` |
@@ -141,10 +142,10 @@ rating event를 online user state로 반영하고, active positive embedding을 
 | 항목 | 내용 |
 |---|---|
 | 담당 파일 | `replay/`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `docs/streaming-replay-dashboard-contract.md`, `replay/README.md` |
-| Input | `data/ratings_drop_processed.jsonl`, C 파트 model artifact |
-| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `replay.sqlite`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl` |
+| Input | `data/ratings_drop_processed.jsonl`, C 파트 model artifact, optional D 파트 pre-T seed state |
+| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `replay.sqlite`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl`. Temporal run은 별도 root 예: `outputs/post/temporal_2022/` |
 | Endpoint | `make -C replay`, `replay/bin/rating_replay`, `python3 -m model.stream.replay_pipeline --speed N` |
-| 넘기는 기준 | 모든 replay demo artifact는 `outputs/stream/replay_demo/` 아래에 격리되어야 함 |
+| 넘기는 기준 | 모든 replay artifact는 지정된 `--output-root` 아래에 격리되어야 함 |
 
 ### E 파트 endpoint
 

@@ -17,6 +17,8 @@ python3 -m model.batch.train → 모델 학습 → sasrec_cl.pt + sasrec_cl_best
      python3 -m model.batch.visualize_clusters → 유저별 클러스터 변화 시각화 → outputs/viz/ 저장
 
 streaming/replay path:
+python3 -m model.stream.seed_pre_t_state → cutoff 이전 user state seed 생성
+       ↓
 python3 -m model.stream.extract_online → raw user state 갱신 + active positive online_embeddings.npz 저장
        ↓
      python3 -m model.stream.interest_assign → interest assignment + refit request 기록
@@ -46,6 +48,7 @@ python3 -m model.stream.extract_online → raw user state 갱신 + active positi
 | `common/sasrec.py` | SASRecCL 모델, Contrastive Loss |
 | `common/runtime.py` | 로그, run metadata, seed/device 유틸 |
 | `stream/state.py` | online user raw event state, positive projection, state JSON 저장/로드 |
+| `stream/seed_pre_t_state.py` | cutoff 이전 rating history로 replay-ready user state를 seed하고 기존 interest state의 processed raw event를 표시 |
 | `stream/extract_online.py` | online rating ingest, active positive canonical embedding 추출 |
 | `stream/interest_assign.py` | online interest assignment, pending buffer, refit request 기록 |
 | `stream/cluster_refit.py` | triggered cluster refit backend, GPU-first/CPU fallback, genre labeling 포함 |
@@ -67,8 +70,22 @@ python3 -m model.batch.train
 # 1-1. 특정 실험 ID로 학습
 python3 -m model.batch.train --run-id sasrec_cl_cl0_05 --cl-lambda 0.05
 
+# 1-2. Temporal 2022용 pre-T 학습 산출물 생성
+python3 -m model.batch.train \
+  --run-id temporal_2022 \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --output-dir outputs/pre/temporal_2022
+
 # 2. canonical event embedding 추출 (streaming/replay 파이프라인 기본 입력)
 python3 -m model.batch.extract_canonical
+
+# 2-0. Temporal 2022용 pre-T canonical 추출
+python3 -m model.batch.extract_canonical \
+  --run-id temporal_2022 \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --output outputs/pre/temporal_2022/canonical_embeddings.npz
 
 # 2-1. canonical extract smoke test
 python3 -m model.batch.extract_canonical --limit-users 2 --batch-size 32 --num-workers 0 --output outputs/test_canonical_embeddings.npz
@@ -79,11 +96,27 @@ python3 -m model.batch.extract_canonical --user-id 28
 # 2-3. 배치 클러스터링 (canonical_embeddings.npz 기본 입력, genre labeling 자동)
 python3 -m model.batch.cluster
 
+# 2-3-1. Temporal 2022용 pre-T interest state 생성
+python3 -m model.batch.cluster \
+  --run-id temporal_2022 \
+  --embeddings outputs/pre/temporal_2022/canonical_embeddings.npz \
+  --output outputs/pre/temporal_2022/user_interests.npz \
+  --interest-state-dir outputs/pre/temporal_2022/interest_states
+
 # 2-4. 배치 클러스터링 단일 유저 테스트
 python3 -m model.batch.cluster --user-id 28
 
 # 2-5. online embedding/user state smoke test
 python3 -m model.stream.extract_online --bootstrap-user-id 28 --output outputs/stream/test_online_embeddings.npz
+
+# 2-5-0. Temporal 2022용 pre-T user state seed 생성
+python3 -m model.stream.seed_pre_t_state \
+  --run-id temporal_2022 \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --state-dir outputs/pre/temporal_2022/user_states \
+  --interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --summary outputs/pre/temporal_2022/pre_summary.json
 
 # 2-6. online interest assignment/refit trigger smoke test
 python3 -m model.stream.interest_assign --embeddings outputs/stream/test_online_embeddings.npz
@@ -99,6 +132,22 @@ make -C replay
 
 # 2-10. trace-clock replay smoke test
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --run-id trace_replay_smoke
+
+# 2-10-1. Temporal 2022 post-T seeded replay smoke
+python3 -m model.stream.replay_pipeline \
+  --run-id temporal_2022_replay_smoke \
+  --output-root outputs/post/temporal_2022 \
+  --reset-output \
+  --generate-events \
+  --start-rated-at 2022-01-01T00:00:00Z \
+  --limit-events 5 \
+  --speed 100 \
+  --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --seed-user-state-dir outputs/pre/temporal_2022/user_states \
+  --seed-interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --cluster-backend cpu \
+  --skip-refit
 
 # 2-11. trace-clock replay + online recommendation smoke test
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --recommend --recommend-top-k 20 --run-id trace_replay_with_recommend
@@ -146,6 +195,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `python3 -m model.batch.train`는 `--run-id`가 없으면 timestamp 기반 run id를 새로 만들고 `outputs/latest_model_run_id.txt`에 기록한다.
 - `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`, `python3 -m model.stream.recommend_online`은 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - `python3 -m model.stream.replay_pipeline`은 `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, 선택적 `stream_recommendations.jsonl` metadata를 run별 manifest/metrics에 기록한다.
+- Temporal cutoff run은 `--max-rated-at-exclusive`와 `--start-rated-at`를 같은 T로 맞추고, 모델 관련 산출물은 `outputs/pre/<run_label>/` 아래에 두는 것을 권장한다. 기존 루트 산출물은 default/legacy 호환 경로다.
 - run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster/refit/recommend/replay summary를 append한다.
@@ -216,6 +266,19 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/sasrec_cl.pt` | 마지막 epoch 모델 가중치 |
 | `outputs/sasrec_cl_best.pt` | validation Recall@10 기준 best 모델 가중치 |
 | `outputs/item2idx.json` | 아이템 ID → 인덱스 매핑 (학습 vocabulary) |
+| `outputs/pre/temporal_2022/sasrec_cl.pt` | `T=2022-01-01T00:00:00Z` pre-T 학습 마지막 checkpoint |
+| `outputs/pre/temporal_2022/sasrec_cl_best.pt` | Temporal 2022 pre-T best checkpoint |
+| `outputs/pre/temporal_2022/item2idx.json` | Temporal 2022 pre-T item vocabulary |
+| `outputs/pre/temporal_2022/canonical_embeddings.npz` | Temporal 2022 pre-T canonical embeddings |
+| `outputs/pre/temporal_2022/user_interests.npz` | Temporal 2022 pre-T batch cluster visualization/export source |
+| `outputs/pre/temporal_2022/user_states/{user_id}.json` | Temporal 2022 replay 시작용 pre-T user state |
+| `outputs/pre/temporal_2022/interest_states/{user_id}.json` | Temporal 2022 replay 시작용 pre-T interest state |
+| `outputs/pre/temporal_2022/pre_summary.json` | Temporal 2022 pre-T user state seed summary |
+| `outputs/post/temporal_2022/replay.sqlite` | Temporal 2022 post-T replay runtime/state SQLite store |
+| `outputs/post/temporal_2022/replay_summary.json` | Temporal 2022 post-T replay summary entrypoint |
+| `outputs/post/temporal_2022/user_states/{user_id}.json` | Temporal 2022 post-T replay 중 갱신된 user state |
+| `outputs/post/temporal_2022/interest_states/{user_id}.json` | Temporal 2022 post-T replay 중 갱신된 interest state |
+| `outputs/post/temporal_2022/online_embeddings.npz` | Temporal 2022 post-T replay-scoped online embeddings |
 | `outputs/canonical_embeddings.npz` | canonical event embedding `embeddings(N,128)`, `user_ids(N,)`, `event_idx(N,)`, `movie_ids(N,)`, `rated_at_ts(N,)`, `rated_at_iso(N,)`, `history_len(N,)`, `context_start_idx(N,)` |
 | `outputs/user_interests.npz` | batch cluster visualization/export source. `labels_user_ids`, `labels_timepoints`, `labels`, `umap_z`, `win_*` 배열을 저장 |
 | `outputs/batch/interest_states/{user_id}.json` | 배치 클러스터링 결과 interest state. interest vector와 `interests[k].topGenres`에 클러스터별 상위 장르 포함 |

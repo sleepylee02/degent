@@ -38,6 +38,21 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Max file size for SHA256 hashing. Use -1 for no limit.",
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("outputs"),
+        help="Directory for checkpoint and item2idx artifacts.",
+    )
+    parser.add_argument("--checkpoint-output", type=Path, default=None, help="Last checkpoint output path.")
+    parser.add_argument("--best-checkpoint-output", type=Path, default=None, help="Best checkpoint output path.")
+    parser.add_argument("--item2idx-output", type=Path, default=None, help="item2idx output path.")
+    parser.add_argument(
+        "--max-rated-at-exclusive",
+        type=str,
+        default=None,
+        help="Use only ratings with ratedAt strictly before this UTC ISO timestamp.",
+    )
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=256)
     parser.add_argument("--num-workers", type=int, default=4)
@@ -55,6 +70,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cl-lambda", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
+
+
+def resolve_path(root: Path, path: Path) -> Path:
+    return path if path.is_absolute() else root / path
 
 
 # =====================
@@ -172,6 +191,18 @@ if __name__ == "__main__":
     DATA_DIR    = ROOT / 'data'
     OUTPUTS_DIR = ROOT / 'outputs'
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+    artifact_dir = resolve_path(ROOT, args.output_dir)
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_output = resolve_path(ROOT, args.checkpoint_output) if args.checkpoint_output else artifact_dir / "sasrec_cl.pt"
+    best_checkpoint_output = (
+        resolve_path(ROOT, args.best_checkpoint_output)
+        if args.best_checkpoint_output
+        else artifact_dir / "sasrec_cl_best.pt"
+    )
+    item2idx_output = resolve_path(ROOT, args.item2idx_output) if args.item2idx_output else artifact_dir / "item2idx.json"
+    checkpoint_output.parent.mkdir(parents=True, exist_ok=True)
+    best_checkpoint_output.parent.mkdir(parents=True, exist_ok=True)
+    item2idx_output.parent.mkdir(parents=True, exist_ok=True)
     run_id      = resolve_model_run_id(OUTPUTS_DIR, args.run_id, prefer_latest=False)
     run_dir     = ensure_experiment_run(ROOT, run_id)
     logger, log_path = setup_run_logging("train", OUTPUTS_DIR)
@@ -187,8 +218,10 @@ if __name__ == "__main__":
     logger.info("Experiment run id: %s", run_id)
     logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
+    logger.info("Artifact directory: %s", artifact_dir)
     logger.info("Movies input: %s", movies_path)
     logger.info("Ratings input: %s", ratings_path)
+    logger.info("Max ratedAt exclusive: %s", args.max_rated_at_exclusive)
     logger.info("Seed: %d", args.seed)
 
     set_global_seed(args.seed)
@@ -244,6 +277,12 @@ if __name__ == "__main__":
                         "stride": args.stride,
                         "min_interactions": args.min_interactions,
                         "min_activity_days": args.min_activity_days,
+                        "max_rated_at_exclusive": args.max_rated_at_exclusive,
+                        "artifact_dir": str(
+                            artifact_dir.relative_to(ROOT)
+                            if artifact_dir.is_relative_to(ROOT)
+                            else artifact_dir
+                        ),
                         "lr": args.lr,
                         "cl_lambda": args.cl_lambda,
                         "seed": args.seed,
@@ -265,7 +304,8 @@ if __name__ == "__main__":
     user_sequences = build_user_sequences(
         ratings_path,
         min_interactions=args.min_interactions,
-        min_activity_days=args.min_activity_days
+        min_activity_days=args.min_activity_days,
+        max_rated_at_exclusive=args.max_rated_at_exclusive,
     )
     logger.info("Filtered user sequences: %d", len(user_sequences))
 
@@ -369,7 +409,7 @@ if __name__ == "__main__":
 
     # 학습
     final_metrics = {}
-    best_path = OUTPUTS_DIR / 'sasrec_cl_best.pt'
+    best_path = best_checkpoint_output
     stopped_early = False
     for epoch in range(num_epochs):
         loss, ce, cl = trainer.train_epoch(train_loader)
@@ -423,7 +463,7 @@ if __name__ == "__main__":
             break
 
     # 모델 저장
-    out_path = OUTPUTS_DIR / 'sasrec_cl.pt'
+    out_path = checkpoint_output
     torch.save(model.state_dict(), out_path)
     logger.info("Saved last checkpoint: %s", out_path)
     if trainer.best_epoch > 0 and best_path.exists():
@@ -432,7 +472,7 @@ if __name__ == "__main__":
         logger.info("Best checkpoint was not saved because validation did not run.")
 
     # item2idx 저장 (extract.py에서 동일 vocabulary 재사용)
-    item2idx_path = OUTPUTS_DIR / 'item2idx.json'
+    item2idx_path = item2idx_output
     with open(item2idx_path, 'w') as f:
         json.dump({str(k): v for k, v in item2idx.items()}, f)
     logger.info("Saved item2idx: %s (%d items)", item2idx_path, len(item2idx))

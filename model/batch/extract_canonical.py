@@ -45,8 +45,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--min-interactions", type=int, default=1000)
     parser.add_argument("--min-activity-days", type=int, default=30)
+    parser.add_argument(
+        "--max-rated-at-exclusive",
+        type=str,
+        default=None,
+        help="Use only ratings with ratedAt strictly before this UTC ISO timestamp.",
+    )
     parser.add_argument("--limit-users", type=int, default=None)
     parser.add_argument("--user-id", type=int, default=None, help="Extract only this user (skips min-interactions filter).")
+    parser.add_argument("--movies", type=Path, default=Path("data/movies_processed_drop.csv"))
+    parser.add_argument("--ratings", type=Path, default=Path("data/ratings_drop_processed.jsonl"))
+    parser.add_argument("--checkpoint", type=Path, default=Path("outputs/sasrec_cl.pt"))
+    parser.add_argument("--item2idx", type=Path, default=Path("outputs/item2idx.json"))
     parser.add_argument("--output", type=Path, default=Path("outputs/canonical_embeddings.npz"))
     parser.add_argument("--seq-len", type=int, default=None)
     parser.add_argument("--d-model", type=int, default=None)
@@ -54,6 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-layers", type=int, default=None)
     parser.add_argument("--dropout", type=float, default=None)
     return parser.parse_args()
+
+
+def resolve_path(root: Path, path: Path) -> Path:
+    return path if path.is_absolute() else root / path
 
 
 @torch.no_grad()
@@ -109,11 +123,11 @@ if __name__ == "__main__":
     train_model_config = manifest.get("stages", {}).get("train", {}).get("model_config", {})
     logger, log_path = setup_run_logging("extract_canonical", OUTPUTS_DIR)
 
-    movies_path = DATA_DIR / "movies_processed_drop.csv"
-    ratings_path = DATA_DIR / "ratings_drop_processed.jsonl"
-    checkpoint_path = OUTPUTS_DIR / "sasrec_cl.pt"
-    item2idx_path = OUTPUTS_DIR / "item2idx.json"
-    out_path = args.output if args.output.is_absolute() else ROOT / args.output
+    movies_path = resolve_path(ROOT, args.movies)
+    ratings_path = resolve_path(ROOT, args.ratings)
+    checkpoint_path = resolve_path(ROOT, args.checkpoint)
+    item2idx_path = resolve_path(ROOT, args.item2idx)
+    out_path = resolve_path(ROOT, args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     seq_len = args.seq_len or int(train_model_config.get("max_len", 100))
@@ -131,6 +145,7 @@ if __name__ == "__main__":
     logger.info("Checkpoint input: %s", checkpoint_path)
     logger.info("item2idx input: %s", item2idx_path)
     logger.info("Canonical output: %s", out_path)
+    logger.info("Max ratedAt exclusive: %s", args.max_rated_at_exclusive)
 
     update_experiment_manifest(
         run_dir,
@@ -190,7 +205,9 @@ if __name__ == "__main__":
                         "num_workers": args.num_workers,
                         "min_interactions": args.min_interactions,
                         "min_activity_days": args.min_activity_days,
+                        "max_rated_at_exclusive": args.max_rated_at_exclusive,
                         "limit_users": args.limit_users,
+                        "user_id": args.user_id,
                         "embedding_contract": "canonical_event_v1",
                     },
                 }
@@ -219,6 +236,7 @@ if __name__ == "__main__":
         min_activity_days=0 if args.user_id is not None else args.min_activity_days,
         limit_users=args.limit_users,
         user_id=args.user_id,
+        max_rated_at_exclusive=args.max_rated_at_exclusive,
     )
     logger.info("Canonical load stats: %s", load_stats.to_dict())
 

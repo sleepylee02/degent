@@ -69,6 +69,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-events", type=int, default=None)
     parser.add_argument("--start-rated-at", type=str, default=None)
     parser.add_argument("--end-rated-at", type=str, default=None)
+    parser.add_argument(
+        "--seed-user-state-dir",
+        type=Path,
+        default=None,
+        help="Optional pre-T user state dir copied into the replay output root before processing.",
+    )
+    parser.add_argument(
+        "--seed-interest-state-dir",
+        type=Path,
+        default=None,
+        help="Optional pre-T interest state dir copied into the replay output root before processing.",
+    )
 
     parser.add_argument("--movies", type=Path, default=Path("data/movies_processed_drop.csv"))
     parser.add_argument("--checkpoint", type=Path, default=Path("outputs/sasrec_cl.pt"))
@@ -147,6 +159,51 @@ def count_jsonl(path: Path) -> int:
             if line.strip():
                 count += 1
     return count
+
+
+def count_json_files(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.glob("*.json") if item.is_file())
+
+
+def directory_metadata(path: Path | None, *, root: Path, copied_to: Path | None = None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    metadata: dict[str, Any] = {
+        "path": relative_or_absolute(root, path),
+        "exists": path.exists(),
+        "jsonFiles": count_json_files(path),
+    }
+    if copied_to is not None:
+        metadata["copiedTo"] = relative_or_absolute(root, copied_to)
+    return metadata
+
+
+def copy_seed_directory(source: Path | None, destination: Path) -> dict[str, Any] | None:
+    if source is None:
+        return None
+    if not source.exists():
+        raise FileNotFoundError(f"Seed directory not found: {source}")
+    if not source.is_dir():
+        raise NotADirectoryError(f"Seed path is not a directory: {source}")
+    if source.resolve() == destination.resolve():
+        return {
+            "source": str(source),
+            "destination": str(destination),
+            "copied": False,
+            "jsonFiles": count_json_files(destination),
+            "reason": "source_is_destination",
+        }
+
+    destination.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, destination, dirs_exist_ok=True)
+    return {
+        "source": str(source),
+        "destination": str(destination),
+        "copied": True,
+        "jsonFiles": count_json_files(destination),
+    }
 
 
 def read_jsonl_slice(path: Path, start: int) -> list[dict[str, Any]]:
@@ -285,6 +342,7 @@ def build_summary(
     totals: dict[str, Any],
     paths: dict[str, Path],
     root: Path,
+    seed_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     throughput = None if elapsed_sec <= 0 else processed_events / elapsed_sec
     trace_span_sec = max(0.0, trace_end_ts - trace_start_ts)
@@ -314,6 +372,7 @@ def build_summary(
         "targetEventsPerSec": target_events_per_sec,
         "refitBackend": totals.get("refitBackend"),
         "totals": totals,
+        "seed": seed_summary or {},
         "paths": {
             "replayInputEvents": relative_or_absolute(root, paths["replay_input_events"]),
             "ingressEvents": relative_or_absolute(root, paths["ingress_events"]),
@@ -364,11 +423,21 @@ def main() -> None:
     paths["replay_db"] = runtime_db_path
     runtime_store.init_store(runtime_db_path)
 
+    seed_user_state_dir = resolve_path(root, args.seed_user_state_dir) if args.seed_user_state_dir else None
+    seed_interest_state_dir = (
+        resolve_path(root, args.seed_interest_state_dir) if args.seed_interest_state_dir else None
+    )
+    seed_summary = {
+        "userState": copy_seed_directory(seed_user_state_dir, paths["user_state_dir"]),
+        "interestState": copy_seed_directory(seed_interest_state_dir, paths["interest_state_dir"]),
+    }
+
     logger.info("Experiment run id: %s", run_id)
     logger.info("Output root: %s", output_root)
     logger.info("Replay input events: %s", input_events_path)
     logger.info("Runtime DB: %s", runtime_db_path)
     logger.info("Trace replay speed: %.6g", speed)
+    logger.info("Seed summary: %s", seed_summary)
 
     if args.generate_events:
         run_generator(args, root=root, input_events_path=input_events_path, logger=logger)
@@ -783,6 +852,7 @@ def main() -> None:
             totals=totals,
             paths=paths,
             root=root,
+            seed_summary=seed_summary,
         )
         write_json(paths["replay_summary"], summary)
         runtime_store.upsert_run(
@@ -821,6 +891,16 @@ def main() -> None:
                         "log": file_metadata(log_path, root=root),
                         "inputs": {
                             "replay_input_events": file_metadata(input_events_path, root=root, include_sha256=True),
+                            "seed_user_state_dir": directory_metadata(
+                                seed_user_state_dir,
+                                root=root,
+                                copied_to=paths["user_state_dir"],
+                            ),
+                            "seed_interest_state_dir": directory_metadata(
+                                seed_interest_state_dir,
+                                root=root,
+                                copied_to=paths["interest_state_dir"],
+                            ),
                         },
                         "outputs": {
                             "replay_summary": file_metadata(paths["replay_summary"], root=root, include_sha256=True),
@@ -877,6 +957,7 @@ def main() -> None:
             totals=totals,
             paths=paths,
             root=root,
+            seed_summary=seed_summary,
         )
         summary["error"] = f"{exc.__class__.__name__}: {exc}"
         write_json(paths["replay_summary"], summary)

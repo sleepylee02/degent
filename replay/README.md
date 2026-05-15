@@ -40,6 +40,22 @@ It writes emitted ingress events, replay progress, lag/throughput summary, and s
 
 Add `--recommend` to run online recommendation after each emitted event. Recommendation rows are appended to `outputs/stream/replay_demo/stream_recommendations.jsonl` and exposed through the replay summary `paths`.
 
+For temporal E2E runs, generate only post-cutoff events and seed replay state from the pre-cutoff model artifact root:
+
+```bash
+.venv/bin/python -m model.stream.replay_pipeline \
+  --run-id temporal_2022_replay \
+  --output-root outputs/post/temporal_2022 \
+  --reset-output \
+  --generate-events \
+  --start-rated-at 2022-01-01T00:00:00Z \
+  --speed 100 \
+  --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --seed-user-state-dir outputs/pre/temporal_2022/user_states \
+  --seed-interest-state-dir outputs/pre/temporal_2022/interest_states
+```
+
 To build input events and run the closed-loop smoke in one command:
 
 ```bash

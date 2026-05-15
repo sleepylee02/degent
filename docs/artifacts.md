@@ -36,10 +36,18 @@
 | `outputs/sasrec_cl.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
 | `outputs/sasrec_cl_best.pt` | model artifact | `python3 -m model.batch.train` | regenerate |
 | `outputs/item2idx.json` | model artifact | `python3 -m model.batch.train` | regenerate |
+| `outputs/pre/temporal_2022/sasrec_cl.pt` | temporal model artifact | `python3 -m model.batch.train --max-rated-at-exclusive 2022-01-01T00:00:00Z --output-dir outputs/pre/temporal_2022` | regenerate |
+| `outputs/pre/temporal_2022/sasrec_cl_best.pt` | temporal model artifact | `python3 -m model.batch.train --max-rated-at-exclusive 2022-01-01T00:00:00Z --output-dir outputs/pre/temporal_2022` | regenerate |
+| `outputs/pre/temporal_2022/item2idx.json` | temporal model artifact | `python3 -m model.batch.train --max-rated-at-exclusive 2022-01-01T00:00:00Z --output-dir outputs/pre/temporal_2022` | regenerate |
 | `outputs/embeddings.npz` | legacy model artifact | removed overlap-window extract workflow | no new writes |
 | `outputs/canonical_embeddings.npz` | model artifact | `python3 -m model.batch.extract_canonical` | regenerate |
+| `outputs/pre/temporal_2022/canonical_embeddings.npz` | temporal model artifact | `python3 -m model.batch.extract_canonical --max-rated-at-exclusive 2022-01-01T00:00:00Z --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt --item2idx outputs/pre/temporal_2022/item2idx.json` | regenerate |
 | `outputs/user_interests.npz` | batch cluster export source | `python3 -m model.batch.cluster` | regenerate |
 | `outputs/batch/interest_states/{user_id}.json` | batch interest state | `python3 -m model.batch.cluster` | regenerate |
+| `outputs/pre/temporal_2022/user_interests.npz` | temporal batch cluster export source | `python3 -m model.batch.cluster --embeddings outputs/pre/temporal_2022/canonical_embeddings.npz --output outputs/pre/temporal_2022/user_interests.npz` | regenerate |
+| `outputs/pre/temporal_2022/user_states/{user_id}.json` | temporal pre-T user state seed | `python3 -m model.stream.seed_pre_t_state --max-rated-at-exclusive 2022-01-01T00:00:00Z` | regenerate |
+| `outputs/pre/temporal_2022/interest_states/{user_id}.json` | temporal pre-T interest state seed | `python3 -m model.batch.cluster --interest-state-dir outputs/pre/temporal_2022/interest_states` | regenerate |
+| `outputs/pre/temporal_2022/pre_summary.json` | temporal pre-T state seed summary | `python3 -m model.stream.seed_pre_t_state --summary outputs/pre/temporal_2022/pre_summary.json` | regenerate |
 | `outputs/recommendations.csv` | batch recommendation table | `python3 -m model.batch.recommend` | regenerate |
 | `outputs/recommendations.npz` | batch recommendation arrays | `python3 -m model.batch.recommend` | regenerate |
 | `outputs/stream/user_states/{user_id}.json` | streaming model artifact | `python3 -m model.stream.extract_online` | regenerate |
@@ -62,6 +70,12 @@
 | `outputs/stream/replay_demo/refit_events.jsonl` | replay-scoped refit event log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
 | `outputs/stream/replay_demo/interest_states/{user_id}.json` | replay-scoped interest state | `python3 -m model.stream.replay_pipeline` | regenerate |
 | `outputs/stream/replay_demo/stream_recommendations.jsonl` | replay-scoped recommendation log | `python3 -m model.stream.replay_pipeline --recommend` | append/regenerate |
+| `outputs/post/temporal_2022/` | temporal post-T replay artifact root | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022 --start-rated-at 2022-01-01T00:00:00Z` | regenerate |
+| `outputs/post/temporal_2022/replay.sqlite` | temporal post-T SQLite runtime/state store | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022` | regenerate |
+| `outputs/post/temporal_2022/replay_summary.json` | temporal post-T replay summary entrypoint | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022` | regenerate |
+| `outputs/post/temporal_2022/user_states/{user_id}.json` | temporal post-T replay-scoped user state | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022` | regenerate |
+| `outputs/post/temporal_2022/interest_states/{user_id}.json` | temporal post-T replay-scoped interest state | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022` | regenerate |
+| `outputs/post/temporal_2022/online_embeddings.npz` | temporal post-T replay-scoped online embeddings | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022` | regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
 | `outputs/logs/` | tracked runtime logs | model scripts | append/regenerate |
@@ -86,6 +100,7 @@ python3 preprocess/process_rating/process_ratings_drop.py
 python3 -m model.batch.train
 python3 -m model.batch.extract_canonical
 python3 -m model.batch.cluster
+python3 -m model.stream.seed_pre_t_state --max-rated-at-exclusive 2022-01-01T00:00:00Z
 python3 -m model.batch.export_clusters
 python3 -m model.batch.visualize_clusters
 python3 -m model.stream.extract_online --bootstrap-user-id <userId>

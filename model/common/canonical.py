@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from model.common.dataset import parse_ts
+from model.common.dataset import parse_ts, resolve_cutoff_ts
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ class CanonicalLoadStats:
     users_seen: int = 0
     filtered_users: int = 0
     kept_users: int = 0
+    cutoff_excluded_events: int = 0
     total_positive_events: int = 0
     kept_events: int = 0
     skipped_unknown_items: int = 0
@@ -54,9 +55,11 @@ def load_canonical_event_sequences(
     min_activity_days: int = 30,
     limit_users: int | None = None,
     user_id: int | None = None,
+    max_rated_at_exclusive: str | float | None = None,
 ) -> tuple[dict[int, list[CanonicalEvent]], CanonicalLoadStats]:
     stats = CanonicalLoadStats()
     user_events: dict[int, list[CanonicalEvent]] = {}
+    cutoff_ts = resolve_cutoff_ts(max_rated_at_exclusive)
 
     with jsonl_path.open("r", encoding="utf-8") as handle:
         for line in tqdm(handle, desc="load canonical users"):
@@ -65,24 +68,32 @@ def load_canonical_event_sequences(
             entry_user_id = int(entry["userId"])
             if user_id is not None and entry_user_id != user_id:
                 continue
-            ratings = entry["ratings"]
+            ratings = []
+            for rating in entry["ratings"]:
+                rated_at_ts = parse_ts(str(rating["ratedAt"]))
+                if cutoff_ts is not None and rated_at_ts >= cutoff_ts:
+                    stats.cutoff_excluded_events += 1
+                    continue
+                ratings.append((rating, rated_at_ts))
+            if not ratings:
+                continue
 
-            first_ts = parse_ts(entry["firstRatedAt"])
-            last_ts = parse_ts(entry["lastRatedAt"])
+            first_ts = ratings[0][1]
+            last_ts = ratings[-1][1]
             activity_days = (last_ts - first_ts) / 86400
             if activity_days < min_activity_days:
                 continue
 
-            rating_values = np.array([r["rating"] for r in ratings])
+            rating_values = np.array([r["rating"] for r, _ in ratings])
             z_scores = (rating_values - rating_values.mean()) / (rating_values.std() + 1e-8)
 
             positives = [
                 {
                     "movie_id": int(rating["movieId"]),
                     "rated_at_iso": str(rating["ratedAt"]),
-                    "rated_at_ts": parse_ts(str(rating["ratedAt"])),
+                    "rated_at_ts": rated_at_ts,
                 }
-                for rating, z_score in zip(ratings, z_scores)
+                for (rating, rated_at_ts), z_score in zip(ratings, z_scores)
                 if z_score > 0
             ]
             positives.sort(key=lambda item: (item["rated_at_ts"], item["movie_id"]))

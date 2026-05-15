@@ -26,6 +26,8 @@ preprocess
 
 Batch와 streaming은 같은 checkpoint(`outputs/sasrec_cl.pt`)와 item vocabulary(`outputs/item2idx.json`)를 공유한다. Batch는 전체 history를 한 번에 읽어서 canonical event embedding과 user별 cluster를 만든다. Streaming은 rating event를 누적 state에 반영한 뒤, 현재 시점의 active positive event만 다시 embedding으로 만들고 interest state를 점진적으로 갱신한다.
 
+Temporal streaming run에서는 기본 루트 산출물 대신 `outputs/pre/<run_label>/` 아래의 checkpoint/item2idx/canonical/user state/interest state를 명시적으로 넘긴다. 예: 2022 E2E는 `T=2022-01-01T00:00:00Z`, pre-T는 `ratedAt < T`, post-T replay는 `ratedAt >= T`를 사용한다.
+
 ## 2. Batch Pipeline
 
 ### 2.1 Train
@@ -48,6 +50,8 @@ python3 -m model.batch.train
 - `experiments/model/<run_id>/metrics.jsonl`
 
 현재 모델은 `SASRecCL`이다. 기본 설정은 `seq_len=100`, `d_model=128`, `num_heads=2`, `num_layers=2`, `dropout=0.2`, `cl_lambda=0.1` 계열이다. 학습 단계는 batch와 streaming 양쪽에서 사용할 item embedding과 sequence encoder를 만든다.
+
+Temporal cutoff 학습은 `--max-rated-at-exclusive <T>`로 T 이전 rating만 사용한다. 모델 산출물은 `--output-dir outputs/pre/<run_label>`로 분리할 수 있으며, 기존 기본값은 `outputs/` 루트다.
 
 ### 2.2 Canonical Event Embedding
 
@@ -82,6 +86,8 @@ python3 -m model.batch.extract_canonical
 
 기본 필터는 `min_interactions=1000`, `min_activity_days=30`이다. `--user-id`를 쓰면 단일 user 추출용으로 이 필터를 우회한다. 예전 `model.batch.extract` entrypoint는 현재 경로가 아니며, 현재 공식 추출 경로는 `model.batch.extract_canonical`이다.
 
+Temporal cutoff 추출은 `--max-rated-at-exclusive <T>`와 pre-T checkpoint/item2idx를 함께 지정한다. 예: `--checkpoint outputs/pre/temporal_2022/sasrec_cl.pt --item2idx outputs/pre/temporal_2022/item2idx.json --output outputs/pre/temporal_2022/canonical_embeddings.npz`.
+
 ### 2.3 Cluster
 
 ```bash
@@ -101,6 +107,8 @@ python3 -m model.batch.cluster
 - `experiments/model/<run_id>/metrics.jsonl`
 
 `model.batch.cluster`는 user별 embedding sequence에 UMAP + HDBSCAN을 수행한다. Cluster backend는 `--cluster-backend auto|gpu|cpu`이며, 공통 구현은 `model.common.cluster`에 있다. `auto`는 RAPIDS/cuML GPU 사용 가능 여부를 먼저 확인하고, 불가능하거나 runtime 실패가 나면 CPU 구현으로 진행한다.
+
+`--output`으로 visualization/export NPZ 경로를 지정할 수 있다. Temporal 2022 run은 `--output outputs/pre/temporal_2022/user_interests.npz --interest-state-dir outputs/pre/temporal_2022/interest_states`처럼 pre-T 모델/state 산출물을 `outputs/pre/` 아래에 둔다.
 
 현재 산출물은 두 계층으로 나뉜다.
 
@@ -180,6 +188,18 @@ Event input은 camelCase와 snake_case를 모두 수용한다.
 - `ratedAt` 또는 `rated_at`
 
 Trace replay pipeline은 `replay_input_events.jsonl`의 `ratedAtTs`를 기준으로 event별 schedule을 계산하고, `extract_online --event-json`에 단일 event payload를 넘긴다. 주입 시각과 lag는 `outputs/stream/replay_demo/ingress_events.jsonl`에 append된다.
+
+### 3.1.1 Pre-T User State Seed
+
+```bash
+python3 -m model.stream.seed_pre_t_state \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --state-dir outputs/pre/temporal_2022/user_states \
+  --interest-state-dir outputs/pre/temporal_2022/interest_states
+```
+
+`seed_pre_t_state`는 `ratings_drop_processed.jsonl`에서 cutoff 이전 rating만 읽어 replay 시작용 `user_states/{user_id}.json`을 만든다. 기존 pre-T batch cluster가 만든 interest state가 있으면 해당 user의 pre-T active `rawEventId`를 `processedRawEventIds`에 표시해, post-T replay 첫 이벤트에서 과거 active row가 신규 assignment/refit 대상으로 처리되지 않게 한다.
 
 ### 3.2 Online User State
 
@@ -395,6 +415,8 @@ python3 -m model.stream.replay_pipeline \
 - `outputs/stream/replay_demo/`
 
 Replay pipeline은 새 모델 로직을 구현하지 않는다. replay input의 `ratedAtTs`를 trace clock으로 삼고, `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed` 기준으로 event를 emit한 뒤 기존 streaming CLI를 event 단위로 호출한다.
+
+Temporal seeded replay는 `--start-rated-at <T>`로 post-T input을 만들고, `--seed-user-state-dir` / `--seed-interest-state-dir`로 pre-T state를 replay output root에 복사한 뒤 시작한다. 예: `--output-root outputs/post/temporal_2022 --seed-user-state-dir outputs/pre/temporal_2022/user_states --seed-interest-state-dir outputs/pre/temporal_2022/interest_states`.
 
 `outputs/stream/replay_demo/replay.sqlite`는 runtime state/control-plane 정본이다. Payload, state summary, assignment, refit lifecycle, stage latency, recommendation metadata, embedding snapshot row index를 SQLite에 기록한다. Checkpoint, `online_embeddings.npz`, canonical/batch embedding matrix 같은 대형 vector artifact는 파일 정본으로 유지하고 SQLite에는 metadata/index만 둔다.
 

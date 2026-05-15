@@ -70,6 +70,68 @@
 
 위 smoke는 trace schedule/lag 기록 확인을 위해 `--skip-refit`을 사용한다. refit까지 닫는 검증은 `--skip-refit`을 제거하고 `--cluster-backend auto` 또는 `cpu`를 지정한다.
 
+## Temporal 2022 Runbook
+
+Temporal streaming E2E는 아래 cutoff를 하나의 계약으로 사용한다.
+
+```text
+T = 2022-01-01T00:00:00Z
+pre-T:  ratedAt < T
+post-T: ratedAt >= T
+```
+
+신규 temporal run의 모델 관련 산출물은 `outputs/pre/temporal_2022/` 아래에 모으고, replay runtime 산출물은 `outputs/post/temporal_2022/`에 격리한다. 기존 `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz` 같은 루트 경로는 default/legacy 호환 경로로 유지한다.
+
+Pre-T 모델과 state 생성:
+
+```bash
+.venv/bin/python -m model.batch.train \
+  --run-id temporal_2022 \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --output-dir outputs/pre/temporal_2022
+
+.venv/bin/python -m model.batch.extract_canonical \
+  --run-id temporal_2022 \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --output outputs/pre/temporal_2022/canonical_embeddings.npz
+
+.venv/bin/python -m model.batch.cluster \
+  --run-id temporal_2022 \
+  --embeddings outputs/pre/temporal_2022/canonical_embeddings.npz \
+  --output outputs/pre/temporal_2022/user_interests.npz \
+  --interest-state-dir outputs/pre/temporal_2022/interest_states
+
+.venv/bin/python -m model.stream.seed_pre_t_state \
+  --run-id temporal_2022 \
+  --max-rated-at-exclusive 2022-01-01T00:00:00Z \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --state-dir outputs/pre/temporal_2022/user_states \
+  --interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --summary outputs/pre/temporal_2022/pre_summary.json
+```
+
+Post-T seeded replay:
+
+```bash
+.venv/bin/python -m model.stream.replay_pipeline \
+  --run-id temporal_2022_replay \
+  --output-root outputs/post/temporal_2022 \
+  --reset-output \
+  --generate-events \
+  --start-rated-at 2022-01-01T00:00:00Z \
+  --speed 100 \
+  --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt \
+  --item2idx outputs/pre/temporal_2022/item2idx.json \
+  --seed-user-state-dir outputs/pre/temporal_2022/user_states \
+  --seed-interest-state-dir outputs/pre/temporal_2022/interest_states \
+  --cluster-backend auto \
+  --recommend
+```
+
+`seed_pre_t_state`는 `user_states/{user_id}.json`을 T 직전 상태로 만들고, `interest_states/{user_id}.json`이 이미 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. 이렇게 해야 post-T 첫 이벤트 처리 때 pre-T active snapshot row가 새 이벤트처럼 assignment/refit 대상으로 보이지 않는다.
+
 ## Minimum Runbook
 
 필수 입력:

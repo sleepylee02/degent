@@ -271,6 +271,8 @@ if __name__ == "__main__":
                         help="Movies metadata CSV for genre labeling.")
     parser.add_argument("--embeddings",       type=Path,  default=Path("outputs/canonical_embeddings.npz"),
                         help="Input embeddings npz (canonical_embeddings.npz or embeddings.npz).")
+    parser.add_argument("--output",           type=Path,  default=Path("outputs/user_interests.npz"),
+                        help="Output NPZ for dashboard/export visualization data.")
     args = parser.parse_args()
 
     ROOT        = Path(__file__).resolve().parents[2]
@@ -283,7 +285,8 @@ if __name__ == "__main__":
     embeddings_path  = args.embeddings if args.embeddings.is_absolute() else ROOT / args.embeddings
     interest_state_dir = args.interest_state_dir if args.interest_state_dir.is_absolute() \
                          else ROOT / args.interest_state_dir
-    viz_npz_path = OUTPUTS_DIR / "user_interests.npz"
+    viz_npz_path = args.output if args.output.is_absolute() else ROOT / args.output
+    viz_npz_path.parent.mkdir(parents=True, exist_ok=True)
 
     genre_map_idx = None
     all_genres = None
@@ -331,6 +334,16 @@ if __name__ == "__main__":
                     "cluster_backend_requested": args.cluster_backend,
                     "cluster_backend_selected":  selected_backend,
                     "backend_fallback_reason":   fallback_reason,
+                    "output": str(
+                        viz_npz_path.relative_to(ROOT)
+                        if viz_npz_path.is_relative_to(ROOT)
+                        else viz_npz_path
+                    ),
+                    "interest_state_dir": str(
+                        interest_state_dir.relative_to(ROOT)
+                        if interest_state_dir.is_relative_to(ROOT)
+                        else interest_state_dir
+                    ),
                 },
             }
         },
