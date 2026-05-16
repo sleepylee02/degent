@@ -1,6 +1,6 @@
 # Streaming Replay/Dashboard Contract
 
-이 문서는 trace-clock replay runner와 dashboard가 공유하는 replay artifact 인터페이스 계약이다. 현재 우선 경로는 SQLite runtime store이며, 기존 JSONL/JSON/NPZ 파일은 fallback/debug와 대형 vector artifact 정본으로 유지한다.
+이 문서는 trace-clock replay runner와 dashboard가 공유하는 replay artifact 인터페이스 계약이다. 현재 우선 경로는 SQLite runtime store이며, 기존 JSONL/JSON 파일은 fallback/debug로 유지한다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다.
 
 ## Version
 
@@ -42,7 +42,7 @@ outputs/stream/replay_demo/replay.sqlite
 outputs/stream/replay_demo/replay_summary.json
 outputs/stream/replay_demo/user_states/{user_id}.json
 outputs/stream/replay_demo/interest_states/{user_id}.json
-outputs/stream/replay_demo/online_embeddings.npz
+outputs/stream/replay_demo/online_embeddings.npz  # optional: --export-online-embeddings-npz
 outputs/stream/replay_demo/online_embedding_events.jsonl
 outputs/stream/replay_demo/interest_assignments.jsonl
 outputs/stream/replay_demo/refit_requests.jsonl
@@ -52,7 +52,7 @@ outputs/stream/replay_demo/stream_recommendations.jsonl
 
 ## SQLite Runtime Store
 
-`replay.sqlite` is the runtime/state/control-plane store for a replay run. It does not replace large vector/checkpoint artifacts. Large matrices such as `online_embeddings.npz`, canonical embeddings, model checkpoints, and batch outputs remain file-backed; SQLite stores payloads, state summaries, lifecycle rows, metrics, artifact metadata, and embedding row indexes.
+`replay.sqlite` is the runtime/state/control-plane store for a replay run. Post replay active online embeddings are stored in SQLite `active_embedding_cache`; per-event delta assignment reads `embedding_cache_changes`. Large batch matrices such as canonical embeddings, model checkpoints, and batch outputs remain file-backed. `online_embeddings.npz` is optional debug/export output when `--export-online-embeddings-npz` is passed.
 
 Dashboard-readable tables:
 
@@ -66,6 +66,8 @@ Dashboard-readable tables:
 | `user_states` | user state payload and raw/positive counts |
 | `user_raw_events` | raw rating events by user |
 | `user_positive_events` | current positive projection rows by user |
+| `active_embedding_cache` | latest active online embedding rows by run/user/raw event |
+| `embedding_cache_changes` | per-event insert/update/inactivate signal for active embedding cache |
 | `interest_states` | interest state payload, pending/processed/refit flags |
 | `interest_vectors` | small interest vectors as `float32` BLOBs |
 | `assignments` | assignment/pending/outlier/already-processed records |
@@ -256,7 +258,7 @@ Required fields:
     "ingressEvents": "outputs/stream/replay_demo/ingress_events.jsonl",
     "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
     "replayDb": "outputs/stream/replay_demo/replay.sqlite",
-    "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
+    "onlineEmbeddings": null,
     "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
     "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
     "refitEvents": "outputs/stream/replay_demo/refit_events.jsonl",
@@ -266,7 +268,7 @@ Required fields:
 }
 ```
 
-Phase 6 should use `paths` from this file when present and fall back to the default paths above.
+Phase 6 should use `paths` from this file when present and fall back to the default paths above. `paths.onlineEmbeddings` may be `null` in the default post replay path.
 
 ## Stream Recommendations JSONL
 

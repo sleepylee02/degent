@@ -43,6 +43,15 @@ def scalar(conn: sqlite3.Connection, sql: str, params: tuple[Any, ...] = ()) -> 
     return row[0]
 
 
+def table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table,),
+        ).fetchone()
+    )
+
+
 def latest_run_id(conn: sqlite3.Connection) -> str:
     run_id = scalar(
         conn,
@@ -105,6 +114,8 @@ def count_by_status(conn: sqlite3.Connection, table: str, run_id: str) -> dict[s
 
 
 def table_count(conn: sqlite3.Connection, table: str, run_id: str | None = None) -> int:
+    if not table_exists(conn, table):
+        return 0
     if run_id is None:
         return int(scalar(conn, f"SELECT COUNT(*) FROM {table}") or 0)
     return int(scalar(conn, f"SELECT COUNT(*) FROM {table} WHERE run_id=?", (run_id,)) or 0)
@@ -357,10 +368,33 @@ def load_embedding_report(conn: sqlite3.Connection, run_id: str) -> dict[str, An
     repeated_rows = int(
         scalar(conn, "SELECT COUNT(*) FROM embedding_rows WHERE run_id=? AND already_processed=1", (run_id,)) or 0
     )
+    cache_rows = 0
+    cache_users = 0
+    cache_changes = 0
+    if table_exists(conn, "active_embedding_cache"):
+        cache_rows = int(
+            scalar(conn, "SELECT COUNT(*) FROM active_embedding_cache WHERE run_id=? AND status='active'", (run_id,))
+            or 0
+        )
+        cache_users = int(
+            scalar(
+                conn,
+                "SELECT COUNT(DISTINCT user_id) FROM active_embedding_cache WHERE run_id=? AND status='active'",
+                (run_id,),
+            )
+            or 0
+        )
+    if table_exists(conn, "embedding_cache_changes"):
+        cache_changes = int(
+            scalar(conn, "SELECT COUNT(*) FROM embedding_cache_changes WHERE run_id=?", (run_id,)) or 0
+        )
     return {
         "snapshotGroups": rows_to_dicts(snapshots),
         "rows": table_count(conn, "embedding_rows", run_id),
         "alreadySeenRows": repeated_rows,
+        "cacheActiveRows": cache_rows,
+        "cacheUsers": cache_users,
+        "cacheChanges": cache_changes,
     }
 
 
@@ -443,6 +477,8 @@ def build_report(db_path: Path, run_id: str | None, *, top_events: int, top_user
                     "refit_attempts",
                     "embedding_snapshots",
                     "embedding_rows",
+                    "active_embedding_cache",
+                    "embedding_cache_changes",
                     "recommendation_runs",
                     "recommendation_rows",
                 ]

@@ -9,7 +9,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 
 import numpy as np
@@ -28,6 +27,7 @@ from model.common.runtime import (
     setup_run_logging,
     update_experiment_manifest,
 )
+from model.stream.inprocess_worker import ReplayInProcessWorker
 
 
 TRACE_REPLAY_SUMMARY_VERSION = "stream_trace_replay_summary.v1"
@@ -104,6 +104,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recommend", action="store_true", help="Run online recommend after each emitted event.")
     parser.add_argument("--recommend-top-k", type=int, default=20)
     parser.add_argument("--recommend-normalize", action="store_true")
+    parser.add_argument(
+        "--export-online-embeddings-npz",
+        action="store_true",
+        help="Also write online_embeddings.npz for debug/export. Runtime stages use SQLite cache by default.",
+    )
     return parser.parse_args()
 
 
@@ -358,6 +363,8 @@ def build_summary(
     if scheduled_span_sec is not None and scheduled_span_sec > 0:
         target_events_per_sec = input_events / scheduled_span_sec
 
+    online_embeddings_path = paths["online_embeddings"]
+    online_embeddings_exported = online_embeddings_path.exists()
     return {
         "version": TRACE_REPLAY_SUMMARY_VERSION,
         "runId": run_id,
@@ -385,7 +392,7 @@ def build_summary(
             "ingressEvents": relative_or_absolute(root, paths["ingress_events"]),
             "replayEvents": relative_or_absolute(root, paths["replay_events"]),
             "replayDb": relative_or_absolute(root, paths["replay_db"]),
-            "onlineEmbeddings": relative_or_absolute(root, paths["online_embeddings"]),
+            "onlineEmbeddings": relative_or_absolute(root, online_embeddings_path) if online_embeddings_exported else None,
             "onlineEmbeddingEvents": relative_or_absolute(root, paths["online_embedding_events"]),
             "interestAssignments": relative_or_absolute(root, paths["interest_assignments"]),
             "refitRequests": relative_or_absolute(root, paths["refit_requests"]),
@@ -451,9 +458,6 @@ def main() -> None:
     else:
         seed_summary["userState"] = copy_seed_directory(seed_user_state_dir, paths["user_state_dir"])
         seed_summary["interestState"] = copy_seed_directory(seed_interest_state_dir, paths["interest_state_dir"])
-    seed_state_args = []
-    if seed_state_db_path is not None:
-        seed_state_args = ["--seed-state-db", str(seed_state_db_path), "--seed-run-id", str(seed_run_id)]
     use_legacy_state_dirs = seed_state_db_path is None and (
         seed_user_state_dir is not None or seed_interest_state_dir is not None
     )
@@ -463,6 +467,7 @@ def main() -> None:
     logger.info("Replay input events: %s", input_events_path)
     logger.info("Runtime DB: %s", runtime_db_path)
     logger.info("Trace replay speed: %.6g", speed)
+    logger.info("Stage execution: in-process worker")
     logger.info("Seed summary: %s", seed_summary)
 
     if args.generate_events:
@@ -473,6 +478,19 @@ def main() -> None:
     events = load_replay_events(input_events_path, max_events=args.max_events)
     if not events:
         raise ValueError(f"No replay events to process: {input_events_path}")
+
+    worker = ReplayInProcessWorker(
+        root=root,
+        run_id=run_id,
+        run_dir=run_dir,
+        paths=paths,
+        args=args,
+        runtime_db_path=runtime_db_path,
+        seed_state_db_path=seed_state_db_path,
+        seed_run_id=seed_run_id,
+        use_legacy_state_dirs=use_legacy_state_dirs,
+        logger=logger,
+    )
 
     trace_start_ts = float(events[0]["ratedAtTs"])
     trace_end_ts = float(events[-1]["ratedAtTs"])
@@ -498,6 +516,7 @@ def main() -> None:
         "meanProcessingLagSec": 0.0,
         "maxEndToEndLagSec": 0.0,
         "meanEndToEndLagSec": 0.0,
+        "stageExecution": "in_process",
     }
     injector_lags: list[float] = []
     processing_lags: list[float] = []
@@ -542,7 +561,9 @@ def main() -> None:
     )
 
     try:
+        total_events = len(events)
         for ordinal, event in enumerate(events):
+            event_number = ordinal + 1
             current_event_id = int(event["eventId"])
             event_trace_ts = float(event["ratedAtTs"])
             scheduled_offset_sec = max(0.0, (event_trace_ts - trace_start_ts) / speed)
@@ -594,91 +615,29 @@ def main() -> None:
                 status="processing",
                 processing_started_at=format_dt(processing_started_dt),
             )
+            logger.info(
+                "Replay progress %d/%d: processing eventId=%d userId=%d movieId=%d ratedAt=%s",
+                event_number,
+                total_events,
+                current_event_id,
+                int(event["userId"]),
+                int(event["movieId"]),
+                str(event["ratedAt"]),
+            )
             before_assignment_lines = count_jsonl(paths["interest_assignments"])
             before_refit_request_lines = count_jsonl(paths["refit_requests"])
             before_refit_event_lines = count_jsonl(paths["refit_events"])
 
             payload = event_payload(event)
-            extract_cmd = [
-                sys.executable,
-                "-m",
-                "model.stream.extract_online",
-                "--run-id",
-                run_id,
-                "--movies",
-                str(resolve_path(root, args.movies)),
-                "--checkpoint",
-                str(resolve_path(root, args.checkpoint)),
-                "--item2idx",
-                str(resolve_path(root, args.item2idx)),
-                "--output",
-                str(paths["online_embeddings"]),
-                "--event-log",
-                str(paths["online_embedding_events"]),
-                "--event-json",
-                json.dumps(payload, ensure_ascii=False),
-                "--min-ratings-for-zscore",
-                str(args.min_ratings_for_zscore),
-                "--z-threshold",
-                str(args.z_threshold),
-                "--batch-size",
-                str(args.online_batch_size),
-                "--runtime-db",
-                str(runtime_db_path),
-                "--event-id",
-                str(current_event_id),
-                *seed_state_args,
-            ]
-            if use_legacy_state_dirs:
-                extract_cmd.extend(["--state-dir", str(paths["user_state_dir"])])
-            run_command(
-                extract_cmd,
-                root=root,
-                logger=logger,
-                runtime_db=runtime_db_path,
-                run_id=run_id,
-                event_id=current_event_id,
-                stage="extract_online",
-            )
+            worker.run_extract_online(event_id=current_event_id, payload=payload)
 
-            active_rows = npz_row_count(paths["online_embeddings"])
-            interest_assign_cmd = [
-                sys.executable,
-                "-m",
-                "model.stream.interest_assign",
-                "--run-id",
-                run_id,
-                "--embeddings",
-                str(paths["online_embeddings"]),
-                "--assignments",
-                str(paths["interest_assignments"]),
-                "--refit-requests",
-                str(paths["refit_requests"]),
-                "--similarity-threshold",
-                str(args.similarity_threshold),
-                "--refit-min-events",
-                str(args.refit_min_events),
-                "--assign-trigger-count",
-                str(args.assign_trigger_count),
-                "--outlier-trigger-count",
-                str(args.outlier_trigger_count),
-                "--runtime-db",
-                str(runtime_db_path),
-                "--event-id",
-                str(current_event_id),
-                *seed_state_args,
-            ]
-            if use_legacy_state_dirs:
-                interest_assign_cmd.extend(["--interest-state-dir", str(paths["interest_state_dir"])])
-            run_command(
-                interest_assign_cmd,
-                root=root,
-                logger=logger,
-                runtime_db=runtime_db_path,
+            changed_cache_rows = runtime_store.fetch_embedding_cache_changed_rows(
+                runtime_db_path,
                 run_id=run_id,
                 event_id=current_event_id,
-                stage="interest_assign",
             )
+            active_rows = len(changed_cache_rows)
+            worker.run_interest_assign(event_id=current_event_id)
 
             new_assignment_records = read_jsonl_slice(paths["interest_assignments"], before_assignment_lines)
             new_refit_requests = read_jsonl_slice(paths["refit_requests"], before_refit_request_lines)
@@ -686,94 +645,11 @@ def main() -> None:
 
             if not args.skip_refit:
                 for user_id in new_request_users:
-                    cluster_refit_cmd = [
-                        sys.executable,
-                        "-m",
-                        "model.stream.cluster_refit",
-                        "--run-id",
-                        run_id,
-                        "--embeddings",
-                        str(paths["online_embeddings"]),
-                        "--refit-requests",
-                        str(paths["refit_requests"]),
-                        "--refit-events",
-                        str(paths["refit_events"]),
-                        "--cluster-backend",
-                        args.cluster_backend,
-                        "--refit-min-events",
-                        str(args.refit_min_events),
-                        "--min-cluster-size",
-                        str(args.min_cluster_size),
-                        "--cluster-dim",
-                        str(args.cluster_dim),
-                        "--movies",
-                        str(resolve_path(root, args.movies)),
-                        "--user-id",
-                        str(user_id),
-                        "--runtime-db",
-                        str(runtime_db_path),
-                        "--event-id",
-                        str(current_event_id),
-                        *seed_state_args,
-                    ]
-                    if use_legacy_state_dirs:
-                        cluster_refit_cmd.extend(["--interest-state-dir", str(paths["interest_state_dir"])])
-                    run_command(
-                        cluster_refit_cmd,
-                        root=root,
-                        logger=logger,
-                        runtime_db=runtime_db_path,
-                        run_id=run_id,
-                        event_id=current_event_id,
-                        stage="cluster_refit",
-                    )
+                    worker.run_cluster_refit(event_id=current_event_id, user_id=user_id)
 
             before_recommend_lines = count_jsonl(paths["stream_recommendations"])
             if args.recommend:
-                recommend_cmd = [
-                    sys.executable,
-                    "-m",
-                    "model.stream.recommend_online",
-                    "--run-id",
-                    run_id,
-                    "--checkpoint",
-                    str(resolve_path(root, args.checkpoint)),
-                    "--item2idx",
-                    str(resolve_path(root, args.item2idx)),
-                    "--movies",
-                    str(resolve_path(root, args.movies)),
-                    "--output-jsonl",
-                    str(paths["stream_recommendations"]),
-                    "--top-k",
-                    str(args.recommend_top_k),
-                    "--user-id",
-                    str(int(event["userId"])),
-                    "--runtime-db",
-                    str(runtime_db_path),
-                    "--event-id",
-                    str(current_event_id),
-                    *seed_state_args,
-                ]
-                if use_legacy_state_dirs:
-                    recommend_cmd.extend(
-                        [
-                            "--interest-state-dir",
-                            str(paths["interest_state_dir"]),
-                            "--user-state-dir",
-                            str(paths["user_state_dir"]),
-                        ]
-                    )
-                if args.recommend_normalize:
-                    recommend_cmd.append("--normalize")
-                run_command(
-                    recommend_cmd,
-                    root=root,
-                    logger=logger,
-                    runtime_db=runtime_db_path,
-                    run_id=run_id,
-                    event_id=current_event_id,
-                    stage="recommend_online",
-                )
+                worker.run_recommend_online(event_id=current_event_id, user_id=int(event["userId"]))
 
             processed_dt = datetime.now().astimezone()
             processed_mono = time.monotonic()
@@ -869,6 +745,21 @@ def main() -> None:
                     "recommendationRows": new_recommend_rows,
                     "latencySec": event_latency_sec,
                 },
+            )
+            logger.info(
+                (
+                    "Replay progress %d/%d: completed eventId=%d activeRows=%d "
+                    "assignments=%d refitOpened=%d refitClosed=%d recommendRows=%d latencySec=%.3f"
+                ),
+                event_number,
+                total_events,
+                current_event_id,
+                active_rows,
+                len(new_assignment_records),
+                len(new_refit_requests),
+                refit_closed,
+                new_recommend_rows,
+                event_latency_sec,
             )
 
         ended_at = local_timestamp()

@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle은 `outputs/stream/replay_demo/replay.sqlite`에 기록하고, JSONL/JSON/NPZ artifact는 fallback/debug와 대형 vector 파일 정본으로 유지한다.
+2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle, post replay active online embedding cache는 `outputs/stream/replay_demo/replay.sqlite`에 기록한다. JSONL/JSON artifact는 fallback/debug로 유지하고, post replay의 `online_embeddings.npz`는 `--export-online-embeddings-npz`를 줄 때만 생성하는 debug/export 산출물이다.
 
 검증 command:
 
@@ -179,15 +179,14 @@ ratings_drop_processed.jsonl
      -> replay.sqlite
      -> ingress_events.jsonl
      -> extract_online
-        -> replay.sqlite user state
-        -> online_embeddings.npz
+        -> replay.sqlite user state + active_embedding_cache
         -> online_embedding_events.jsonl
      -> interest_assign
-        -> replay.sqlite interest state
+        -> replay.sqlite interest state (changed cache rows)
         -> interest_assignments.jsonl
         -> refit_requests.jsonl
      -> cluster_refit
-        -> updated replay.sqlite interest state
+        -> updated replay.sqlite interest state (full active cache rows)
         -> refit_events.jsonl
      -> recommend_online (when --recommend)
         -> stream_recommendations.jsonl
@@ -195,7 +194,9 @@ ratings_drop_processed.jsonl
   -> replay_summary.json
 ```
 
-`replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, 기존 stream CLI를 event 단위로 호출하는 trace replay runner다. 각 stage CLI에는 `--runtime-db`와 `--event-id`를 넘겨 같은 SQLite store에 runtime/state payload를 dual-write한다.
+`replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, `ReplayInProcessWorker`로 stream stage helper를 같은 Python process 안에서 호출하는 trace replay runner다. Stage별 Python subprocess는 띄우지 않는다. Standalone `extract_online`, `interest_assign`, `cluster_refit`, `recommend_online` CLI는 수동 실행/디버그 경로로 유지한다.
+
+실행 중 콘솔 로그에는 `Replay progress i/N` 형태로 현재 처리 중인 event와 완료된 event 요약을 출력한다. 1000개 이상 replay를 돌릴 때 현재 몇 번째 event에서 시간을 쓰는지 확인하는 용도다.
 
 ## Stage 0. Replay Input Generation
 
@@ -296,7 +297,8 @@ Input:
 Output:
 
 - SQLite user state in `--runtime-db`/`--state-db`
-- `online_embeddings.npz`
+- `replay.sqlite.active_embedding_cache` and `embedding_cache_changes` in replay runtime mode
+- `online_embeddings.npz` only when explicitly exporting/debugging
 - `online_embedding_events.jsonl`
 
 동작:
@@ -304,8 +306,9 @@ Output:
 1. 새 rating event를 평점과 무관하게 raw user state에 저장한다.
 2. user의 전체 raw history를 시간순으로 다시 정렬한다.
 3. 현재까지 관측된 rating 분포로 positive projection을 재계산한다.
-4. active positive event만 SASRec canonical window로 embedding한다.
-5. user state와 active embedding 전체 snapshot을 저장한다.
+4. active positive event의 signature를 계산한다.
+5. replay runtime cache에서 signature가 없거나 바뀐 row만 SASRec canonical window로 embedding한다.
+6. user state와 active embedding cache를 저장하고, 더 이상 active가 아닌 cached row는 inactive 처리한다.
 
 중요한 점:
 
@@ -313,9 +316,11 @@ Output:
 - `positiveEvents`는 현재 policy 기준 positive로 판정된 event다.
 - `rawEventId`는 user별 stable id다.
 - `eventIdx`는 positive projection 기준 derived id라 raw history가 늘면 재계산될 수 있다.
-- `online_embeddings.npz`는 "이번 event delta"가 아니라 현재 user state의 active positive embedding 전체 snapshot이다.
+- post replay 기본 경로에서 `online_embeddings.npz`는 쓰지 않는다.
+- SQLite `active_embedding_cache`는 최신 active row의 정본이고, `embedding_cache_changes`는 해당 event에서 새로 insert/update된 row 목록이다.
+- `--export-online-embeddings-npz`를 주면 debug/export용 `online_embeddings.npz`도 함께 쓴다.
 
-`online_embeddings.npz` 주요 배열:
+debug/export `online_embeddings.npz` 주요 배열:
 
 | key | meaning |
 |---|---|
@@ -338,7 +343,8 @@ Consumer/producer:
 
 Input:
 
-- `online_embeddings.npz`
+- replay runtime 기본 경로: `replay.sqlite.active_embedding_cache`의 해당 event changed active rows
+- legacy/debug 경로: `online_embeddings.npz`
 - 기존 SQLite interest state가 있으면 이어서 로드하고, 없으면 `--seed-state-db`에서 lazy-load
 
 Output:
@@ -350,7 +356,7 @@ Output:
 
 동작:
 
-1. `online_embeddings.npz`의 active row를 user별로 읽는다.
+1. replay runtime에서는 SQLite cache의 changed active row를, legacy/debug 경로에서는 `online_embeddings.npz`의 active row를 user별로 읽는다.
 2. 기존 interest vector가 없으면 row를 assign하지 않고 pending으로 쌓는다.
 3. pending event 수가 `--refit-min-events` 이상이면 open refit request를 남긴다.
 4. interest vector가 있으면 cosine similarity로 가장 가까운 interest에 assign한다.
@@ -377,7 +383,8 @@ Consumer/producer:
 Input:
 
 - `refit_requests.jsonl`
-- `online_embeddings.npz`
+- replay runtime 기본 경로: `replay.sqlite.active_embedding_cache`의 request user full active rows
+- legacy/debug 경로: `online_embeddings.npz`
 - 기존 SQLite interest state
 
 Output:
@@ -389,7 +396,7 @@ Output:
 동작:
 
 1. open refit request를 읽는다.
-2. request user의 active embedding 전체를 모은다.
+2. request user의 active embedding 전체를 SQLite cache 또는 legacy NPZ에서 모은다.
 3. `--cluster-backend auto|gpu|cpu`에 따라 backend를 고른다.
 4. UMAP + HDBSCAN으로 active embeddings를 clustering한다.
 5. label `-1` noise는 interest vector에서 제외한다.
@@ -446,7 +453,7 @@ Output:
 - `replay_events.jsonl`
 - `replay_summary.json`
 
-`replay.sqlite`는 replay runtime/state/control-plane store다. `runs`, `input_events`, `event_progress`, `stage_attempts`, `runtime_metrics`, `user_states`, `interest_states`, `assignments`, `refit_requests`, `refit_attempts`, `embedding_snapshots`, `embedding_rows`, `recommendation_runs`, `recommendation_rows`를 기록한다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고, SQLite에는 path, dtype, shape, row index 같은 metadata를 둔다.
+`replay.sqlite`는 replay runtime/state/control-plane store다. `runs`, `input_events`, `event_progress`, `stage_attempts`, `runtime_metrics`, `user_states`, `interest_states`, `assignments`, `refit_requests`, `refit_attempts`, `active_embedding_cache`, `embedding_cache_changes`, `embedding_snapshots`, `embedding_rows`, `recommendation_runs`, `recommendation_rows`를 기록한다. Post replay active online embedding은 SQLite cache가 정본이다. 대형 batch vector/checkpoint artifact는 파일 정본으로 유지하고, SQLite에는 payload, lifecycle, metric, 작은 vector/cache BLOB, artifact metadata를 둔다.
 
 `ingress_events.jsonl`은 event 주입 시각과 trace clock 기준 schedule/lag를 append한다.
 
@@ -486,7 +493,7 @@ Output:
 }
 ```
 
-주의: `totals.activeEmbeddingRows`는 event 처리 후 관측한 active snapshot row 수의 누적 합이다. 최종 active row 수를 보려면 `online_embeddings.npz`의 `embeddings.shape[0]` 또는 마지막 `online_embedding_events.jsonl` record를 확인한다.
+주의: `totals.activeEmbeddingRows`는 event 처리 중 새로 insert/update된 active cache row 수의 누적 합이다. 최종 active row 수를 보려면 `runtime_report`의 `cacheActiveRows` 또는 `replay.sqlite.active_embedding_cache`에서 `status='active'` row 수를 확인한다.
 
 ## Artifact Map
 
@@ -498,7 +505,9 @@ Output:
 | `runtime_report` output | `model.stream.runtime_report` | humans/notes | optional markdown/json bottleneck report from `replay.sqlite` |
 | `ingress_events.jsonl` | `replay_pipeline` | dashboard/humans | trace-clock event emit log |
 | `replay.sqlite.user_states` | `extract_online` | `extract_online`, `recommend_online` | touched raw events + positive projection state |
-| `online_embeddings.npz` | `extract_online` | `interest_assign`, `cluster_refit` | current active positive embedding snapshot |
+| `replay.sqlite.active_embedding_cache` | `extract_online` | `interest_assign`, `cluster_refit` | post replay latest active positive embedding cache |
+| `replay.sqlite.embedding_cache_changes` | `extract_online` | `interest_assign`, humans | per-event changed cache rows for delta assignment |
+| `online_embeddings.npz` | `extract_online` | legacy/debug consumers | optional debug/export active positive embedding snapshot |
 | `online_embedding_events.jsonl` | `extract_online` | humans/debugging | online extract run summary log |
 | `replay.sqlite.interest_states` | `interest_assign`, `cluster_refit` | `interest_assign`, `cluster_refit`, `recommend_online`, dashboard | touched interest vectors and trigger state |
 | `interest_assignments.jsonl` | `interest_assign` | `replay_pipeline`, dashboard | assignment/pending/outlier log |

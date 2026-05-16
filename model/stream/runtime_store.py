@@ -320,6 +320,38 @@ def init_store(db_path: Path) -> None:
                 PRIMARY KEY (snapshot_id, row_idx)
             );
 
+            CREATE TABLE IF NOT EXISTS active_embedding_cache (
+                run_id TEXT NOT NULL,
+                user_id INTEGER NOT NULL,
+                raw_event_id INTEGER NOT NULL,
+                event_idx INTEGER NOT NULL,
+                movie_id INTEGER NOT NULL,
+                rated_at TEXT NOT NULL,
+                rated_at_ts REAL NOT NULL,
+                history_len INTEGER NOT NULL,
+                context_start_idx INTEGER NOT NULL,
+                signature_hash TEXT NOT NULL,
+                signature_json TEXT NOT NULL,
+                dim INTEGER NOT NULL,
+                dtype TEXT NOT NULL,
+                embedding_blob BLOB NOT NULL,
+                status TEXT NOT NULL,
+                first_event_id INTEGER,
+                last_event_id INTEGER,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (run_id, user_id, raw_event_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS embedding_cache_changes (
+                run_id TEXT NOT NULL,
+                event_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                raw_event_id INTEGER NOT NULL,
+                change_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (run_id, event_id, user_id, raw_event_id)
+            );
+
             CREATE TABLE IF NOT EXISTS recommendation_runs (
                 recommendation_run_id TEXT PRIMARY KEY,
                 run_id TEXT NOT NULL,
@@ -356,6 +388,10 @@ def init_store(db_path: Path) -> None:
                 ON refit_requests(run_id, status);
             CREATE INDEX IF NOT EXISTS idx_embedding_rows_run_user_raw
                 ON embedding_rows(run_id, user_id, raw_event_id);
+            CREATE INDEX IF NOT EXISTS idx_active_embedding_cache_run_user_status
+                ON active_embedding_cache(run_id, user_id, status);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_changes_event
+                ON embedding_cache_changes(run_id, event_id, user_id);
             """
         )
         _ensure_column(conn, "user_states", "payload_encoding", "TEXT NOT NULL DEFAULT 'json'")
@@ -999,6 +1035,255 @@ def count_state_rows(db_path: Path, *, run_id: str) -> dict[str, int]:
                 conn.execute("SELECT COUNT(*) AS n FROM interest_vectors WHERE run_id=?", (run_id,)).fetchone()["n"]
             ),
         }
+
+
+def fetch_active_embedding_cache_signatures(db_path: Path, *, run_id: str, user_id: int) -> dict[int, str]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return {}
+    init_store(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT raw_event_id, signature_hash
+            FROM active_embedding_cache
+            WHERE run_id=? AND user_id=? AND status='active'
+            """,
+            (run_id, int(user_id)),
+        ).fetchall()
+    return {int(row["raw_event_id"]): str(row["signature_hash"]) for row in rows}
+
+
+def _cache_row_to_embedding_dict(row: sqlite3.Row) -> dict[str, Any]:
+    dim = int(row["dim"])
+    embedding = np.frombuffer(bytes(row["embedding_blob"]), dtype=np.float32, count=dim).copy()
+    return {
+        "embedding": embedding,
+        "userId": int(row["user_id"]),
+        "rawEventId": int(row["raw_event_id"]),
+        "eventIdx": int(row["event_idx"]),
+        "movieId": int(row["movie_id"]),
+        "ratedAtTs": float(row["rated_at_ts"]),
+        "ratedAt": str(row["rated_at"]),
+        "historyLen": int(row["history_len"]),
+        "contextStartIdx": int(row["context_start_idx"]),
+        "signatureHash": str(row["signature_hash"]),
+        "changeType": row["change_type"] if "change_type" in row.keys() else None,
+    }
+
+
+def _embedding_arrays_row_count(arrays: dict[str, np.ndarray]) -> int:
+    embeddings = arrays.get("embeddings")
+    if embeddings is None or embeddings.ndim == 0:
+        return 0
+    return int(embeddings.shape[0])
+
+
+def upsert_active_embedding_cache(
+    db_path: Path,
+    *,
+    run_id: str,
+    user_id: int,
+    event_id: int | None,
+    arrays: dict[str, np.ndarray],
+    signatures: dict[int, dict[str, Any]],
+    active_raw_event_ids: set[int],
+) -> dict[str, int]:
+    init_store(db_path)
+    now = local_timestamp()
+    active_ids = {int(value) for value in active_raw_event_ids}
+    row_count = _embedding_arrays_row_count(arrays)
+    inserted = 0
+    updated = 0
+    inactivated = 0
+    changed_raw_event_ids: set[int] = set()
+
+    with connect(db_path) as conn:
+        existing_rows = conn.execute(
+            """
+            SELECT raw_event_id, signature_hash, status
+            FROM active_embedding_cache
+            WHERE run_id=? AND user_id=?
+            """,
+            (run_id, int(user_id)),
+        ).fetchall()
+        existing = {
+            int(row["raw_event_id"]): {
+                "signature_hash": str(row["signature_hash"]),
+                "status": str(row["status"]),
+            }
+            for row in existing_rows
+        }
+        existing_active = {raw_id for raw_id, item in existing.items() if item["status"] == "active"}
+        stale_ids = existing_active - active_ids
+
+        for raw_event_id in sorted(stale_ids):
+            conn.execute(
+                """
+                UPDATE active_embedding_cache
+                SET status='inactive', last_event_id=?, updated_at=?
+                WHERE run_id=? AND user_id=? AND raw_event_id=?
+                """,
+                (_none_or_int(event_id), now, run_id, int(user_id), int(raw_event_id)),
+            )
+            inactivated += 1
+            if event_id is not None:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO embedding_cache_changes(
+                        run_id, event_id, user_id, raw_event_id, change_type, created_at
+                    )
+                    VALUES (?, ?, ?, ?, 'inactive', ?)
+                    """,
+                    (run_id, int(event_id), int(user_id), int(raw_event_id), now),
+                )
+
+        for row_idx in range(row_count):
+            raw_event_id = int(arrays["raw_event_ids"][row_idx])
+            signature = signatures.get(raw_event_id)
+            if signature is None:
+                raise ValueError(f"Missing embedding signature for rawEventId={raw_event_id}")
+            signature_hash = str(signature["hash"])
+            previous = existing.get(raw_event_id)
+            change_type = "insert" if previous is None or previous["status"] != "active" else "update"
+            if change_type == "insert":
+                inserted += 1
+            else:
+                updated += 1
+            changed_raw_event_ids.add(raw_event_id)
+
+            embedding = np.asarray(arrays["embeddings"][row_idx], dtype=np.float32)
+            conn.execute(
+                """
+                INSERT INTO active_embedding_cache(
+                    run_id, user_id, raw_event_id, event_idx, movie_id, rated_at, rated_at_ts,
+                    history_len, context_start_idx, signature_hash, signature_json, dim, dtype,
+                    embedding_blob, status, first_event_id, last_event_id, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'float32', ?, 'active', ?, ?, ?)
+                ON CONFLICT(run_id, user_id, raw_event_id) DO UPDATE SET
+                    event_idx=excluded.event_idx,
+                    movie_id=excluded.movie_id,
+                    rated_at=excluded.rated_at,
+                    rated_at_ts=excluded.rated_at_ts,
+                    history_len=excluded.history_len,
+                    context_start_idx=excluded.context_start_idx,
+                    signature_hash=excluded.signature_hash,
+                    signature_json=excluded.signature_json,
+                    dim=excluded.dim,
+                    dtype=excluded.dtype,
+                    embedding_blob=excluded.embedding_blob,
+                    status='active',
+                    last_event_id=excluded.last_event_id,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    run_id,
+                    int(user_id),
+                    raw_event_id,
+                    int(arrays["event_idx"][row_idx]),
+                    int(arrays["movie_ids"][row_idx]),
+                    str(arrays["rated_at_iso"][row_idx]),
+                    float(arrays["rated_at_ts"][row_idx]),
+                    int(arrays["history_len"][row_idx]),
+                    int(arrays["context_start_idx"][row_idx]),
+                    signature_hash,
+                    _json(signature["payload"]),
+                    int(embedding.shape[0]),
+                    embedding.tobytes(),
+                    _none_or_int(event_id),
+                    _none_or_int(event_id),
+                    now,
+                ),
+            )
+            if event_id is not None:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO embedding_cache_changes(
+                        run_id, event_id, user_id, raw_event_id, change_type, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (run_id, int(event_id), int(user_id), raw_event_id, change_type, now),
+                )
+
+    return {
+        "activeRows": len(active_ids),
+        "changedRows": len(changed_raw_event_ids),
+        "insertedRows": inserted,
+        "updatedRows": updated,
+        "inactivatedRows": inactivated,
+    }
+
+
+def fetch_embedding_cache_changed_rows(
+    db_path: Path,
+    *,
+    run_id: str,
+    event_id: int,
+    active_only: bool = True,
+) -> list[dict[str, Any]]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    init_store(db_path)
+    status_filter = "AND e.status='active'" if active_only else ""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                e.*, c.change_type
+            FROM embedding_cache_changes c
+            JOIN active_embedding_cache e
+              ON e.run_id=c.run_id
+             AND e.user_id=c.user_id
+             AND e.raw_event_id=c.raw_event_id
+            WHERE c.run_id=? AND c.event_id=? AND c.change_type IN ('insert', 'update')
+              {status_filter}
+            ORDER BY e.user_id, e.rated_at_ts, e.event_idx, e.raw_event_id
+            """,
+            (run_id, int(event_id)),
+        ).fetchall()
+    return [_cache_row_to_embedding_dict(row) for row in rows]
+
+
+def fetch_active_embedding_cache_rows(db_path: Path, *, run_id: str, user_id: int) -> list[dict[str, Any]]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    init_store(db_path)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT *, NULL AS change_type
+            FROM active_embedding_cache
+            WHERE run_id=? AND user_id=? AND status='active'
+            ORDER BY rated_at_ts, event_idx, raw_event_id
+            """,
+            (run_id, int(user_id)),
+        ).fetchall()
+    return [_cache_row_to_embedding_dict(row) for row in rows]
+
+
+def count_active_embedding_cache_rows(db_path: Path, *, run_id: str, user_id: int | None = None) -> int:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return 0
+    init_store(db_path)
+    with connect(db_path) as conn:
+        if user_id is None:
+            return int(
+                conn.execute(
+                    "SELECT COUNT(*) AS n FROM active_embedding_cache WHERE run_id=? AND status='active'",
+                    (run_id,),
+                ).fetchone()["n"]
+            )
+        return int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM active_embedding_cache WHERE run_id=? AND user_id=? AND status='active'",
+                (run_id, int(user_id)),
+            ).fetchone()["n"]
+        )
 
 
 def record_assignments(

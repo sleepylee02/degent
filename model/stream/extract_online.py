@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import argparse
+import hashlib
 import json
 
 import numpy as np
@@ -69,6 +70,16 @@ def parse_args() -> argparse.Namespace:
         help="Optional legacy per-user JSON user state directory.",
     )
     parser.add_argument("--output", type=Path, default=Path("outputs/stream/online_embeddings.npz"))
+    parser.add_argument(
+        "--cache-embeddings",
+        action="store_true",
+        help="Upsert active online embeddings into --runtime-db for replay runtime consumers.",
+    )
+    parser.add_argument(
+        "--cache-only",
+        action="store_true",
+        help="Do not write --output NPZ. Requires --cache-embeddings and --runtime-db.",
+    )
     parser.add_argument("--event-log", type=Path, default=Path("outputs/stream/online_embedding_events.jsonl"))
     parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
     parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
@@ -171,6 +182,7 @@ def extract_state_embeddings(
     d_model: int,
     batch_size: int,
     device: torch.device,
+    target_raw_event_ids: set[int] | None = None,
 ) -> dict[str, np.ndarray]:
     model.eval()
     active_events = active_positive_events(state)
@@ -218,6 +230,8 @@ def extract_state_embeddings(
         metadata_batch.clear()
 
     for event_position, event in enumerate(active_events):
+        if target_raw_event_ids is not None and int(event.raw_event_id) not in target_raw_event_ids:
+            continue
         item_ids, batch_context_start_idx, batch_history_len = build_canonical_item_window(
             canonical_events,
             event_position,
@@ -235,6 +249,9 @@ def extract_state_embeddings(
             flush_batch()
 
     flush_batch()
+
+    if not embeddings:
+        return empty_embedding_arrays(d_model)
 
     return {
         "embeddings": np.concatenate(embeddings, axis=0).astype(np.float32),
@@ -278,6 +295,34 @@ def concatenate_arrays(items: list[dict[str, np.ndarray]], d_model: int) -> dict
         else:
             result[key] = np.concatenate(arrays, axis=0) if arrays else empty_embedding_arrays(d_model)[key]
     return result
+
+
+def active_embedding_signatures(state: OnlineUserState, seq_len: int) -> dict[int, dict[str, Any]]:
+    active_events = active_positive_events(state)
+    canonical_events = canonical_events_from_state(state)
+    signatures: dict[int, dict[str, Any]] = {}
+    for event_position, event in enumerate(active_events):
+        item_ids, context_start_idx, history_len = build_canonical_item_window(
+            canonical_events,
+            event_position,
+            seq_len,
+        )
+        payload = {
+            "rawEventId": int(event.raw_event_id),
+            "eventIdx": int(event.event_idx),
+            "movieId": int(event.movie_id),
+            "itemIdx": int(event.item_idx),
+            "ratedAtTs": float(event.rated_at_ts),
+            "historyLen": int(history_len),
+            "contextStartIdx": int(context_start_idx),
+            "itemWindow": [int(item_id) for item_id in item_ids],
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        signatures[int(event.raw_event_id)] = {
+            "hash": hashlib.sha1(encoded).hexdigest(),
+            "payload": payload,
+        }
+    return signatures
 
 
 def validate_online_arrays(arrays: dict[str, np.ndarray], seq_len: int) -> dict[str, int | bool]:
@@ -411,6 +456,12 @@ if __name__ == "__main__":
         runtime_store.init_store(state_db_path)
     if runtime_db_path is not None:
         runtime_store.init_store(runtime_db_path)
+    if args.cache_only and (not args.cache_embeddings or runtime_db_path is None):
+        raise ValueError("--cache-only requires --cache-embeddings and --runtime-db.")
+    if args.cache_embeddings and runtime_db_path is None:
+        raise ValueError("--cache-embeddings requires --runtime-db.")
+    if args.cache_embeddings and args.event_id is None:
+        raise ValueError("--cache-embeddings requires --event-id.")
 
     seq_len = args.seq_len or int(train_model_config.get("max_len", 100))
     d_model = args.d_model or int(train_model_config.get("d_model", 128))
@@ -430,6 +481,7 @@ if __name__ == "__main__":
     logger.info("Seed state DB: %s run_id=%s", seed_state_db_path, seed_run_id)
     logger.info("Legacy state directory: %s", state_dir)
     logger.info("Online embedding output: %s", output_path)
+    logger.info("Cache embeddings: %s cache_only=%s", args.cache_embeddings, args.cache_only)
     logger.info("Event log output: %s", event_log_path)
 
     update_experiment_manifest(
@@ -501,6 +553,8 @@ if __name__ == "__main__":
                         if state_dir is None
                         else str(state_dir.relative_to(ROOT) if state_dir.is_relative_to(ROOT) else state_dir),
                         "output": str(output_path.relative_to(ROOT) if output_path.is_relative_to(ROOT) else output_path),
+                        "cache_embeddings": args.cache_embeddings,
+                        "cache_only": args.cache_only,
                         "event_log": str(event_log_path.relative_to(ROOT) if event_log_path.is_relative_to(ROOT) else event_log_path),
                         "bootstrap_user_id": args.bootstrap_user_id,
                         "event_jsonl": None if args.event_jsonl is None else str(args.event_jsonl),
@@ -593,6 +647,13 @@ if __name__ == "__main__":
 
     state_arrays = []
     state_summaries = []
+    cache_totals = {
+        "activeRows": 0,
+        "changedRows": 0,
+        "insertedRows": 0,
+        "updatedRows": 0,
+        "inactivatedRows": 0,
+    }
     for user_id, state in sorted(states.items()):
         state_path = None
         if state_dir is not None:
@@ -611,6 +672,21 @@ if __name__ == "__main__":
                 state=state,
                 state_path=None if state_path is None else str(state_path),
             )
+        target_raw_event_ids = None
+        signatures = {}
+        if args.cache_embeddings:
+            signatures = active_embedding_signatures(state, seq_len)
+            cached_signatures = runtime_store.fetch_active_embedding_cache_signatures(
+                runtime_db_path,
+                run_id=run_id,
+                user_id=user_id,
+            )
+            target_raw_event_ids = {
+                raw_event_id
+                for raw_event_id, signature in signatures.items()
+                if cached_signatures.get(raw_event_id) != signature["hash"]
+            }
+
         arrays = extract_state_embeddings(
             state,
             model,
@@ -620,8 +696,22 @@ if __name__ == "__main__":
             d_model=d_model,
             batch_size=args.batch_size,
             device=device,
+            target_raw_event_ids=target_raw_event_ids,
         )
         state_arrays.append(arrays)
+        cache_summary = None
+        if args.cache_embeddings:
+            cache_summary = runtime_store.upsert_active_embedding_cache(
+                runtime_db_path,
+                run_id=run_id,
+                user_id=user_id,
+                event_id=args.event_id,
+                arrays=arrays,
+                signatures=signatures,
+                active_raw_event_ids=set(signatures),
+            )
+            for key, value in cache_summary.items():
+                cache_totals[key] += int(value)
         summary = {
             "userId": user_id,
             "stateDb": None
@@ -632,6 +722,7 @@ if __name__ == "__main__":
             else str(state_path.relative_to(ROOT) if state_path.is_relative_to(ROOT) else state_path),
             **(state.stats or {}),
             "embeddingRows": int(arrays["embeddings"].shape[0]),
+            **({"embeddingCache": cache_summary} if cache_summary is not None else {}),
         }
         state_summaries.append(summary)
         logger.info("Processed user state: %s", summary)
@@ -647,15 +738,35 @@ if __name__ == "__main__":
     if not validation["all_rows_active"]:
         raise ValueError("Online embedding output contains non-active rows.")
 
-    np.savez(output_path, **online_arrays)
-    logger.info("Saved online embeddings: %s", output_path)
-    if runtime_db_path is not None:
+    output_arrays = online_arrays
+    if not args.cache_only:
+        if args.cache_embeddings:
+            full_arrays = [
+                extract_state_embeddings(
+                    state,
+                    model,
+                    genre_map_idx=genre_map_idx,
+                    num_genres=num_genres,
+                    seq_len=seq_len,
+                    d_model=d_model,
+                    batch_size=args.batch_size,
+                    device=device,
+                )
+                for state in states.values()
+            ]
+            output_arrays = concatenate_arrays(full_arrays, d_model)
+        np.savez(output_path, **output_arrays)
+        logger.info("Saved online embeddings: %s", output_path)
+    else:
+        logger.info("Skipped online embeddings NPZ write because --cache-only is enabled.")
+
+    if runtime_db_path is not None and not args.cache_only:
         runtime_store.record_embedding_snapshot(
             runtime_db_path,
             run_id=run_id,
             kind="online_embeddings",
             path=str(output_path),
-            arrays=online_arrays,
+            arrays=output_arrays,
             scope="touched_users",
         )
 
@@ -676,6 +787,9 @@ if __name__ == "__main__":
         "embedding_rows": int(online_arrays["embeddings"].shape[0]),
         "embedding_dim": int(online_arrays["embeddings"].shape[1]) if online_arrays["embeddings"].ndim == 2 else 0,
         "unique_users": int(len(np.unique(online_arrays["user_ids"]))) if len(online_arrays["user_ids"]) else 0,
+        "cache_embeddings": args.cache_embeddings,
+        "cache_only": args.cache_only,
+        "embedding_cache": cache_totals,
         **validation,
     }
     if compare_summary is not None:

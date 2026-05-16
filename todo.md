@@ -5,8 +5,8 @@
 - Temporal 2022 Streaming E2E
   - owner: sleepylee / LLM
   - plan: `plan/active/temporal_2022_streaming_e2e.md`
-  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
-  - status: cutoff-aware train/canonical, run-scoped model output path, pre/post 경로 계약 구현 후 per-user JSON state directory가 pre에서 12GB, post 복사본도 12GB가 되는 문제가 확인됨. 현재 작업은 pre `state.sqlite` seed store와 post `replay.sqlite` lazy materialize 구조로 전환해 user/interest state를 SQLite 중심으로 정리하는 것.
+  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: cutoff-aware train/canonical, run-scoped model output path, pre/post 경로 계약 구현 후 per-user JSON state directory가 pre에서 12GB, post 복사본도 12GB가 되는 문제가 확인됨. 현재 작업은 pre `state.sqlite` seed store와 post `replay.sqlite` lazy materialize 구조로 전환해 user/interest state를 SQLite 중심으로 정리하는 것. Post replay active embedding은 `replay.sqlite` cache 중심으로 전환했고, 기본 경로는 `online_embeddings.npz` 없이 assign/refit을 처리한다. Replay stage별 Python subprocess도 제거하고 `inprocess_worker.py` 단일 경로로 전환했다. `temporal_2022_inprocess_smoke`에서 2/2 events, refit closed 2, stage command `in-process`, NPZ 미생성 확인.
 
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM

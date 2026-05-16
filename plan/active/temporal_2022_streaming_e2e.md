@@ -19,6 +19,7 @@ post-T:
   replay/stream events
   lazy-load pre-T seed state into replay runtime DB
   update user/interest state in replay runtime DB
+  cache active online embeddings in replay.sqlite
   measure replay load
 ```
 
@@ -48,6 +49,7 @@ post-T:
 - `model/stream/state.py`
 - `model/stream/extract_online.py`
 - `model/stream/trace_replay.py`
+- `model/stream/inprocess_worker.py`
 - `replay/cpp/rating_replay.cpp`
 
 ## 수정 범위
@@ -79,10 +81,19 @@ post-T:
     - `--seed-state-db`, `--seed-run-id` 옵션을 추가한다.
     - replay 시작 시 seed state directory를 복사하지 않고, stream stage가 pre seed DB를 fallback source로 읽게 한다.
     - summary/manifest에 seed path와 seed count를 기록한다.
+    - replay 실행 중 콘솔 로그에 현재 처리 중인 event ordinal(`i/N`)과 완료 요약을 출력한다.
+    - stream stage 실행은 stage별 Python subprocess 대신 in-process worker 단일 경로로 호출한다.
+  - `model/stream/inprocess_worker.py`
+    - replay run 동안 movies/item2idx/checkpoint/recommendation candidate를 재사용한다.
+    - `extract_online`, `interest_assign`, `cluster_refit`, `recommend_online`의 helper를 호출해 기존 standalone CLI와 같은 state/cache/refit/recommendation 계약을 유지한다.
   - `model/stream/runtime_store.py`
     - user/interest state payload 조회 API를 추가해 pre seed DB와 post replay DB를 같은 schema로 읽고 쓴다.
+    - post replay runtime용 active online embedding cache를 추가해 touched user의 최신 active embedding을 SQLite에 upsert한다.
+    - changed row 조회와 user full active row 조회 API를 제공해 post runtime의 `online_embeddings.npz` 의존을 제거한다.
   - `model/stream/extract_online.py`, `interest_assign.py`, `cluster_refit.py`, `recommend_online.py`
     - runtime DB를 primary state store로 쓰고, missing user/interest state는 `--seed-state-db --seed-run-id`에서 lazy-load한다.
+    - replay runtime 경로에서는 `online_embeddings.npz` 대신 SQLite active embedding cache를 기본 입력으로 사용한다.
+    - `online_embeddings.npz`는 post runtime 필수 파일이 아니라 필요 시 debug/export용으로 생성하는 산출물로 둔다.
   - 문서
     - `docs/streaming-e2e-pipeline.md`: temporal 2022 runbook 추가
     - `docs/current-pipeline-snapshot.md`: cutoff/state seed 계약 반영
@@ -109,8 +120,10 @@ post-T:
   - `outputs/pre/temporal_2022/state.sqlite`
   - `outputs/pre/temporal_2022/pre_summary.json`
   - `outputs/post/temporal_2022_events_<N>/replay.sqlite`
+    - active online embedding cache 포함
 - 호환성 영향:
   - legacy JSON state dir 옵션은 디버깅/구버전 호환용으로 유지하되 temporal runbook 기본 경로에서는 사용하지 않는다.
+  - `online_embeddings.npz` 기반 CLI 호환은 유지하되, temporal replay 기본 경로는 SQLite cache를 사용한다.
   - cutoff/output path/state DB 옵션을 명시한 temporal run은 신규 SQLite state store를 사용한다.
   - schemas 변경은 없다. 신규 JSON artifact 계약은 `docs/artifacts.md`와 streaming E2E 문서에 우선 명시한다.
 
@@ -130,15 +143,20 @@ post-T:
    - replay output root를 reset해도 seed DB는 복사하지 않는다.
    - post-T event를 처리하는 stream stage는 post `replay.sqlite`에 state가 없을 때 pre `state.sqlite`에서 lazy-load한다.
    - replay input은 `--start-rated-at 2022-01-01T00:00:00Z`를 사용한다.
-5. Temporal 2022 smoke를 실행한다.
+5. Post replay active embedding cache를 SQLite 중심으로 전환한다.
+   - `extract_online`은 user state 갱신 후 active event signature를 계산하고, 신규/변경 row만 embedding 재계산해 `replay.sqlite` cache에 upsert한다.
+   - 더 이상 active가 아닌 cached row는 inactive 처리한다.
+   - `interest_assign`은 replay runtime 경로에서 changed active row만 읽고, `cluster_refit`은 refit 시 해당 user의 full active cache row를 읽는다.
+   - post runtime의 `online_embeddings.npz` 읽기/쓰기 의존을 제거한다.
+6. Temporal 2022 smoke를 실행한다.
    - 작은 limit으로 train/extract/cluster/seed/replay가 한 run id와 artifact root에서 이어지는지 확인한다.
    - `runtime_report`로 replay 부하 summary를 확인한다.
-6. 문서와 todo를 업데이트한다.
+7. 문서와 todo를 업데이트한다.
    - 실행 명령, artifact map, cutoff 계약, 검증 결과를 문서화한다.
 
 ## 검증
 
-- [x] `.venv/bin/python -m py_compile model/stream/runtime_store.py model/batch/cluster.py model/stream/seed_pre_t_state.py model/stream/extract_online.py model/stream/interest_assign.py model/stream/cluster_refit.py model/stream/recommend_online.py model/stream/trace_replay.py`
+- [x] `.venv/bin/python -m py_compile model/stream/runtime_store.py model/batch/cluster.py model/stream/seed_pre_t_state.py model/stream/extract_online.py model/stream/interest_assign.py model/stream/cluster_refit.py model/stream/recommend_online.py model/stream/inprocess_worker.py model/stream/trace_replay.py`
 - [x] CLI help: `model.batch.train`, `model.batch.extract_canonical`, `model.batch.cluster`, `model.stream.seed_pre_t_state`, `model.stream.extract_online`, `model.stream.interest_assign`, `model.stream.cluster_refit`, `model.stream.recommend_online`, `model.stream.replay_pipeline`
 - [x] cutoff helper smoke: `2022-01-01T00:00:00Z` → `1640995200.0`
 - [x] state seed logic smoke: 실제 `ratings_drop_processed.jsonl` 첫 user로 pre-T raw state 생성 로직 확인
@@ -150,13 +168,25 @@ post-T:
 - [ ] cluster smoke: pre-T `state.sqlite` interest state와 `user_interests.npz` 생성
 - [ ] state seed full/smoke CLI: pre-T `state.sqlite` 생성 및 summary 기록
 - [ ] replay smoke: `--start-rated-at 2022-01-01T00:00:00Z`와 seed DB를 사용해 post-T event 처리
-- [ ] `model.stream.runtime_report --db outputs/post/temporal_2022/replay.sqlite`
+- [x] SQLite active embedding cache smoke: replay runtime 경로에서 changed rows와 user full active rows를 `replay.sqlite`에서 읽음
+- [x] replay cache smoke: post replay가 `online_embeddings.npz` 없이 assign/refit을 처리
+- [x] `model.stream.runtime_report --db outputs/post/temporal_2022_cache_smoke/replay.sqlite`
+- [x] replay progress log smoke: replay 실행 중 `Replay progress i/N` 콘솔 로그 출력 확인
+- [x] in-process worker smoke: replay stage attempts가 `command=["in-process", stage]`로 기록되고 stage별 Python subprocess 없이 완료
 - [x] 문서의 runbook 명령이 실제 CLI와 일치하도록 업데이트
+
+검증 메모:
+
+- `temporal_2022_cache_progress_smoke`: 5/5 events completed, `paths.onlineEmbeddings=None`, `active_embedding_cache` active rows 1705, `embedding_cache_changes` rows 1705, assignment `alreadyProcessed=0`.
+- 같은 user의 반복 이벤트에서 cache signature가 변하지 않아 `changedRows=0`, assignment rows 0으로 처리됨.
+- 콘솔 로그에서 `Replay progress 1/5 ...`부터 `Replay progress 5/5 ...`까지 현재 처리 위치와 완료 요약 출력 확인.
+- `temporal_2022_inprocess_smoke`: 2/2 events completed, `stageExecution=in_process`, `paths.onlineEmbeddings=None`, cache active rows 828, refit closed 2, assignment `alreadyProcessed=0`. `stage_attempts.command_json`은 `["in-process", "extract_online"]`, `["in-process", "interest_assign"]`, `["in-process", "cluster_refit"]`로 기록됨.
 
 ## 완료 조건
 
 - `T = 2022-01-01T00:00:00Z` 계약이 train, canonical, state seed, replay manifest에 모두 기록된다.
 - pre-T checkpoint/item2idx/canonical/user state/interest state가 `outputs/pre/temporal_2022/` 아래 `state.sqlite` 중심으로 생성된다.
 - post-T replay가 seed DB를 기반으로 실행되고 `replay_summary.json`과 `replay.sqlite`에 부하 지표와 touched state가 기록된다.
+- post-T replay runtime은 `online_embeddings.npz` 없이 SQLite active embedding cache로 assign/refit을 처리한다.
 - 문서에서 파일 간 계약과 실행 순서를 재현 가능하게 설명한다.
 - 검증 결과를 이 계획서와 `todo.md`에 반영한 뒤 완료 시 `plan/done/`으로 이동한다.

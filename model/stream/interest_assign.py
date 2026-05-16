@@ -156,6 +156,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--outlier-trigger-count", type=int, default=10)
     parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
     parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Read changed active embedding rows from --runtime-db instead of --embeddings NPZ.",
+    )
     return parser.parse_args()
 
 
@@ -285,6 +290,12 @@ def group_rows_by_user(rows: list[dict[str, Any]]) -> dict[int, list[dict[str, A
     return grouped
 
 
+def embedding_dim_from_rows(rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    return int(np.asarray(rows[0]["embedding"], dtype=np.float32).shape[0])
+
+
 def cosine_similarities(embedding: np.ndarray, interests: list[Interest]) -> np.ndarray:
     matrix = np.array([interest.vector for interest in interests], dtype=np.float32)
     if matrix.ndim != 2 or matrix.shape[0] == 0:
@@ -350,6 +361,7 @@ def assign_user_rows(
     assign_trigger_count: int,
     outlier_trigger_count: int,
     run_id: str,
+    skip_processed_records: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     ensure_interest_dimensions(state)
     now = local_timestamp()
@@ -373,6 +385,8 @@ def assign_user_rows(
         }
 
         if raw_event_id in processed:
+            if skip_processed_records:
+                continue
             assignment_records.append({**base_record, "status": "already_processed"})
             continue
 
@@ -494,6 +508,8 @@ if __name__ == "__main__":
         interest_state_dir = OUTPUTS_DIR / "stream" / "interest_states"
     assignments_path = resolve_path(ROOT, args.assignments)
     refit_requests_path = resolve_path(ROOT, args.refit_requests)
+    if args.use_cache and (runtime_db_path is None or args.event_id is None):
+        raise ValueError("--use-cache requires --runtime-db and --event-id.")
     if state_db_path is not None:
         runtime_store.init_store(state_db_path)
     if runtime_db_path is not None:
@@ -503,6 +519,7 @@ if __name__ == "__main__":
     logger.info("Experiment run id: %s", run_id)
     logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Online embeddings input: %s", embeddings_path)
+    logger.info("Use embedding cache: %s", args.use_cache)
     logger.info("State DB: %s", state_db_path)
     logger.info("Seed state DB: %s run_id=%s", seed_state_db_path, seed_run_id)
     logger.info("Legacy interest state directory: %s", interest_state_dir)
@@ -519,12 +536,20 @@ if __name__ == "__main__":
                     "command": command_line(),
                     "log": file_metadata(log_path, root=ROOT),
                     "inputs": {
-                        "online_embeddings": file_metadata(
+                        "online_embeddings": None
+                        if args.use_cache
+                        else file_metadata(
                             embeddings_path,
                             root=ROOT,
                             include_sha256=args.hash_inputs,
                             sha256_limit_bytes=hash_limit_bytes,
                         ),
+                        "embedding_cache": None
+                        if not args.use_cache
+                        else {
+                            "runtime_db": relative_or_absolute(ROOT, runtime_db_path),
+                            "event_id": args.event_id,
+                        },
                     },
                     "assignment_config": {
                         "state_db": None
@@ -549,7 +574,15 @@ if __name__ == "__main__":
         },
     )
 
-    rows, embedding_dim = load_online_embedding_rows(embeddings_path)
+    if args.use_cache:
+        rows = runtime_store.fetch_embedding_cache_changed_rows(
+            runtime_db_path,
+            run_id=run_id,
+            event_id=args.event_id,
+        )
+        embedding_dim = embedding_dim_from_rows(rows)
+    else:
+        rows, embedding_dim = load_online_embedding_rows(embeddings_path)
     grouped_rows = group_rows_by_user(rows)
     logger.info("Loaded active online embedding rows: %d users=%d dim=%d", len(rows), len(grouped_rows), embedding_dim)
 
@@ -582,6 +615,7 @@ if __name__ == "__main__":
             assign_trigger_count=args.assign_trigger_count,
             outlier_trigger_count=args.outlier_trigger_count,
             run_id=run_id,
+            skip_processed_records=args.use_cache,
         )
         if state_path is not None:
             save_interest_state(state, state_path)

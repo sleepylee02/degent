@@ -72,6 +72,11 @@ def parse_args() -> argparse.Namespace:
                         help="Movies metadata CSV for genre labeling. Skipped if file does not exist.")
     parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
     parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Read full active embedding rows from --runtime-db instead of --embeddings NPZ.",
+    )
     return parser.parse_args()
 
 
@@ -252,6 +257,8 @@ if __name__ == "__main__":
     if state_db_path is None and interest_state_dir is None:
         interest_state_dir = OUTPUTS_DIR / "stream" / "interest_states"
     refit_events_path = resolve_path(ROOT, args.refit_events)
+    if args.use_cache and runtime_db_path is None:
+        raise ValueError("--use-cache requires --runtime-db.")
     if state_db_path is not None:
         runtime_store.init_store(state_db_path)
     if runtime_db_path is not None:
@@ -274,6 +281,7 @@ if __name__ == "__main__":
     logger.info("Experiment run id: %s", run_id)
     logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Online embeddings input: %s", embeddings_path)
+    logger.info("Use embedding cache: %s", args.use_cache)
     logger.info("Refit requests input: %s", requests_path)
     logger.info("State DB: %s", state_db_path)
     logger.info("Seed state DB: %s run_id=%s", seed_state_db_path, seed_run_id)
@@ -291,12 +299,20 @@ if __name__ == "__main__":
                     "command": command_line(),
                     "log": file_metadata(log_path, root=ROOT),
                     "inputs": {
-                        "online_embeddings": file_metadata(
+                        "online_embeddings": None
+                        if args.use_cache
+                        else file_metadata(
                             embeddings_path,
                             root=ROOT,
                             include_sha256=args.hash_inputs,
                             sha256_limit_bytes=hash_limit_bytes,
                         ),
+                        "embedding_cache": None
+                        if not args.use_cache
+                        else {
+                            "runtime_db": relative_or_absolute(ROOT, runtime_db_path),
+                            "scope": "active_user_rows",
+                        },
                         "refit_requests": file_metadata(
                             requests_path,
                             root=ROOT,
@@ -337,7 +353,19 @@ if __name__ == "__main__":
         request_user_ids = request_user_ids[: args.limit_users]
     logger.info("Open refit requests: %d selected=%d", len(open_requests), len(request_user_ids))
 
-    rows, embedding_dim = load_online_embedding_rows(embeddings_path)
+    if args.use_cache:
+        rows = []
+        for request_user_id in request_user_ids:
+            rows.extend(
+                runtime_store.fetch_active_embedding_cache_rows(
+                    runtime_db_path,
+                    run_id=run_id,
+                    user_id=request_user_id,
+                )
+            )
+        embedding_dim = int(rows[0]["embedding"].shape[0]) if rows else 0
+    else:
+        rows, embedding_dim = load_online_embedding_rows(embeddings_path)
     grouped_rows = group_rows_by_user(rows)
     logger.info("Loaded active online embedding rows: %d users=%d dim=%d", len(rows), len(grouped_rows), embedding_dim)
 
@@ -364,7 +392,7 @@ if __name__ == "__main__":
         )
         if state is None:
             state = make_empty_interest_state(user_id, embedding_dim)
-        if state.embedding_dim != embedding_dim:
+        if embedding_dim and state.embedding_dim != embedding_dim:
             raise ValueError(f"Embedding dim mismatch for user {user_id}: {state.embedding_dim} != {embedding_dim}")
 
         base_event = {
