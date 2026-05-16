@@ -7,6 +7,7 @@ import json
 import time
 import numpy as np
 
+import model.stream.runtime_store as runtime_store
 from model.common.cluster import (
     choose_backend,
     cluster_with_fallback,
@@ -28,7 +29,7 @@ from model.stream.interest_assign import (
     Interest,
     InterestState,
     group_rows_by_user,
-    load_interest_state,
+    load_interest_state_with_seed,
     load_online_embedding_rows,
     make_empty_interest_state,
     save_interest_state,
@@ -50,7 +51,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--embeddings", type=Path, default=Path("outputs/stream/online_embeddings.npz"))
     parser.add_argument("--refit-requests", type=Path, default=Path("outputs/stream/refit_requests.jsonl"))
-    parser.add_argument("--interest-state-dir", type=Path, default=Path("outputs/stream/interest_states"))
+    parser.add_argument("--state-db", type=Path, default=None, help="SQLite interest state store. Defaults to --runtime-db.")
+    parser.add_argument("--seed-state-db", type=Path, default=None, help="Optional pre-T SQLite seed state store.")
+    parser.add_argument("--seed-run-id", type=str, default=None, help="Run id to read from --seed-state-db.")
+    parser.add_argument(
+        "--interest-state-dir",
+        type=Path,
+        default=None,
+        help="Optional legacy per-user JSON interest state directory.",
+    )
     parser.add_argument("--refit-events", type=Path, default=Path("outputs/stream/refit_events.jsonl"))
     parser.add_argument("--cluster-backend", choices=["auto", "gpu", "cpu"], default="auto")
     parser.add_argument("--refit-min-events", type=int, default=20)
@@ -61,6 +70,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit-users", type=int, default=None, help="Process at most N users from open requests.")
     parser.add_argument("--movies", type=Path, default=Path("data/movies_processed_drop.csv"),
                         help="Movies metadata CSV for genre labeling. Skipped if file does not exist.")
+    parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
+    parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Read full active embedding rows from --runtime-db instead of --embeddings NPZ.",
+    )
     return parser.parse_args()
 
 
@@ -233,8 +249,20 @@ if __name__ == "__main__":
 
     embeddings_path = resolve_path(ROOT, args.embeddings)
     requests_path = resolve_path(ROOT, args.refit_requests)
-    interest_state_dir = resolve_path(ROOT, args.interest_state_dir)
+    runtime_db_path = None if args.runtime_db is None else resolve_path(ROOT, args.runtime_db)
+    state_db_path = runtime_db_path if args.state_db is None else resolve_path(ROOT, args.state_db)
+    seed_state_db_path = None if args.seed_state_db is None else resolve_path(ROOT, args.seed_state_db)
+    seed_run_id = args.seed_run_id or run_id
+    interest_state_dir = None if args.interest_state_dir is None else resolve_path(ROOT, args.interest_state_dir)
+    if state_db_path is None and interest_state_dir is None:
+        interest_state_dir = OUTPUTS_DIR / "stream" / "interest_states"
     refit_events_path = resolve_path(ROOT, args.refit_events)
+    if args.use_cache and runtime_db_path is None:
+        raise ValueError("--use-cache requires --runtime-db.")
+    if state_db_path is not None:
+        runtime_store.init_store(state_db_path)
+    if runtime_db_path is not None:
+        runtime_store.init_store(runtime_db_path)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
 
     genre_map_idx: dict[int, list[int]] | None = None
@@ -253,8 +281,11 @@ if __name__ == "__main__":
     logger.info("Experiment run id: %s", run_id)
     logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Online embeddings input: %s", embeddings_path)
+    logger.info("Use embedding cache: %s", args.use_cache)
     logger.info("Refit requests input: %s", requests_path)
-    logger.info("Interest state directory: %s", interest_state_dir)
+    logger.info("State DB: %s", state_db_path)
+    logger.info("Seed state DB: %s run_id=%s", seed_state_db_path, seed_run_id)
+    logger.info("Legacy interest state directory: %s", interest_state_dir)
     logger.info("Refit events output: %s", refit_events_path)
     logger.info("Cluster backend requested=%s selected=%s fallback_reason=%s", args.cluster_backend, selected_backend, fallback_reason)
 
@@ -268,12 +299,20 @@ if __name__ == "__main__":
                     "command": command_line(),
                     "log": file_metadata(log_path, root=ROOT),
                     "inputs": {
-                        "online_embeddings": file_metadata(
+                        "online_embeddings": None
+                        if args.use_cache
+                        else file_metadata(
                             embeddings_path,
                             root=ROOT,
                             include_sha256=args.hash_inputs,
                             sha256_limit_bytes=hash_limit_bytes,
                         ),
+                        "embedding_cache": None
+                        if not args.use_cache
+                        else {
+                            "runtime_db": relative_or_absolute(ROOT, runtime_db_path),
+                            "scope": "active_user_rows",
+                        },
                         "refit_requests": file_metadata(
                             requests_path,
                             root=ROOT,
@@ -282,7 +321,14 @@ if __name__ == "__main__":
                         ),
                     },
                     "refit_config": {
-                        "interest_state_dir": relative_or_absolute(ROOT, interest_state_dir),
+                        "state_db": None if state_db_path is None else relative_or_absolute(ROOT, state_db_path),
+                        "seed_state_db": None
+                        if seed_state_db_path is None
+                        else relative_or_absolute(ROOT, seed_state_db_path),
+                        "seed_run_id": seed_run_id,
+                        "interest_state_dir": None
+                        if interest_state_dir is None
+                        else relative_or_absolute(ROOT, interest_state_dir),
                         "refit_events": relative_or_absolute(ROOT, refit_events_path),
                         "cluster_backend_requested": args.cluster_backend,
                         "cluster_backend_selected": selected_backend,
@@ -300,12 +346,26 @@ if __name__ == "__main__":
     )
 
     open_requests = load_open_refit_requests(requests_path, user_id=args.user_id)
+    if runtime_db_path is not None:
+        runtime_store.open_refit_requests(runtime_db_path, run_id=run_id, records=list(open_requests.values()))
     request_user_ids = sorted(open_requests)
     if args.limit_users is not None:
         request_user_ids = request_user_ids[: args.limit_users]
     logger.info("Open refit requests: %d selected=%d", len(open_requests), len(request_user_ids))
 
-    rows, embedding_dim = load_online_embedding_rows(embeddings_path)
+    if args.use_cache:
+        rows = []
+        for request_user_id in request_user_ids:
+            rows.extend(
+                runtime_store.fetch_active_embedding_cache_rows(
+                    runtime_db_path,
+                    run_id=run_id,
+                    user_id=request_user_id,
+                )
+            )
+        embedding_dim = int(rows[0]["embedding"].shape[0]) if rows else 0
+    else:
+        rows, embedding_dim = load_online_embedding_rows(embeddings_path)
     grouped_rows = group_rows_by_user(rows)
     logger.info("Loaded active online embedding rows: %d users=%d dim=%d", len(rows), len(grouped_rows), embedding_dim)
 
@@ -317,12 +377,22 @@ if __name__ == "__main__":
 
     for user_id in request_user_ids:
         request = open_requests[user_id]
+        request_id = None
+        if runtime_db_path is not None:
+            request_id = runtime_store.claim_refit_request(runtime_db_path, run_id=run_id, user_id=user_id)
         user_rows = grouped_rows.get(user_id, [])
-        state_path = state_path_for_user(interest_state_dir, user_id)
-        state = load_interest_state(state_path)
+        state_path = None if interest_state_dir is None else state_path_for_user(interest_state_dir, user_id)
+        state = load_interest_state_with_seed(
+            primary_db=state_db_path,
+            primary_run_id=run_id,
+            seed_db=seed_state_db_path,
+            seed_run_id=seed_run_id,
+            state_dir=interest_state_dir,
+            user_id=user_id,
+        )
         if state is None:
             state = make_empty_interest_state(user_id, embedding_dim)
-        if state.embedding_dim != embedding_dim:
+        if embedding_dim and state.embedding_dim != embedding_dim:
             raise ValueError(f"Embedding dim mismatch for user {user_id}: {state.embedding_dim} != {embedding_dim}")
 
         base_event = {
@@ -330,7 +400,8 @@ if __name__ == "__main__":
             "runId": run_id,
             "userId": user_id,
             "request": request,
-            "statePath": relative_or_absolute(ROOT, state_path),
+            "stateDb": None if state_db_path is None else relative_or_absolute(ROOT, state_db_path),
+            "statePath": None if state_path is None else relative_or_absolute(ROOT, state_path),
             "backendRequested": args.cluster_backend,
             "backendSelected": selected_backend,
             "backendFallbackReason": fallback_reason,
@@ -347,33 +418,90 @@ if __name__ == "__main__":
             }
             refit_events.append(event)
             user_summaries.append(event)
+            state.refit_request_open = False
+            state.refit_required = True
+            state.updated_at = local_timestamp()
+            if state_path is not None:
+                save_interest_state(state, state_path)
+            if state_db_path is not None:
+                runtime_store.record_interest_state(
+                    state_db_path,
+                    run_id=run_id,
+                    state=state,
+                    state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+                )
+            if runtime_db_path is not None and runtime_db_path != state_db_path:
+                runtime_store.record_interest_state(
+                    runtime_db_path,
+                    run_id=run_id,
+                    state=state,
+                    state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+                )
+            if runtime_db_path is not None:
+                runtime_store.complete_refit_request(
+                    runtime_db_path,
+                    run_id=run_id,
+                    user_id=user_id,
+                    request_id=request_id,
+                    status="skipped",
+                    payload=event,
+                )
             logger.info("Skipped refit: %s", event)
             continue
 
-        user_embeddings = np.stack([row["embedding"] for row in user_rows]).astype(np.float32)
-        active_raw_event_ids = [int(row["rawEventId"]) for row in user_rows]
-        user_movie_ids = np.array([int(row["movieId"]) for row in user_rows], dtype=np.int64)
-        user_start = time.time()
-        interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit(
-            user_embeddings,
-            requested_backend=args.cluster_backend,
-            selected_backend=selected_backend,
-            fallback_reason=fallback_reason,
-            min_cluster_size=args.min_cluster_size,
-            cluster_dim=args.cluster_dim,
-            random_state=args.random_state,
-            movie_ids=user_movie_ids,
-            genre_map_idx=genre_map_idx,
-            all_genres=all_genres,
-            logger=logger,
-        )
+        try:
+            user_embeddings = np.stack([row["embedding"] for row in user_rows]).astype(np.float32)
+            active_raw_event_ids = [int(row["rawEventId"]) for row in user_rows]
+            user_movie_ids = np.array([int(row["movieId"]) for row in user_rows], dtype=np.int64)
+            user_start = time.time()
+            interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit(
+                user_embeddings,
+                requested_backend=args.cluster_backend,
+                selected_backend=selected_backend,
+                fallback_reason=fallback_reason,
+                min_cluster_size=args.min_cluster_size,
+                cluster_dim=args.cluster_dim,
+                random_state=args.random_state,
+                movie_ids=user_movie_ids,
+                genre_map_idx=genre_map_idx,
+                all_genres=all_genres,
+                logger=logger,
+            )
+        except Exception as exc:
+            if runtime_db_path is not None:
+                runtime_store.complete_refit_request(
+                    runtime_db_path,
+                    run_id=run_id,
+                    user_id=user_id,
+                    request_id=request_id,
+                    status="failed",
+                    payload={**base_event, "status": "failed", "error": f"{exc.__class__.__name__}: {exc}"},
+                    error_type=exc.__class__.__name__,
+                    error_message=str(exc),
+                )
+            raise
         selected_backend = actual_backend
         fallback_reason = actual_fallback_reason
         base_event["backendSelected"] = selected_backend
         base_event["backendFallbackReason"] = fallback_reason
         elapsed = time.time() - user_start
         update_state_after_refit(state, interests=interests, active_raw_event_ids=active_raw_event_ids)
-        save_interest_state(state, state_path)
+        if state_path is not None:
+            save_interest_state(state, state_path)
+        if state_db_path is not None:
+            runtime_store.record_interest_state(
+                state_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+            )
+        if runtime_db_path is not None and runtime_db_path != state_db_path:
+            runtime_store.record_interest_state(
+                runtime_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+            )
         refit_count += 1
 
         event = {
@@ -386,6 +514,15 @@ if __name__ == "__main__":
         }
         refit_events.append(event)
         user_summaries.append(event)
+        if runtime_db_path is not None:
+            runtime_store.complete_refit_request(
+                runtime_db_path,
+                run_id=run_id,
+                user_id=user_id,
+                request_id=request_id,
+                status="closed",
+                payload=event,
+            )
         logger.info("Closed refit request: %s", event)
 
     if refit_events:

@@ -39,8 +39,42 @@ data/movies_processed_drop.csv
 data/ratings_drop.csv
 data/ratings_drop_processed.jsonl
 
+# Local planning and experiment records
+plan/*
+!plan/.gitkeep
+!plan/_template.md
+!plan/active/
+plan/active/*
+!plan/active/.gitkeep
+!plan/active/README.md
+!plan/done/
+plan/done/*
+!plan/done/.gitkeep
+!plan/done/README.md
+!plan/expired/
+plan/expired/*
+!plan/expired/.gitkeep
+!plan/expired/README.md
+
+experiments/*
+!experiments/.gitkeep
+!experiments/model/
+experiments/model/*
+!experiments/model/.gitkeep
+!experiments/model/README.md
+
 # Model outputs
 outputs/*
 !outputs/readme.md
+!outputs/pre/
+outputs/pre/*
+!outputs/pre/.gitkeep
+!outputs/post/
+outputs/post/*
+!outputs/post/.gitkeep
+!outputs/stream/
+outputs/stream/*
+!outputs/stream/.gitkeep
 !outputs/logs/
-!outputs/logs/**
+outputs/logs/**
+!outputs/logs/.gitkeep

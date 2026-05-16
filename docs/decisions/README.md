@@ -14,6 +14,7 @@
 - `0001-track-project-ai-assistant-configs.md`
 - `0002-track-model-history-with-git-and-experiments.md`
 - `0003-pin-rapids-cuml-gpu-dependencies.md`
+- `0004-keep-plan-and-experiment-records-local.md`
 
 ## 템플릿
 

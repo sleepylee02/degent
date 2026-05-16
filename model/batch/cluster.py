@@ -7,6 +7,7 @@ import umap
 import hdbscan
 from tqdm import tqdm
 
+import model.stream.runtime_store as runtime_store
 from model.common.cluster import (
     choose_backend,
     cluster_embeddings,
@@ -163,14 +164,22 @@ def run_per_user_clustering(embeddings, user_ids, timepoint_idx,
 # 저장
 # =====================
 
-def save_interest_states(results, state_dir, *, backend,
+def save_interest_states(results, state_dir=None, *, state_db=None, run_id=None, backend,
                          genre_map_idx=None, all_genres=None, logger=None):
     """
-    유저별 interest vectors를 interest_states/{id}.json 으로 저장.
+    유저별 interest vectors를 SQLite state store와 optional legacy JSON dir에 저장.
     stream/interest_assign.py의 InterestState 포맷과 호환.
     """
-    state_dir = Path(state_dir)
-    state_dir.mkdir(parents=True, exist_ok=True)
+    if state_dir is None and state_db is None:
+        raise ValueError("Either state_db or state_dir must be provided for interest state output.")
+    state_dir = None if state_dir is None else Path(state_dir)
+    state_db = None if state_db is None else Path(state_db)
+    if state_dir is not None:
+        state_dir.mkdir(parents=True, exist_ok=True)
+    if state_db is not None:
+        if run_id is None:
+            raise ValueError("run_id is required when writing interest states to state_db.")
+        runtime_store.init_store(state_db)
     timestamp = local_timestamp()
     saved = 0
     has_genre_info = genre_map_idx is not None and all_genres is not None
@@ -201,12 +210,15 @@ def save_interest_states(results, state_dir, *, backend,
             processed_raw_event_ids=[],
             version=INTEREST_STATE_VERSION,
         )
-        path = state_dir / f"{int(uid)}.json"
-        save_interest_state(state, path)
+        if state_dir is not None:
+            path = state_dir / f"{int(uid)}.json"
+            save_interest_state(state, path)
+        if state_db is not None:
+            runtime_store.record_interest_state(state_db, run_id=run_id, state=state)
         saved += 1
 
     if logger:
-        logger.info("Saved interest states | users=%d dir=%s", saved, state_dir)
+        logger.info("Saved interest states | users=%d state_db=%s legacy_dir=%s", saved, state_db, state_dir)
 
 
 def save_viz_npz(results, output_path, logger=None):
@@ -262,8 +274,12 @@ if __name__ == "__main__":
     parser.add_argument("--random-state",     type=int,   default=42)
     parser.add_argument("--cluster-backend",  type=str,   default="auto",
                         choices=["auto", "gpu", "cpu"])
-    parser.add_argument("--interest-state-dir", type=Path,
-                        default=Path("outputs/batch/interest_states"))
+    parser.add_argument("--state-db", type=Path, default=Path("outputs/batch/state.sqlite"),
+                        help="SQLite state store for batch interest states.")
+    parser.add_argument("--reset-state-db", action="store_true",
+                        help="Remove state-db before writing batch interest states.")
+    parser.add_argument("--interest-state-dir", type=Path, default=None,
+                        help="Optional legacy per-user JSON interest state output directory.")
     parser.add_argument("--run-id",           type=str,   default=None)
     parser.add_argument("--hash-inputs",      action="store_true")
     parser.add_argument("--hash-limit-mb",    type=int,   default=100)
@@ -271,6 +287,8 @@ if __name__ == "__main__":
                         help="Movies metadata CSV for genre labeling.")
     parser.add_argument("--embeddings",       type=Path,  default=Path("outputs/canonical_embeddings.npz"),
                         help="Input embeddings npz (canonical_embeddings.npz or embeddings.npz).")
+    parser.add_argument("--output",           type=Path,  default=Path("outputs/user_interests.npz"),
+                        help="Output NPZ for dashboard/export visualization data.")
     args = parser.parse_args()
 
     ROOT        = Path(__file__).resolve().parents[2]
@@ -281,9 +299,18 @@ if __name__ == "__main__":
     logger, log_path = setup_run_logging("cluster", OUTPUTS_DIR)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
     embeddings_path  = args.embeddings if args.embeddings.is_absolute() else ROOT / args.embeddings
-    interest_state_dir = args.interest_state_dir if args.interest_state_dir.is_absolute() \
-                         else ROOT / args.interest_state_dir
-    viz_npz_path = OUTPUTS_DIR / "user_interests.npz"
+    interest_state_dir = None if args.interest_state_dir is None else (
+        args.interest_state_dir if args.interest_state_dir.is_absolute() else ROOT / args.interest_state_dir
+    )
+    state_db_path = args.state_db if args.state_db.is_absolute() else ROOT / args.state_db
+    if args.reset_state_db and state_db_path.exists():
+        state_db_path.unlink()
+        for suffix in ("-wal", "-shm"):
+            sidecar = state_db_path.with_name(state_db_path.name + suffix)
+            if sidecar.exists():
+                sidecar.unlink()
+    viz_npz_path = args.output if args.output.is_absolute() else ROOT / args.output
+    viz_npz_path.parent.mkdir(parents=True, exist_ok=True)
 
     genre_map_idx = None
     all_genres = None
@@ -300,7 +327,8 @@ if __name__ == "__main__":
     selected_backend, fallback_reason = choose_backend(args.cluster_backend)
     logger.info("Experiment run id: %s", run_id)
     logger.info("Outputs directory: %s", OUTPUTS_DIR)
-    logger.info("Interest state dir: %s", interest_state_dir)
+    logger.info("Interest state DB: %s", state_db_path)
+    logger.info("Legacy interest state dir: %s", interest_state_dir)
     logger.info("Cluster backend requested=%s selected=%s fallback_reason=%s",
                 args.cluster_backend, selected_backend, fallback_reason)
 
@@ -331,6 +359,20 @@ if __name__ == "__main__":
                     "cluster_backend_requested": args.cluster_backend,
                     "cluster_backend_selected":  selected_backend,
                     "backend_fallback_reason":   fallback_reason,
+                    "output": str(
+                        viz_npz_path.relative_to(ROOT)
+                        if viz_npz_path.is_relative_to(ROOT)
+                        else viz_npz_path
+                    ),
+                    "interest_state_dir": None
+                    if interest_state_dir is None
+                    else str(interest_state_dir.relative_to(ROOT) if interest_state_dir.is_relative_to(ROOT) else interest_state_dir),
+                    "state_db": str(
+                        state_db_path.relative_to(ROOT)
+                        if state_db_path.is_relative_to(ROOT)
+                        else state_db_path
+                    ),
+                    "reset_state_db": bool(args.reset_state_db),
                 },
             }
         },
@@ -421,9 +463,12 @@ if __name__ == "__main__":
         logger.warning("K distribution unavailable: no users clustered")
 
     save_interest_states(results, interest_state_dir,
+                         state_db=state_db_path,
+                         run_id=run_id,
                          backend=selected_backend,
                          genre_map_idx=genre_map_idx, all_genres=all_genres,
                          logger=logger)
+    runtime_store.checkpoint(state_db_path)
     save_viz_npz(results, viz_npz_path, logger=logger)
 
     metric_record = {
@@ -450,11 +495,14 @@ if __name__ == "__main__":
                     "filtered_unique_users":   int(len(np.unique(user_ids))),
                 },
                 "outputs": {
-                    "interest_state_dir": str(
-                        interest_state_dir.relative_to(ROOT)
-                        if interest_state_dir.is_relative_to(ROOT)
-                        else interest_state_dir
+                    "state_db": file_metadata(
+                        state_db_path, root=ROOT,
+                        include_sha256=True,
+                        sha256_limit_bytes=hash_limit_bytes,
                     ),
+                    "interest_state_dir": None
+                    if interest_state_dir is None
+                    else str(interest_state_dir.relative_to(ROOT) if interest_state_dir.is_relative_to(ROOT) else interest_state_dir),
                     "viz_npz": file_metadata(
                         viz_npz_path, root=ROOT,
                         include_sha256=True,

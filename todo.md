@@ -2,6 +2,12 @@
 
 ## Active
 
+- Temporal 2022 Streaming E2E
+  - owner: sleepylee / LLM
+  - plan: `plan/active/temporal_2022_streaming_e2e.md`
+  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: cutoff-aware train/canonical, run-scoped model output path, pre/post 경로 계약 구현 후 per-user JSON state directory가 pre에서 12GB, post 복사본도 12GB가 되는 문제가 확인됨. 현재 작업은 pre `state.sqlite` seed store와 post `replay.sqlite` lazy materialize 구조로 전환해 user/interest state를 SQLite 중심으로 정리하는 것. Post replay active embedding은 `replay.sqlite` cache 중심으로 전환했고, 기본 경로는 `online_embeddings.npz` 없이 assign/refit을 처리한다. Replay stage별 Python subprocess도 제거하고 `inprocess_worker.py` 단일 경로로 전환했다. `temporal_2022_inprocess_smoke`에서 2/2 events, refit closed 2, stage command `in-process`, NPZ 미생성 확인.
+
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM
   - files: `model/IMPLEMENTATION_STATUS.md`, `model/README.md`, `PROJECT_GUIDE.md`
@@ -12,6 +18,42 @@
 - 없음
 
 ## Done
+
+- Temporal Cutoff 2020 Pipeline Deep Dive
+  - owner: sleepylee / LLM
+  - plan: `plan/done/temporal_cutoff_2020_pipeline_deep_dive.md`
+  - files: `eda/processed/temporal_cutoff_2020_deep_dive.py`, `eda/processed/outputs/`, `todo.md`
+  - status: 2020년 전후 T 후보를 현재 train/canonical/stream/refit 파이프라인 기준으로 재분석. `q90_2020=2020-10-29T23:59:59Z` 기준 post 3,190,916 events, train users 13,273, canonical users 545, item vocab 44,342, known item 92.34%, online rows/event proxy 254. `git diff --check` 통과.
+
+- SQLite Runtime State Store
+  - owner: sleepylee / LLM
+  - plan: `plan/done/sqlite_runtime_state_store.md`
+  - files: `model/stream/runtime_store.py`, `model/stream/runtime_report.py`, `model/stream/trace_replay.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/common/cluster.py`, `dashboard/cluster_dashboard.py`, `docs/`, `README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: `replay.sqlite` runtime/state store, stream stage DB dual-write, dashboard SQLite reader, runtime report 완료. 최종 `sqlite_runtime_e2e_smoke`에서 5/5 events, refit closed/skipped 1/2, recommendation rows 5, dashboard SQLite reader, runtime_report, `git diff --check` 확인.
+
+- Temporal Cutoff T Candidate EDA
+  - owner: sleepylee / LLM
+  - plan: `plan/done/temporal_cutoff_t_candidate_eda.md`
+  - files: `eda/processed/temporal_cutoff_eda.py`, `eda/processed/outputs/`, `todo.md`
+  - status: focused EDA script/report 생성 완료. 1차 추천 T 후보는 stress `2018-10-14T23:59:59Z`, balanced `2019-10-29T23:59:59Z`, conservative `2020-10-29T23:59:59Z`. `git diff --check` 통과.
+
+- Trace Replay Replacement
+  - owner: sleepylee / LLM
+  - plan: `plan/done/trace_replay_replacement.md`
+  - files: `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `dashboard/cluster_dashboard.py`, `docs/streaming-replay-dashboard-contract.md`, `docs/streaming-e2e-pipeline.md`, `docs/current-pipeline-snapshot.md`, `docs/data-flow.md`, `docs/artifacts.md`, `docs/part-contracts.md`, `docs/batch-to-streaming-analysis-v2.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `dashboard/README.md`, `replay/README.md`, `README.md`, `PROJECT_GUIDE.md`, `outputs/readme.md`, `todo.md`
+  - status: 기존 batch-file replay demo runner를 N배속 trace-clock replay runner로 대체. 공식 `model.stream.replay_pipeline`은 `trace_replay` wrapper로 유지하고, smoke에서 5/5 events, `--speed 100`, `stream_ingress_event.v1`, `stage=trace_event`, summary completed, lag/throughput metric, `git diff --check` 통과 확인
+
+- Current Pipeline Snapshot
+  - owner: sleepylee / LLM
+  - plan: `plan/done/current_pipeline_snapshot.md`
+  - files: `docs/current-pipeline-snapshot.md`, `README.md`, `PROJECT_GUIDE.md`, `model/README.md`, `docs/data-flow.md`, `todo.md`
+  - status: 현재 batch / streaming 최종 구현, streaming data flow, artifact/state 계약, replay orchestration, 문제 포인트와 후속 수정 후보를 한 문서로 정리. `git diff --check` 통과
+
+- 머지 후 문서 정합성 업데이트
+  - owner: sleepylee / LLM
+  - plan: `plan/done/docs_consistency_after_merge.md`
+  - files: `PROJECT_GUIDE.md`, `README.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/`, `dashboard/README.md`, `outputs/readme.md`, `replay/README.md`, `experiments/model/README.md`, `todo.md`
+  - status: cluster 공통화, canonical cluster 기본 경로, dashboard export, stream/replay recommendation, replay dashboard recommendation artifact, 삭제된 legacy entrypoint 상태를 현재 운영 문서에 반영. `git diff --check`와 stale command 검색 완료
 
 - Streaming Online Recommend
   - owner: sleepylee / LLM
@@ -67,7 +109,7 @@
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase2_canonical_embedding.md`
   - files: `model/common/canonical.py`, `model/batch/extract_canonical.py`, `PROJECT_GUIDE.md`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md`, `docs/data-flow.md`, `README.md`, `todo.md`
-  - status: legacy `model/batch/extract.py`는 보존하고 `python3 -m model.batch.extract_canonical` 경로를 추가. event 하나당 canonical embedding 하나를 보장하며 smoke test에서 `(2869, 128)`, duplicate 0, NaN 0 확인
+  - status: 당시에는 legacy overlap extract를 보존하고 `python3 -m model.batch.extract_canonical` 경로를 추가. 현재 main에서는 overlap extract entrypoint가 제거되어 `extract_canonical`이 공식 추출 경로다. event 하나당 canonical embedding 하나를 보장하며 smoke test에서 `(2869, 128)`, duplicate 0, NaN 0 확인
 - Streaming Pipeline Phase 1: 모델 구조 재정리
   - owner: sleepylee / LLM
   - plan: `plan/done/streaming_pipeline_phase1_structure.md`

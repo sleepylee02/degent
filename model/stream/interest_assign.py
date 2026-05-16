@@ -8,6 +8,7 @@ import json
 
 import numpy as np
 
+import model.stream.runtime_store as runtime_store
 from model.common.runtime import (
     append_metric,
     command_line,
@@ -138,13 +139,28 @@ def parse_args() -> argparse.Namespace:
         help="Max file size for SHA256 hashing. Use -1 for no limit.",
     )
     parser.add_argument("--embeddings", type=Path, default=Path("outputs/stream/online_embeddings.npz"))
-    parser.add_argument("--interest-state-dir", type=Path, default=Path("outputs/stream/interest_states"))
+    parser.add_argument("--state-db", type=Path, default=None, help="SQLite interest state store. Defaults to --runtime-db.")
+    parser.add_argument("--seed-state-db", type=Path, default=None, help="Optional pre-T SQLite seed state store.")
+    parser.add_argument("--seed-run-id", type=str, default=None, help="Run id to read from --seed-state-db.")
+    parser.add_argument(
+        "--interest-state-dir",
+        type=Path,
+        default=None,
+        help="Optional legacy per-user JSON interest state directory.",
+    )
     parser.add_argument("--assignments", type=Path, default=Path("outputs/stream/interest_assignments.jsonl"))
     parser.add_argument("--refit-requests", type=Path, default=Path("outputs/stream/refit_requests.jsonl"))
     parser.add_argument("--similarity-threshold", type=float, default=0.2)
     parser.add_argument("--refit-min-events", type=int, default=20)
     parser.add_argument("--assign-trigger-count", type=int, default=50)
     parser.add_argument("--outlier-trigger-count", type=int, default=10)
+    parser.add_argument("--runtime-db", type=Path, default=None, help="Optional SQLite runtime/state store.")
+    parser.add_argument("--event-id", type=int, default=None, help="Replay event id for runtime DB linkage.")
+    parser.add_argument(
+        "--use-cache",
+        action="store_true",
+        help="Read changed active embedding rows from --runtime-db instead of --embeddings NPZ.",
+    )
     return parser.parse_args()
 
 
@@ -167,6 +183,35 @@ def load_interest_state(path: Path) -> InterestState | None:
     if not path.exists():
         return None
     return InterestState.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def load_interest_state_from_db(db_path: Path | None, *, run_id: str, user_id: int) -> InterestState | None:
+    if db_path is None:
+        return None
+    payload = runtime_store.fetch_interest_state_payload(db_path, run_id=run_id, user_id=user_id)
+    if payload is None:
+        return None
+    return InterestState.from_dict(payload)
+
+
+def load_interest_state_with_seed(
+    *,
+    primary_db: Path | None,
+    primary_run_id: str,
+    seed_db: Path | None,
+    seed_run_id: str,
+    state_dir: Path | None,
+    user_id: int,
+) -> InterestState | None:
+    state = load_interest_state_from_db(primary_db, run_id=primary_run_id, user_id=user_id)
+    if state is not None:
+        return state
+    state = load_interest_state_from_db(seed_db, run_id=seed_run_id, user_id=user_id)
+    if state is not None:
+        return state
+    if state_dir is not None:
+        return load_interest_state(state_path_for_user(state_dir, user_id))
+    return None
 
 
 def save_interest_state(state: InterestState, path: Path) -> Path:
@@ -245,6 +290,12 @@ def group_rows_by_user(rows: list[dict[str, Any]]) -> dict[int, list[dict[str, A
     return grouped
 
 
+def embedding_dim_from_rows(rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    return int(np.asarray(rows[0]["embedding"], dtype=np.float32).shape[0])
+
+
 def cosine_similarities(embedding: np.ndarray, interests: list[Interest]) -> np.ndarray:
     matrix = np.array([interest.vector for interest in interests], dtype=np.float32)
     if matrix.ndim != 2 or matrix.shape[0] == 0:
@@ -310,6 +361,7 @@ def assign_user_rows(
     assign_trigger_count: int,
     outlier_trigger_count: int,
     run_id: str,
+    skip_processed_records: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     ensure_interest_dimensions(state)
     now = local_timestamp()
@@ -333,6 +385,8 @@ def assign_user_rows(
         }
 
         if raw_event_id in processed:
+            if skip_processed_records:
+                continue
             assignment_records.append({**base_record, "status": "already_processed"})
             continue
 
@@ -445,15 +499,30 @@ if __name__ == "__main__":
     logger, log_path = setup_run_logging("interest_assign", OUTPUTS_DIR)
 
     embeddings_path = resolve_path(ROOT, args.embeddings)
-    interest_state_dir = resolve_path(ROOT, args.interest_state_dir)
+    runtime_db_path = None if args.runtime_db is None else resolve_path(ROOT, args.runtime_db)
+    state_db_path = runtime_db_path if args.state_db is None else resolve_path(ROOT, args.state_db)
+    seed_state_db_path = None if args.seed_state_db is None else resolve_path(ROOT, args.seed_state_db)
+    seed_run_id = args.seed_run_id or run_id
+    interest_state_dir = None if args.interest_state_dir is None else resolve_path(ROOT, args.interest_state_dir)
+    if state_db_path is None and interest_state_dir is None:
+        interest_state_dir = OUTPUTS_DIR / "stream" / "interest_states"
     assignments_path = resolve_path(ROOT, args.assignments)
     refit_requests_path = resolve_path(ROOT, args.refit_requests)
+    if args.use_cache and (runtime_db_path is None or args.event_id is None):
+        raise ValueError("--use-cache requires --runtime-db and --event-id.")
+    if state_db_path is not None:
+        runtime_store.init_store(state_db_path)
+    if runtime_db_path is not None:
+        runtime_store.init_store(runtime_db_path)
     hash_limit_bytes = None if args.hash_limit_mb < 0 else args.hash_limit_mb * 1024 * 1024
 
     logger.info("Experiment run id: %s", run_id)
     logger.info("Experiment metadata directory: %s", run_dir)
     logger.info("Online embeddings input: %s", embeddings_path)
-    logger.info("Interest state directory: %s", interest_state_dir)
+    logger.info("Use embedding cache: %s", args.use_cache)
+    logger.info("State DB: %s", state_db_path)
+    logger.info("Seed state DB: %s run_id=%s", seed_state_db_path, seed_run_id)
+    logger.info("Legacy interest state directory: %s", interest_state_dir)
     logger.info("Assignments output: %s", assignments_path)
     logger.info("Refit requests output: %s", refit_requests_path)
 
@@ -467,15 +536,32 @@ if __name__ == "__main__":
                     "command": command_line(),
                     "log": file_metadata(log_path, root=ROOT),
                     "inputs": {
-                        "online_embeddings": file_metadata(
+                        "online_embeddings": None
+                        if args.use_cache
+                        else file_metadata(
                             embeddings_path,
                             root=ROOT,
                             include_sha256=args.hash_inputs,
                             sha256_limit_bytes=hash_limit_bytes,
                         ),
+                        "embedding_cache": None
+                        if not args.use_cache
+                        else {
+                            "runtime_db": relative_or_absolute(ROOT, runtime_db_path),
+                            "event_id": args.event_id,
+                        },
                     },
                     "assignment_config": {
-                        "interest_state_dir": relative_or_absolute(ROOT, interest_state_dir),
+                        "state_db": None
+                        if state_db_path is None
+                        else relative_or_absolute(ROOT, state_db_path),
+                        "seed_state_db": None
+                        if seed_state_db_path is None
+                        else relative_or_absolute(ROOT, seed_state_db_path),
+                        "seed_run_id": seed_run_id,
+                        "interest_state_dir": None
+                        if interest_state_dir is None
+                        else relative_or_absolute(ROOT, interest_state_dir),
                         "assignments": relative_or_absolute(ROOT, assignments_path),
                         "refit_requests": relative_or_absolute(ROOT, refit_requests_path),
                         "similarity_threshold": args.similarity_threshold,
@@ -488,7 +574,15 @@ if __name__ == "__main__":
         },
     )
 
-    rows, embedding_dim = load_online_embedding_rows(embeddings_path)
+    if args.use_cache:
+        rows = runtime_store.fetch_embedding_cache_changed_rows(
+            runtime_db_path,
+            run_id=run_id,
+            event_id=args.event_id,
+        )
+        embedding_dim = embedding_dim_from_rows(rows)
+    else:
+        rows, embedding_dim = load_online_embedding_rows(embeddings_path)
     grouped_rows = group_rows_by_user(rows)
     logger.info("Loaded active online embedding rows: %d users=%d dim=%d", len(rows), len(grouped_rows), embedding_dim)
 
@@ -497,8 +591,15 @@ if __name__ == "__main__":
     user_summaries: list[dict[str, Any]] = []
 
     for user_id, user_rows in sorted(grouped_rows.items()):
-        state_path = state_path_for_user(interest_state_dir, user_id)
-        state = load_interest_state(state_path)
+        state_path = None if interest_state_dir is None else state_path_for_user(interest_state_dir, user_id)
+        state = load_interest_state_with_seed(
+            primary_db=state_db_path,
+            primary_run_id=run_id,
+            seed_db=seed_state_db_path,
+            seed_run_id=seed_run_id,
+            state_dir=interest_state_dir,
+            user_id=user_id,
+        )
         if state is None:
             state = make_empty_interest_state(user_id, embedding_dim)
         if state.embedding_dim != embedding_dim:
@@ -514,8 +615,24 @@ if __name__ == "__main__":
             assign_trigger_count=args.assign_trigger_count,
             outlier_trigger_count=args.outlier_trigger_count,
             run_id=run_id,
+            skip_processed_records=args.use_cache,
         )
-        save_interest_state(state, state_path)
+        if state_path is not None:
+            save_interest_state(state, state_path)
+        if state_db_path is not None:
+            runtime_store.record_interest_state(
+                state_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+            )
+        if runtime_db_path is not None and runtime_db_path != state_db_path:
+            runtime_store.record_interest_state(
+                runtime_db_path,
+                run_id=run_id,
+                state=state,
+                state_path=None if state_path is None else relative_or_absolute(ROOT, state_path),
+            )
 
         all_assignment_records.extend(assignment_records)
         if refit_request is not None:
@@ -535,7 +652,8 @@ if __name__ == "__main__":
             "refitRequired": state.refit_required,
             "refitReasons": state.refit_reasons or [],
             "statuses": statuses,
-            "statePath": relative_or_absolute(ROOT, state_path),
+            "stateDb": None if state_db_path is None else relative_or_absolute(ROOT, state_db_path),
+            "statePath": None if state_path is None else relative_or_absolute(ROOT, state_path),
         }
         user_summaries.append(summary)
         logger.info("Processed interest state: %s", summary)
@@ -543,6 +661,14 @@ if __name__ == "__main__":
     append_jsonl(assignments_path, all_assignment_records)
     if refit_request_records:
         append_jsonl(refit_requests_path, refit_request_records)
+    if runtime_db_path is not None:
+        runtime_store.record_assignments(
+            runtime_db_path,
+            run_id=run_id,
+            records=all_assignment_records,
+            event_id=args.event_id,
+        )
+        runtime_store.open_refit_requests(runtime_db_path, run_id=run_id, records=refit_request_records)
 
     status_counts: dict[str, int] = {}
     for record in all_assignment_records:

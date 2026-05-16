@@ -2,6 +2,8 @@
 
 이 문서는 `streaming` 브랜치가 기존 batch 추천 파이프라인을 어떤 방식으로 end-to-end streaming pipeline으로 확장했는지 정리한다.
 
+2026-05-14 현재 `origin/main` 기준으로는 이후 merge에서 공통 clustering backend, batch cluster export, streaming online recommendation, replay recommendation artifact, dashboard recommendation view가 추가됐다. 또한 `model/batch/extract.py`와 `model/stream/drift_detector.py`는 현재 git 추적 대상에서 제거됐으므로 이 문서에서 해당 이름이 나오는 부분은 historical context로만 읽는다. 현재 실행 가능한 경로의 정본은 `PROJECT_GUIDE.md`, `model/README.md`, `docs/data-flow.md`, `docs/streaming-e2e-pipeline.md`다.
+
 핵심은 기존 batch를 버린 것이 아니다. 기존 batch가 잘하던 부분은 그대로 재사용하고, streaming에서 반드시 필요한 부분만 새로 정의했다.
 
 ```text
@@ -27,11 +29,12 @@ data/ratings_drop_processed.jsonl
   -> SASRec + Contrastive Loss 학습
   -> outputs/sasrec_cl.pt
   -> outputs/item2idx.json
-  -> hidden state 일괄 추출
-  -> outputs/embeddings.npz
+  -> canonical hidden state 일괄 추출
+  -> outputs/canonical_embeddings.npz
   -> user별 UMAP + HDBSCAN clustering
   -> outputs/user_interests.npz
-  -> visualization/dashboard 후보
+  -> outputs/batch/interest_states/{user_id}.json
+  -> visualization/dashboard/recommendation 후보
 ```
 
 현재 브랜치에서는 이 기존 batch 책임을 `model/batch/` 아래에 보존했다.
@@ -39,8 +42,11 @@ data/ratings_drop_processed.jsonl
 | 책임 | 현재 파일 | 기존 방식 |
 |---|---|---|
 | 학습 | `model/batch/train.py` | 전체 전처리 데이터를 읽어 SASRec+CL checkpoint 생성 |
-| hidden state 추출 | `model/batch/extract.py` | overlap sliding window에서 interval마다 hidden state 추출 |
-| clustering | `model/batch/cluster.py` | user별 UMAP + HDBSCAN으로 interest vector 생성 |
+| hidden state 추출 | `model/batch/extract_canonical.py` | event당 canonical hidden state 1개 추출 |
+| legacy hidden state 추출 | 제거됨 | 과거 `model/batch/extract.py`가 overlap sliding window 산출물을 생성 |
+| clustering | `model/batch/cluster.py` | user별 UMAP + HDBSCAN으로 interest vector/state 생성 |
+| dashboard export | `model/batch/export_clusters.py` | `user_interests.npz`를 dashboard table로 변환 |
+| recommendation | `model/stream/recommend_online.py` | streaming interest state 기반 top-K 추천 생성 |
 | 시각화 | `model/batch/visualize_clusters.py` | `outputs/user_interests.npz`를 user별 plot으로 변환 |
 
 기존 batch는 다음 전제를 가진다.
@@ -86,7 +92,7 @@ streaming 단위는 individual user가 아니라 system-level rating event strea
 | online embedding | streaming inference | `model/stream/extract_online.py` | 새 event를 state에 반영하고 active embedding을 만든다 |
 | interest assignment | online | `model/stream/interest_assign.py` | cosine nearest-interest만 계산한다 |
 | cluster refit | trigger-based batch | `model/stream/cluster_refit.py` | UMAP/HDBSCAN은 필요할 때만 수행한다 |
-| replay | micro-batch simulation | `replay/cpp/rating_replay.cpp`, `model/stream/replay_pipeline.py` | historical ratings를 event stream처럼 재생한다 |
+| replay | trace-clock simulation | `replay/cpp/rating_replay.cpp`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py` | historical ratings를 `--speed N` virtual clock으로 재생한다 |
 | dashboard | read-only monitor | `dashboard/cluster_dashboard.py` | replay artifact를 관찰한다 |
 
 즉 이 브랜치가 낸 답은 다음이다.
@@ -323,22 +329,24 @@ Phase 1은 구조를 먼저 나눴다.
 model/
   batch/
     train.py
-    extract.py
     extract_canonical.py
     cluster.py
+    export_clusters.py
+    recommend.py
     visualize_clusters.py
   common/
     dataset.py
     sasrec.py
     runtime.py
     canonical.py
+    cluster.py
   stream/
     state.py
     extract_online.py
     interest_assign.py
     cluster_refit.py
+    recommend_online.py
     replay_pipeline.py
-    drift_detector.py
 ```
 
 의도:
@@ -370,7 +378,7 @@ Streaming은 별도 layer로 붙인다.
 
 ## 7. Phase 2: Canonical Batch Extract 추가
 
-기존에는 `batch/extract.py`가 `outputs/embeddings.npz`만 만들었다. 이 산출물은 legacy overlap-window embedding이다.
+기존에는 `batch/extract.py`가 `outputs/embeddings.npz`만 만들었다. 이 산출물은 legacy overlap-window embedding이며 현재 main에서는 재생성 entrypoint가 제거됐다.
 
 Phase 2는 새 entrypoint를 추가했다.
 
@@ -379,11 +387,16 @@ python3 -m model.batch.extract_canonical
   -> outputs/canonical_embeddings.npz
 ```
 
-기존 `extract.py`를 수정하지 않은 이유:
+당시 기존 `extract.py`를 수정하지 않은 이유:
 
 - 기존 batch clustering baseline을 깨지 않는다.
 - overlap-window 산출물과 canonical 산출물을 구분한다.
 - streaming/replay 계약용 embedding을 명확히 새 artifact로 둔다.
+
+현재 상태:
+
+- `batch/cluster.py` 기본 입력은 `outputs/canonical_embeddings.npz`다.
+- `outputs/embeddings.npz`는 historical evidence로만 남긴다.
 
 추가된 것:
 
@@ -679,11 +692,12 @@ GPU auto:
 ```text
 C++ generator
   data/ratings_drop_processed.jsonl
-    -> outputs/stream/replay_demo/replay_input_events.jsonl
+    -> outputs/post/replay_demo/replay_input_events.jsonl
 
 Python orchestrator
   replay_input_events.jsonl
-    -> micro-batch
+    -> --speed N trace clock
+    -> ingress_events.jsonl
     -> extract_online
     -> interest_assign
     -> cluster_refit
@@ -722,15 +736,17 @@ eventId
 
 ### 11-2. Python `replay_pipeline`
 
-`model/stream/replay_pipeline.py`는 replay input을 micro-batch로 나누고, 각 batch마다 Phase 3~4-1 CLI를 subprocess로 호출한다.
+`model/stream/replay_pipeline.py`는 `model/stream/trace_replay.py` entrypoint로 동작한다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, 각 event마다 Phase 3~4-1 CLI를 subprocess로 호출한다.
 
 ```text
-for each micro-batch:
-  batch jsonl 작성
+for each replay event:
+  scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed
+  due time까지 sleep하거나 behind schedule 기록
+  ingress_events.jsonl에 emit record append
   extract_online 실행
   interest_assign 실행
   새 open request user별 cluster_refit 실행
-  replay_events.jsonl에 progress append
+  replay_events.jsonl에 trace_event progress/lag append
 
 end:
   replay_summary.json 작성
@@ -747,38 +763,40 @@ Subprocess 체인을 택한 이유:
 추가된 artifact:
 
 ```text
-outputs/stream/replay_demo/replay_input_events.jsonl
-outputs/stream/replay_demo/replay_events.jsonl
-outputs/stream/replay_demo/replay_summary.json
-outputs/stream/replay_demo/user_states/{user_id}.json
-outputs/stream/replay_demo/online_embeddings.npz
-outputs/stream/replay_demo/interest_assignments.jsonl
-outputs/stream/replay_demo/refit_requests.jsonl
-outputs/stream/replay_demo/refit_events.jsonl
-outputs/stream/replay_demo/interest_states/{user_id}.json
+outputs/post/replay_demo/replay_input_events.jsonl
+outputs/post/replay_demo/ingress_events.jsonl
+outputs/post/replay_demo/replay_events.jsonl
+outputs/post/replay_demo/replay_summary.json
+outputs/post/replay_demo/user_states/{user_id}.json
+outputs/post/replay_demo/online_embeddings.npz
+outputs/post/replay_demo/interest_assignments.jsonl
+outputs/post/replay_demo/refit_requests.jsonl
+outputs/post/replay_demo/refit_events.jsonl
+outputs/post/replay_demo/interest_states/{user_id}.json
 ```
 
-중요한 점은 replay artifact가 `outputs/stream/replay_demo/` 아래에 격리된다는 것이다. 기본 `outputs/stream/*`를 덮어쓰지 않는다.
+중요한 점은 replay artifact가 `outputs/post/replay_demo/` 아래에 격리된다는 것이다. 기본 `outputs/stream/*`를 덮어쓰지 않는다.
 
 이 단계가 낸 답:
 
 ```text
 실제 streaming infra 없이도
-file-based event stream + micro-batch subprocess chain으로
+file-based timestamp trace + event-level subprocess chain으로
 closed-loop streaming behavior를 검증한다.
 ```
 
-Phase 5 smoke:
+Trace replay smoke:
 
 ```text
-input events: 30
-processed events: 30
+input events: 5
+processed events: 5
 unique users: 1
-micro-batches: 2
-final active embedding rows: 12
-refit requests opened/closed/skipped: 2 / 2 / 0
-backend selected: gpu
-elapsed: about 11.18 sec
+speed: 100
+trace/scheduled span: 32 sec / 0.32 sec
+target/actual throughput: 15.625 EPS / about 0.158 EPS
+refit requests opened/closed/skipped: 1 / 0 / 0 with --skip-refit
+behind schedule events: 4
+elapsed: about 31.74 sec
 ```
 
 ---
@@ -798,13 +816,14 @@ Dashboard는 Phase 5 artifact를 읽기만 한다.
 기본 entrypoint:
 
 ```text
-outputs/stream/replay_demo/replay_summary.json
+outputs/post/replay_demo/replay_summary.json
 ```
 
 읽는 파일:
 
 ```text
 replay_summary.json
+ingress_events.jsonl
 replay_events.jsonl
 interest_assignments.jsonl
 refit_requests.jsonl
@@ -818,8 +837,9 @@ interest_states/{user_id}.json
 - processed/input events
 - unique users
 - elapsed/throughput
-- replay event timeline
-- latency
+- speed, target/actual throughput
+- trace event timeline
+- injector/processing/end-to-end latency
 - active embedding rows
 - assignment status counts
 - open/closed/skipped refit events
@@ -842,10 +862,10 @@ Phase 6은 Phase 5 내부 구현을 호출하지 않는다.
 
 ```text
 Phase 5 owns writes under:
-  outputs/stream/replay_demo/
+  outputs/post/replay_demo/
 
 Phase 6 reads:
-  outputs/stream/replay_demo/
+  outputs/post/replay_demo/
 
 Phase 6 must not depend on:
   Phase 5 internal functions
@@ -859,8 +879,9 @@ Schema versions:
 | artifact | version |
 |---|---|
 | replay input event | `stream_replay_event.v1` |
-| replay progress event | `stream_replay_progress.v1` |
-| replay summary | `stream_replay_summary.v1` |
+| ingress event | `stream_ingress_event.v1` |
+| replay progress event | `stream_trace_replay_progress.v1` |
+| replay summary | `stream_trace_replay_summary.v1` |
 
 이 계약이 중요한 이유는 현재 구현이 파일 기반이어도 producer/consumer 역할이 분리되기 때문이다.
 
@@ -876,22 +897,23 @@ Schema versions:
 
 ## 14. End-to-End 실행이 의미하는 것
 
-Phase 5 smoke command 하나가 다음을 모두 통과한다.
+Trace replay smoke command 하나가 다음을 모두 통과한다.
 
 ```bash
 .venv/bin/python -m model.stream.replay_pipeline \
   --reset-output \
   --generate-events \
   --replay-user-id 28 \
-  --limit-events 30 \
-  --micro-batch-size 15 \
+  --limit-events 5 \
+  --speed 100 \
   --refit-min-events 3 \
   --assign-trigger-count 3 \
   --outlier-trigger-count 3 \
   --min-cluster-size 2 \
   --cluster-dim 3 \
-  --cluster-backend auto \
-  --run-id phase5_replay_smoke
+  --cluster-backend cpu \
+  --skip-refit \
+  --run-id trace_replay_smoke
 ```
 
 이 명령이 닫는 흐름:
@@ -899,13 +921,14 @@ Phase 5 smoke command 하나가 다음을 모두 통과한다.
 ```text
 C++ event generation
   -> timestamp-sorted replay input
-  -> micro-batch split
+  -> trace-clock event injection
+  -> ingress schedule/lag log
   -> online user state update
   -> SASRec canonical embedding
   -> cosine interest assignment
   -> refit request open
-  -> GPU UMAP/HDBSCAN refit
-  -> interest state replace
+  -> optional UMAP/HDBSCAN refit
+  -> optional interest state replace
   -> replay progress log
   -> replay summary entrypoint
   -> dashboard read
@@ -941,7 +964,8 @@ event
 | refit trigger | 없음 | pending/outlier/assigned count 기반 |
 | refit backend | CPU UMAP/HDBSCAN | GPU-first cuML, CPU fallback |
 | replay | 없음 | C++ generator + Python orchestrator |
-| dashboard | cluster explorer | replay monitor read-only 추가 |
+| recommendation | batch/offline 후보 | `stream/recommend_online.py`, `replay_pipeline --recommend` |
+| dashboard | cluster explorer | replay monitor + recommendation view read-only 추가 |
 | phase boundary | script 중심 | file/JSONL/NPZ contract 중심 |
 
 ---
@@ -956,12 +980,12 @@ Streaming end-to-end가 됐다고 해서 모든 추천 serving 기능이 완성�
 |---|---|
 | full online training | deferred |
 | 매 event UMAP/HDBSCAN | 하지 않음 |
-| `u_k` 기반 recommendation scoring | 아직 없음 |
+| `u_k` 기반 recommendation scoring | `stream/recommend_online.py`와 `replay_pipeline --recommend` 구현됨 |
 | downstream Recall/NDCG 평가 | 아직 없음 |
 | dashboard-driven state mutation | 하지 않음 |
 | legacy batch 산출물 제거 | 하지 않음 |
 
-이 브랜치는 추천 scoring/evaluation보다 먼저 streaming state/refit/replay 계약을 닫는 데 집중했다.
+이 브랜치는 먼저 streaming state/refit/replay 계약을 닫았고, 이후 merge에서 `u_k` 기반 recommendation scoring이 추가됐다. 아직 남은 것은 추천 품질 평가와 batch recommendation 입력 계약 정리다.
 
 ---
 

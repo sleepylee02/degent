@@ -39,10 +39,10 @@ degent/
 ├── dashboard/                        # 클러스터링 결과 시각화 대시보드
 ├── model/                            # SASRec + Contrastive Loss 모델 파이프라인
 ├── outputs/                          # 모델 산출물과 실행 로그
-├── experiments/                      # 가벼운 실험 메타데이터
+├── experiments/                      # 로컬 실험 메타데이터 (git에는 구조 파일만 유지)
 ├── eda/                              # raw / processed EDA
 ├── docs/                             # 데이터 흐름, 산출물, 설계 결정 보조 문서
-├── plan/                             # 작업 계획서와 상태별 보관
+├── plan/                             # 로컬 작업 계획서와 상태별 보관 (git에는 구조 파일과 템플릿만 유지)
 ├── todo.md                           # 현재 작업 상태와 협업 메모
 ├── AGENTS.md                         # Codex 등 LLM 작업 진입점
 ├── CLAUDE.md                         # Claude 작업 진입점
@@ -234,19 +234,19 @@ python3 eda/processed/eda_processed.py
 
 ## 추천 대시보드
 
-사용자 상태 임베딩 cluster 결과와 streaming replay 진행 상황을 인터랙티브하게 탐색할 수 있다.
+사용자 상태 임베딩 cluster 결과, pre-T seed state, post-T replay 진행 상황, replay 이후 interest state를 인터랙티브하게 탐색할 수 있다.
 
 ```bash
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-사이드바의 `Dashboard view`에서 `Cluster explorer`와 `Replay monitor`를 전환한다. 기본 replay artifact가 있으면 replay view가 먼저 열리고, 없으면 기존 cluster view가 먼저 열린다.
+사이드바의 `Dashboard view`에서 `PRE Cluster`, `PRE Seed State`, `POST Replay`, `POST Interest State`를 전환한다. 기본 post replay artifact가 있으면 `POST Replay`가 먼저 열리고, 없으면 `PRE Cluster`가 먼저 열린다.
 
-Cluster explorer는 기본적으로 아래 결과 파일을 기대한다.
+PRE Cluster는 기본적으로 아래 결과 파일을 기대한다.
 
 - `data/clustering/user_clusters.parquet`
 
-이제 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트가 `model/batch/export_clusters.py`에 추가되었습니다.
+`outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트는 `model/batch/export_clusters.py`다.
 
 사용법:
 
@@ -271,15 +271,19 @@ python3 -m model.batch.export_clusters \
 - `sequenceLength`
 - `embeddingNorm`
 
-실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
+Dashboard는 네 view로 나뉜다. `PRE Cluster`는 `outputs/pre/**/user_interests.npz`를 자동 탐색해 pre-T batch cluster를 선택할 수 있게 하고, `PRE Seed State`는 `outputs/pre/**/pre_summary.json`과 `state.sqlite`를 읽어 replay 시작 상태를 요약한다. 실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 cluster UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
 
-Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 artifact를 읽는 read-only view다. Stable entrypoint는 `outputs/stream/replay_demo/replay_summary.json`이며, summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+`POST Replay`는 `outputs/post/**/replay_summary.json`을 자동 탐색해 post-T replay artifact를 읽는 read-only view다. 선택한 summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. `paths.replayDb`가 있으면 해당 `replay.sqlite`를 우선 읽고, 없으면 같은 post run root의 JSONL artifact를 fallback으로 읽는다. `POST Interest State`는 같은 `replay.sqlite`에서 replay 이후 final interest state와 interest vector projection을 표시한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 모델 실험 기록
 
-`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`는 최신 run id를 이어받는다.
+`python3 -m model.batch.train`는 기본적으로 새 run id를 만들고, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`, `python3 -m model.stream.recommend_online`은 최신 run id를 이어받는다.
 
-`python3 -m model.batch.extract`는 기존 overlap-window hidden state를 `outputs/embeddings.npz`로 저장한다. `python3 -m model.batch.extract_canonical`은 streaming/replay 전환용으로 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다.
+`python3 -m model.batch.extract_canonical`은 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다. 현재 `python3 -m model.batch.cluster`의 기본 입력도 이 canonical embedding이다. 과거 overlap-window 추출 산출물인 `outputs/embeddings.npz`는 legacy artifact로만 취급한다.
+
+`python3 -m model.batch.cluster`는 유저별 UMAP+HDBSCAN을 실행하고 `outputs/user_interests.npz`와 `outputs/batch/interest_states/{user_id}.json`을 만든다. `model.common.cluster`의 공통 backend를 사용하며 `--cluster-backend auto`는 가능한 경우 GPU, 불가능하면 CPU fallback을 사용한다. 장르 라벨링은 `data/movies_processed_drop.csv`가 있으면 자동으로 붙는다.
+
+`python3 -m model.batch.export_clusters`는 `outputs/user_interests.npz`를 dashboard용 `data/clustering/user_clusters.parquet` 등 테이블 포맷으로 변환한다.
 
 `python3 -m model.stream.extract_online`은 raw rating event를 user state에 모두 저장하고, 현재까지 관측된 history 기준 positive projection에서 active online embedding을 만든다. 기본 출력은 `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl`이다.
 
@@ -287,15 +291,17 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 
 `python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
 
-`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 micro-batch로 소비해 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `outputs/stream/replay_demo/` 아래에 `replay_summary.json`, `replay_events.jsonl`, replay-scoped state/log/embedding을 기록한다. 기본 `--replay-speed 0`은 wall-clock pacing 없이 빠르게 처리하고, 양수 값은 timestamp gap을 배속으로 압축한다.
+`python3 -m model.stream.recommend_online`은 `outputs/stream/interest_states/{user_id}.json`의 interest vector와 SASRec item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산해 `outputs/stream/stream_recommendations.jsonl`에 top-K 추천을 append한다. seen positive item은 기본적으로 제외한다.
 
-가벼운 기록:
+`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출한다. 기본 replay root는 `outputs/post/replay_demo/`이고, temporal run은 `--output-root outputs/post/<run_label>_events_<N>[_recommend]`처럼 명시해 실행 범위를 드러낸다. 각 root 아래에는 `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, replay-scoped state/log/embedding을 기록한다. SQLite는 payload/state/metadata/lifecycle/runtime metric을 기록하고, 대형 vector artifact는 기존 NPZ/checkpoint 파일로 유지한다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 output root의 `stream_recommendations.jsonl`도 남긴다.
 
-- `experiments/model/<run_id>/manifest.json`: command, git 상태, 입력/출력 metadata, config
-- `experiments/model/<run_id>/metrics.jsonl`: 학습 지표와 extract/cluster summary
-- `experiments/model/<run_id>/notes.md`: 사람이 적는 실험 해석
+로컬 실험 기록:
 
-무거운 모델 산출물은 기존처럼 `outputs/` 아래에 두고 git으로 추적하지 않는다. 세부 옵션은 `model/README.md`를 따른다.
+- 로컬 `experiments/model/<run_id>/manifest.json`: command, git 상태, 입력/출력 metadata, config
+- 로컬 `experiments/model/<run_id>/metrics.jsonl`: 학습 지표와 extract/cluster summary
+- 로컬 `experiments/model/<run_id>/notes.md`: 사람이 적는 실험 해석
+
+모델 산출물과 run별 실험 기록은 git으로 추적하지 않는다. 세부 옵션은 `model/README.md`를 따른다.
 
 ## 모델 변경 이력 찾기
 
@@ -303,7 +309,7 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 
 - 현재 공식 구조와 실행 경로: `PROJECT_GUIDE.md`, `model/README.md`
 - 구조 변경과 모델링 판단 이유: `docs/decisions/`
-- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: `experiments/model/<run_id>/`
+- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: 로컬 `experiments/model/<run_id>/`
 - 특정 파일의 과거 코드: git history
 
 비교 대상으로 계속 실행해야 하는 구현은 별도 결정 후 `model/baselines/`처럼 목적이 명확한 경로로 둔다.
@@ -344,17 +350,18 @@ Replay monitor는 Phase 5가 `outputs/stream/replay_demo/` 아래에 생성한 a
 ## 관련 문서
 
 - `PROJECT_GUIDE.md`: 프로젝트 운영 규칙과 구조
+- `docs/README.md`: GitHub에 남는 docs 읽는 순서와 local-only 기록 정책
 - `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`: LLM 도구별 진입점
 - `todo.md`: 현재 작업 상태와 협업 메모
+- `docs/current-pipeline-snapshot.md`: 현재 batch / streaming 구현, streaming data flow, 문제 포인트
 - `docs/data-flow.md`: raw -> processed -> model -> dashboard 흐름
 - `docs/artifacts.md`: 원본 데이터와 생성물의 수정 가능 여부
 - `docs/decisions/`: 중요한 설계 결정 기록
-- `experiments/model/README.md`: 모델 실험 메타데이터 기록 규칙
+- `experiments/model/README.md`: 로컬 모델 실험 메타데이터 기록 규칙
 - `schemas/README.md`: 스키마 컨벤션
 - `preprocess/README.md`: 전처리 실행 순서와 입출력
-- `plan/_template.md`: 새 계획서 템플릿
-- `plan/active/`: 진행 중 계획
-- `plan/done/`: 완료된 계획
-- `plan/expired/`: 이전 문서 구조 기준의 만료된 계획
+- `plan/_template.md`: 새 로컬 계획서 템플릿
+- `plan/active/`, `plan/done/`, `plan/expired/`: 로컬 작업 계획서 보관 구조
+- `experiments/model/`: 로컬 모델 실험 메타데이터. git에는 README와 `.gitkeep` 구조만 유지
 - `eda/processed/outputs/eda_report.md`: processed 데이터 분석 결과
 - `eda/eda_outputs/eda_report.md`: raw 데이터 통합 분석 결과

@@ -40,7 +40,15 @@ def build_genre_map(movies_df):
     return genre_map, all_genres
 
 
-def build_user_sequences(jsonl_path, min_interactions=200, min_activity_days=30):
+def resolve_cutoff_ts(max_rated_at_exclusive=None):
+    if max_rated_at_exclusive is None:
+        return None
+    if isinstance(max_rated_at_exclusive, (int, float)):
+        return float(max_rated_at_exclusive)
+    return parse_ts(str(max_rated_at_exclusive))
+
+
+def build_user_sequences(jsonl_path, min_interactions=200, min_activity_days=30, max_rated_at_exclusive=None):
     """
     ratings_drop_processed.jsonl 로드
     필터링 기준:
@@ -51,27 +59,35 @@ def build_user_sequences(jsonl_path, min_interactions=200, min_activity_days=30)
         user_sequences {userId: [(movieId, timestamp), ...]}
     """
     user_sequences = {}
+    cutoff_ts = resolve_cutoff_ts(max_rated_at_exclusive)
 
     with open(jsonl_path) as f:
         for line in tqdm(f, desc="load users"):
             entry   = json.loads(line)
             user_id = entry['userId']
-            ratings = entry['ratings']
+            ratings = []
+            for rating in entry['ratings']:
+                rated_at_ts = parse_ts(rating['ratedAt'])
+                if cutoff_ts is not None and rated_at_ts >= cutoff_ts:
+                    continue
+                ratings.append((rating, rated_at_ts))
+            if not ratings:
+                continue
 
             # activity span 필터링 (30일 이상)
-            first_ts = parse_ts(entry['firstRatedAt'])
-            last_ts  = parse_ts(entry['lastRatedAt'])
+            first_ts = ratings[0][1]
+            last_ts  = ratings[-1][1]
             activity_days = (last_ts - first_ts) / 86400
             if activity_days < min_activity_days:
                 continue
 
             # z-score 표준화 후 긍정 상호작용만 추출
-            rating_values = np.array([r['rating'] for r in ratings])
+            rating_values = np.array([r['rating'] for r, _ in ratings])
             z_scores = (rating_values - rating_values.mean()) / (rating_values.std() + 1e-8)
 
             positive = [
-                (r['movieId'], parse_ts(r['ratedAt']))
-                for r, z in zip(ratings, z_scores)
+                (r['movieId'], rated_at_ts)
+                for (r, rated_at_ts), z in zip(ratings, z_scores)
                 if z > 0
             ]
 

@@ -1,9 +1,0 @@
-2026-05-10 16:42:58 | INFO | Log file: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/logs/interest_assign_20260510_164258.log
-2026-05-10 16:42:58 | INFO | Experiment run id: phase5_replay_multiuser_cpu_check_20260510
-2026-05-10 16:42:58 | INFO | Experiment metadata directory: /home/sleepylee/Desktop/1proj/a.live/degent/experiments/model/phase5_replay_multiuser_cpu_check_20260510
-2026-05-10 16:42:58 | INFO | Online embeddings input: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/online_embeddings.npz
-2026-05-10 16:42:58 | INFO | Interest state directory: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/interest_states
-2026-05-10 16:42:58 | INFO | Assignments output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/interest_assignments.jsonl
-2026-05-10 16:42:58 | INFO | Refit requests output: /home/sleepylee/Desktop/1proj/a.live/degent/outputs/stream/replay_multiuser_check_20260510/refit_requests.jsonl
-2026-05-10 16:42:59 | INFO | Loaded active online embedding rows: 19 users=1 dim=128
-2026-05-10 16:42:59 | INFO | Processed interest state: {'userId': 2, 'inputRows': 19, 'interestCount': 0, 'pendingBefore': 0, 'pendingAfter': 19, 'processedBefore': 0, 'processedAfter': 0, 'refitRequired': True, 'refitReasons': ['no_interest_pending_events'], 'statuses': {'pending_no_interest': 2, 'pending_refit_required': 17}, 'statePath': 'outputs/stream/replay_multiuser_check_20260510/interest_states/2.json'}

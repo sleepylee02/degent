@@ -47,7 +47,7 @@ def to_numpy(value: Any) -> np.ndarray:
 
 
 def _safe_umap_params(n_samples: int, cluster_dim: int) -> tuple[int, int]:
-    reduced_dim = min(cluster_dim, max(2, n_samples - 2))
+    reduced_dim = min(cluster_dim, max(1, n_samples - 2))
     n_neighbors = min(15, max(2, n_samples - 1))
     return reduced_dim, n_neighbors
 
@@ -119,7 +119,7 @@ def cluster_embeddings(
     random_state: int,
 ) -> ClusterOutput:
     n_samples = int(embeddings.shape[0])
-    if n_samples < max(2, min_cluster_size):
+    if n_samples <= max(2, min_cluster_size):
         reduced_dim, n_neighbors = _safe_umap_params(n_samples, cluster_dim)
         labels = np.full(n_samples, -1, dtype=np.int64)
         z_dummy = embeddings[:, :min(reduced_dim, embeddings.shape[1])]

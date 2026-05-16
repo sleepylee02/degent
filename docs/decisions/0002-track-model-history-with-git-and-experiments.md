@@ -14,7 +14,9 @@ Accepted
 
 이전 모델 코드는 `model/prev/` 같은 스냅샷 디렉터리에 보관하지 않는다.
 
-코드 변경 내용은 git commit, `git log`, `git show`, `git diff`로 추적한다. 설계 변경 이유와 장기적으로 참고해야 할 판단은 `docs/decisions/`에 ADR로 기록한다. 실험별 command, git 상태, config, metric, 산출물 참조, 이전 run 대비 관찰은 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`에 기록한다.
+코드 변경 내용은 git commit, `git log`, `git show`, `git diff`로 추적한다. 설계 변경 이유와 장기적으로 참고해야 할 판단은 `docs/decisions/`에 ADR로 기록한다. 실험별 command, git 상태, config, metric, 산출물 참조, 이전 run 대비 관찰은 로컬 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`에 기록한다.
+
+`0004-keep-plan-and-experiment-records-local.md` 결정 이후 raw run 기록은 git으로 추적하지 않는다. 장기 보존할 결론은 `docs/`에 요약한다.
 
 과거 구현이 단순 참고가 아니라 계속 실행해야 하는 비교 대상이면 `prev`가 아니라 `model/baselines/`처럼 목적이 명확한 디렉터리를 별도 ADR 또는 계획서로 정의한 뒤 추가한다.
 
@@ -26,7 +28,7 @@ LLM이나 사람이 모델 과거 정보를 찾을 때는 다음 순서를 따�
 
 1. 현재 구조와 공식 실행 경로는 `PROJECT_GUIDE.md`와 `model/README.md`에서 확인한다.
 2. 왜 그런 구조나 정책을 택했는지는 `docs/decisions/`에서 확인한다.
-3. 실험 결과와 이전 run 대비 관찰은 `experiments/model/<run_id>/`에서 확인한다.
+3. 실험 결과와 이전 run 대비 관찰은 로컬 `experiments/model/<run_id>/`에서 확인한다.
 4. 특정 파일의 과거 코드는 git history에서 확인한다.
 
 예시:
