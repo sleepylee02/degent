@@ -74,8 +74,8 @@ degent/
 │   ├── pre/                 #   temporal cutoff 이전 batch/model/state 산출물 (e.g. temporal_2022/)
 │   ├── post/                #   temporal cutoff 이후 replay/runtime 산출물 (e.g. temporal_2022/)
 │   └── stream/              #   default/standalone streaming/replay 산출물
-├── experiments/             # 실험 메타데이터 (가벼운 manifest/metrics/notes)
-│   └── model/               #   모델 run별 추적 기록
+├── experiments/             # 로컬 실험 메타데이터 (git에는 구조 파일만 유지)
+│   └── model/               #   모델 run별 manifest/metrics/notes
 ├── docs/                    # LLM/사람이 함께 보는 보조 문서
 │   ├── current-pipeline-snapshot.md # 현재 batch/streaming 구현과 문제 포인트
 │   ├── data-flow.md         #   raw -> processed -> model -> dashboard 흐름
@@ -84,8 +84,7 @@ degent/
 │   ├── streaming-e2e-pipeline.md # streaming replay e2e 실행/인계 문서
 │   ├── streaming-replay-dashboard-contract.md # Phase 5/6 replay artifact 계약
 │   └── decisions/           #   중요한 설계 결정 기록
-├── plan/                    # 작업 계획서
-│   ├── _template.md         #   새 계획서 템플릿
+├── plan/                    # 로컬 작업 계획서 (git에는 구조 파일과 템플릿만 유지)
 │   ├── active/              #   진행 중 계획
 │   ├── done/                #   완료된 계획
 │   └── expired/             #   현재 구조 이전의 만료된 계획
@@ -121,6 +120,7 @@ degent/
 - `preprocess/preprocess_genre/`는 `data/ml-32m/genre.csv`를 만드는 보조 단계이며, 현재 메인 전처리/drop/user-sequence 파이프라인의 필수 단계는 아니다.
 
 ### 계획
+- `plan/` 내부 개별 계획서는 로컬 협업 기록으로 사용하며 git으로 추적하지 않는다. Git에는 `.gitkeep`, `plan/_template.md`, 상태별 README 같은 구조 파일만 남긴다.
 - 새로운 작업을 시작하기 전에 `todo.md`와 `plan/active/`를 확인한다.
 - 새 계획서는 `plan/_template.md`를 기준으로 작성한다.
 - 진행 중 계획은 `plan/active/`, 완료된 계획은 `plan/done/`에 둔다.
@@ -137,8 +137,9 @@ degent/
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.
+- `experiments/` 내부 run 기록은 로컬 실험 메타데이터로 사용하며 git으로 추적하지 않는다. Git에는 `.gitkeep`와 `experiments/model/README.md` 같은 구조 파일만 남긴다.
 - 새 temporal run의 pre-T checkpoint, item2idx, canonical embedding, batch interest state, user state는 `outputs/pre/<run_label>/` 아래에 모은다. pre-T user/interest state의 정본은 `outputs/pre/<run_label>/state.sqlite`이고, pre user state는 compressed payload로 저장하며 event row 테이블은 post runtime에서만 materialize한다. per-user JSON directory는 legacy/debug export로만 사용한다. post-T replay/runtime 산출물은 `outputs/post/<run_label>_events_<N>/` 또는 `outputs/post/<run_label>_full/` 아래에 둔다. 추천 포함 run은 `outputs/post/<run_label>_events_<N>_recommend/`처럼 표시한다. 기존 `outputs/sasrec_cl.pt` 같은 루트 경로는 default/legacy 호환 경로로 유지한다.
-- `python3 -m model.batch.train`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`는 run별 메타데이터를 `experiments/model/<run_id>/`에 기록한다.
+- `python3 -m model.batch.train`, `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`는 run별 메타데이터를 로컬 `experiments/model/<run_id>/`에 기록한다.
 - `python3 -m model.stream.seed_pre_t_state`는 temporal cutoff 이전 rating history로 replay 시작용 SQLite user state를 만들고, 기존 SQLite interest state가 있으면 pre-cutoff active raw event를 processed로 표시한다.
 - `python3 -m model.stream.extract_online`은 raw rating event를 SQLite user state에 저장하고 active positive embedding을 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 SQLite interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
@@ -146,15 +147,15 @@ degent/
 - `python3 -m model.stream.recommend_online`은 streaming interest state와 item embedding으로 top-K 추천을 만들고 `outputs/stream/stream_recommendations.jsonl`에 기록한다.
 - `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 timestamp trace로 읽고, `--speed N` 기준 virtual clock에 맞춰 event를 주입한다. replay 산출물은 `--output-root` 아래에 격리하며, 기본값은 `outputs/stream/replay_demo/`다. Temporal post-T run은 output root 이름에 event 범위와 추천 여부를 포함한다. `--seed-state-db --seed-run-id`를 주면 pre-T SQLite seed store를 복사하지 않고 lazy-load한다. `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`에 runtime state, schedule/lag/throughput metric을 남긴다. `--recommend`를 주면 event 처리 후 `recommend_online`도 호출해 output root의 `stream_recommendations.jsonl`을 남긴다.
 - `python3 -m model.stream.runtime_report`는 `replay.sqlite`를 읽어 stage latency, event lag, refit lifecycle, assignment/repeated-processing, user state progress를 요약한다.
-- `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 실험 비교용 기록이다.
-- `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 메모다.
+- `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 로컬 실험 비교용 기록이다.
+- `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 로컬 메모다.
 - 대형 파일의 재현 근거는 파일 경로, size/mtime, 가능한 경우 SHA256, git 상태, config, metric으로 남긴다.
 
 ### 모델 변경 이력 추적
 - 이전 모델 코드는 `model/prev/` 같은 스냅샷 디렉터리에 복사하지 않는다.
 - 코드가 어떤 식으로 바뀌었는지는 git commit, `git log`, `git show`, `git diff`로 추적한다.
 - 왜 바꿨는지는 `docs/decisions/`의 ADR에 기록한다.
-- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰은 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`에 기록한다.
+- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰은 로컬 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`에 기록한다. GitHub에 남겨야 하는 결론은 `docs/`에 요약한다.
 - 현재 구현 상태와 보류 결정은 `model/IMPLEMENTATION_STATUS.md`에서 먼저 확인한다.
 - 비교 가능한 오래된 구현을 계속 실행해야 하는 경우에만 `model/baselines/`처럼 목적이 명확한 디렉터리를 별도 결정 후 추가한다.
 
@@ -191,7 +192,7 @@ AI 도구(Claude Code, Cursor, Codex 등)는 작업 전에 아래 순서를 따�
 
 1. `PROJECT_GUIDE.md`를 먼저 읽는다.
 2. `todo.md`, `plan/active/`, 관련 `schemas/README.md`, 해당 모듈 README를 확인한다.
-   - 모델 과거 정보가 필요하면 `model/README.md`의 변경 이력 안내를 따른다. 우선순위는 `docs/decisions/` → `experiments/model/` → git history다.
+   - 모델 과거 정보가 필요하면 `model/README.md`의 변경 이력 안내를 따른다. 우선순위는 `docs/decisions/` → 로컬 `experiments/model/` 기록(있는 경우) → git history다.
 3. 단순 질의, 한 파일 안의 경미한 수정, 현황 점검/문서 인벤토리 작업이 아니라면, 작업 전에 `plan/_template.md`를 기준으로 `plan/active/`에 계획서를 작성하고 `todo.md`의 Active에 등록한다.
 4. 이미 관련 active plan이 있으면 새 계획서를 만들지 않고 기존 계획서를 따른다. 범위, 산출물, 검증 방법이 바뀌면 코드보다 계획서와 `todo.md`를 먼저 갱신한다.
 5. 스키마 변경이 있으면 코드보다 `schemas/`를 먼저 수정한다.

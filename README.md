@@ -39,10 +39,10 @@ degent/
 ├── dashboard/                        # 클러스터링 결과 시각화 대시보드
 ├── model/                            # SASRec + Contrastive Loss 모델 파이프라인
 ├── outputs/                          # 모델 산출물과 실행 로그
-├── experiments/                      # 가벼운 실험 메타데이터
+├── experiments/                      # 로컬 실험 메타데이터 (git에는 구조 파일만 유지)
 ├── eda/                              # raw / processed EDA
 ├── docs/                             # 데이터 흐름, 산출물, 설계 결정 보조 문서
-├── plan/                             # 작업 계획서와 상태별 보관
+├── plan/                             # 로컬 작업 계획서와 상태별 보관 (git에는 구조 파일과 템플릿만 유지)
 ├── todo.md                           # 현재 작업 상태와 협업 메모
 ├── AGENTS.md                         # Codex 등 LLM 작업 진입점
 ├── CLAUDE.md                         # Claude 작업 진입점
@@ -295,13 +295,13 @@ Replay monitor는 trace replay가 `outputs/stream/replay_demo/` 아래에 생성
 
 `make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출한다. `outputs/stream/replay_demo/` 아래에는 `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, replay-scoped state/log/embedding을 기록한다. SQLite는 payload/state/metadata/lifecycle/runtime metric을 기록하고, 대형 vector artifact는 기존 NPZ/checkpoint 파일로 유지한다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 `outputs/stream/replay_demo/stream_recommendations.jsonl`도 남긴다.
 
-가벼운 기록:
+로컬 실험 기록:
 
-- `experiments/model/<run_id>/manifest.json`: command, git 상태, 입력/출력 metadata, config
-- `experiments/model/<run_id>/metrics.jsonl`: 학습 지표와 extract/cluster summary
-- `experiments/model/<run_id>/notes.md`: 사람이 적는 실험 해석
+- 로컬 `experiments/model/<run_id>/manifest.json`: command, git 상태, 입력/출력 metadata, config
+- 로컬 `experiments/model/<run_id>/metrics.jsonl`: 학습 지표와 extract/cluster summary
+- 로컬 `experiments/model/<run_id>/notes.md`: 사람이 적는 실험 해석
 
-무거운 모델 산출물은 기존처럼 `outputs/` 아래에 두고 git으로 추적하지 않는다. 세부 옵션은 `model/README.md`를 따른다.
+모델 산출물과 run별 실험 기록은 git으로 추적하지 않는다. 세부 옵션은 `model/README.md`를 따른다.
 
 ## 모델 변경 이력 찾기
 
@@ -309,7 +309,7 @@ Replay monitor는 trace replay가 `outputs/stream/replay_demo/` 아래에 생성
 
 - 현재 공식 구조와 실행 경로: `PROJECT_GUIDE.md`, `model/README.md`
 - 구조 변경과 모델링 판단 이유: `docs/decisions/`
-- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: `experiments/model/<run_id>/`
+- 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: 로컬 `experiments/model/<run_id>/`
 - 특정 파일의 과거 코드: git history
 
 비교 대상으로 계속 실행해야 하는 구현은 별도 결정 후 `model/baselines/`처럼 목적이 명확한 경로로 둔다.
@@ -350,18 +350,18 @@ Replay monitor는 trace replay가 `outputs/stream/replay_demo/` 아래에 생성
 ## 관련 문서
 
 - `PROJECT_GUIDE.md`: 프로젝트 운영 규칙과 구조
+- `docs/README.md`: GitHub에 남는 docs 읽는 순서와 local-only 기록 정책
 - `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`: LLM 도구별 진입점
 - `todo.md`: 현재 작업 상태와 협업 메모
 - `docs/current-pipeline-snapshot.md`: 현재 batch / streaming 구현, streaming data flow, 문제 포인트
 - `docs/data-flow.md`: raw -> processed -> model -> dashboard 흐름
 - `docs/artifacts.md`: 원본 데이터와 생성물의 수정 가능 여부
 - `docs/decisions/`: 중요한 설계 결정 기록
-- `experiments/model/README.md`: 모델 실험 메타데이터 기록 규칙
+- `experiments/model/README.md`: 로컬 모델 실험 메타데이터 기록 규칙
 - `schemas/README.md`: 스키마 컨벤션
 - `preprocess/README.md`: 전처리 실행 순서와 입출력
-- `plan/_template.md`: 새 계획서 템플릿
-- `plan/active/`: 진행 중 계획
-- `plan/done/`: 완료된 계획
-- `plan/expired/`: 이전 문서 구조 기준의 만료된 계획
+- `plan/_template.md`: 새 로컬 계획서 템플릿
+- `plan/active/`, `plan/done/`, `plan/expired/`: 로컬 작업 계획서 보관 구조
+- `experiments/model/`: 로컬 모델 실험 메타데이터. git에는 README와 `.gitkeep` 구조만 유지
 - `eda/processed/outputs/eda_report.md`: processed 데이터 분석 결과
 - `eda/eda_outputs/eda_report.md`: raw 데이터 통합 분석 결과

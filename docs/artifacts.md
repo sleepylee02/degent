@@ -74,9 +74,9 @@
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
 | `outputs/logs/` | local runtime logs, git ignored except `.gitkeep` | model scripts | append/regenerate |
 | `outputs/latest_model_run_id.txt` | local run pointer | model scripts | regenerate |
-| `experiments/model/<run_id>/manifest.json` | experiment metadata | model scripts | append/update |
-| `experiments/model/<run_id>/metrics.jsonl` | experiment metrics | model scripts | append |
-| `experiments/model/<run_id>/notes.md` | experiment notes | model scripts / manual note | edit |
+| `experiments/model/<run_id>/manifest.json` | local experiment metadata, git ignored | model scripts | append/update |
+| `experiments/model/<run_id>/metrics.jsonl` | local experiment metrics, git ignored | model scripts | append |
+| `experiments/model/<run_id>/notes.md` | local experiment notes, git ignored | model scripts / manual note | edit |
 | `requirements.txt` | Python dependency lock | repo-local `.venv` / `.venv/bin/pip freeze` | edit/regenerate |
 | `data/clustering/user_clusters.parquet` | dashboard input | `python3 -m model.batch.export_clusters` | regenerate |
 | `eda/eda_outputs/` | raw EDA artifacts | `python3 -m eda.raw.eda_overview --source all` | regenerate |

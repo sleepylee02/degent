@@ -16,15 +16,15 @@ data/**/raw/
   -> data/ratings_drop_processed.jsonl
   -> python3 -m model.batch.train
   -> outputs/sasrec_cl.pt + outputs/item2idx.json
-  -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+  -> local experiments/model/<run_id>/manifest.json + metrics.jsonl
      -> batch cluster/dashboard branch:
         -> python3 -m model.batch.extract_canonical
         -> outputs/canonical_embeddings.npz
-        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> local experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.batch.cluster
         -> outputs/user_interests.npz
         -> outputs/batch/state.sqlite
-        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> local experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.batch.export_clusters
         -> data/clustering/user_clusters.parquet
         -> python3 -m model.batch.visualize_clusters
@@ -37,16 +37,16 @@ data/**/raw/
         -> SQLite user state in --runtime-db/--state-db
         -> outputs/stream/online_embeddings.npz
         -> outputs/stream/online_embedding_events.jsonl
-        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> local experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.stream.interest_assign
         -> SQLite interest state in --runtime-db/--state-db
         -> outputs/stream/interest_assignments.jsonl
         -> outputs/stream/refit_requests.jsonl
-        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> local experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.stream.cluster_refit
         -> outputs/stream/refit_events.jsonl
         -> updated SQLite interest state
-        -> experiments/model/<run_id>/manifest.json + metrics.jsonl
+        -> local experiments/model/<run_id>/manifest.json + metrics.jsonl
         -> python3 -m model.stream.recommend_online
         -> outputs/stream/stream_recommendations.jsonl
         -> trace replay artifacts
@@ -202,13 +202,13 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 - `outputs/stream/replay_demo/stream_recommendations.jsonl`
 - `outputs/viz/`
 - `outputs/logs/`
-- `experiments/model/<run_id>/manifest.json`
-- `experiments/model/<run_id>/metrics.jsonl`
-- `experiments/model/<run_id>/notes.md`
+- local `experiments/model/<run_id>/manifest.json`
+- local `experiments/model/<run_id>/metrics.jsonl`
+- local `experiments/model/<run_id>/notes.md`
 
 세부 실행 옵션은 `model/README.md`를 따른다.
 
-모델 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 `experiments/model/<run_id>/`에 남긴다.
+모델 산출물과 run별 실험 기록은 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 로컬 `experiments/model/<run_id>/`에 남긴다.
 
 Temporal cutoff run은 모델 관련 산출물을 `outputs/pre/<run_label>/` 아래에 모은다. 예: `T=2022-01-01T00:00:00Z` run은 `outputs/pre/temporal_2022/`에 pre-T checkpoint/item2idx/canonical과 `state.sqlite` user/interest seed store를 저장하고, post-T replay runtime은 `outputs/post/temporal_2022_events_<N>/` 또는 `outputs/post/temporal_2022_full/`에 격리한다.
 

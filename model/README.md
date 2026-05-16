@@ -196,7 +196,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`, `python3 -m model.stream.recommend_online`은 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - `python3 -m model.stream.replay_pipeline`은 `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, 선택적 `stream_recommendations.jsonl` metadata를 run별 manifest/metrics에 기록한다.
 - Temporal cutoff run은 `--max-rated-at-exclusive`와 `--start-rated-at`를 같은 T로 맞추고, 모델 관련 산출물은 `outputs/pre/<run_label>/` 아래에 두는 것을 권장한다. 기존 루트 산출물은 default/legacy 호환 경로다.
-- run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
+- run별 메타데이터는 로컬 `experiments/model/<run_id>/` 아래에 저장되며 git 추적 대상이 아니다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster/refit/recommend/replay summary를 append한다.
 - `notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 파일이다.
@@ -210,7 +210,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 1. 현재 공식 구조와 실행 경로: `PROJECT_GUIDE.md`, `model/README.md`
 2. 구조 변경과 모델링 판단 이유: `docs/decisions/`
-3. 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: `experiments/model/<run_id>/`
+3. 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: 로컬 `experiments/model/<run_id>/`
 4. 특정 파일의 과거 코드: git history
 
 ```bash
@@ -304,9 +304,9 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
 | `outputs/logs/*.log` | 로컬 스크립트별 실행 로그. git 추적 제외 |
-| `experiments/model/<run_id>/manifest.json` | run별 config, git 상태, 입력/출력 metadata |
-| `experiments/model/<run_id>/metrics.jsonl` | run별 metric 기록 |
-| `experiments/model/<run_id>/notes.md` | run별 해석 메모 |
+| `experiments/model/<run_id>/manifest.json` | 로컬 run별 config, git 상태, 입력/출력 metadata. git 추적 제외 |
+| `experiments/model/<run_id>/metrics.jsonl` | 로컬 run별 metric 기록. git 추적 제외 |
+| `experiments/model/<run_id>/notes.md` | 로컬 run별 해석 메모. git 추적 제외 |
 
 ---
 

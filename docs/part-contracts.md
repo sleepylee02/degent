@@ -87,9 +87,9 @@ raw 데이터를 모델 학습 가능한 CSV/JSONL로 바꾸는 파트다.
 |---|---|
 | 담당 파일 | `model/batch/`, `model/common/`, `model/README.md`, `model/IMPLEMENTATION_STATUS.md` |
 | Input | `data/ratings_drop_processed.jsonl`, B 파트 validation 결과 |
-| Output | `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz`, `outputs/user_interests.npz`, `outputs/batch/state.sqlite`, optional run-scoped `outputs/pre/<run_label>/`, `data/clustering/user_clusters.parquet`, `outputs/viz/`, run metadata |
+| Output | `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz`, `outputs/user_interests.npz`, `outputs/batch/state.sqlite`, optional run-scoped `outputs/pre/<run_label>/`, `data/clustering/user_clusters.parquet`, `outputs/viz/`, local run metadata |
 | Endpoint | `python3 -m model.batch.*` |
-| 넘기는 기준 | 모델 artifact와 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`이 같은 run 기준으로 남아야 함 |
+| 넘기는 기준 | 모델 artifact와 로컬 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`이 같은 run 기준으로 남아야 함 |
 
 ### C 파트 endpoint
 
@@ -185,15 +185,15 @@ batch cluster 결과나 replay 진행 상황을 사람이 탐색하는 read-only
 - Cluster explorer 입력은 `model/batch/export_clusters.py`로 생성한다.
 - Replay monitor는 summary `paths`가 있으면 이를 우선 사용하며, `stream_recommendations.jsonl`이 있으면 recommendation view도 표시한다.
 
-## G. Experiment/Docs Tracking
+## G. Local Run Records / Docs Tracking
 
-실험 비교, 실행 기록, 문서 동기화를 담당하는 보조 파트다.
+실험 비교, 실행 기록, 문서 동기화를 담당하는 보조 파트다. `plan/`과 `experiments/`는 계속 로컬 작업장으로 사용하지만 git에는 `.gitkeep` 구조만 남긴다. GitHub에 보존해야 하는 결론은 `docs/`에 요약한다.
 
 | 항목 | 내용 |
 |---|---|
-| 담당 파일 | `experiments/model/`, `outputs/readme.md`, `docs/`, `todo.md`, `plan/`, `PROJECT_GUIDE.md` |
+| 담당 파일 | 로컬 `experiments/model/`, `outputs/readme.md`, `docs/`, `todo.md`, 로컬 `plan/`, `PROJECT_GUIDE.md` |
 | Input | 각 파트의 실행 명령, artifact 경로, metric, git 상태, 변경된 계약 |
-| Output | `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`, 갱신된 문서 |
+| Output | 로컬 `experiments/model/<run_id>/manifest.json`, `metrics.jsonl`, `notes.md`, 갱신된 docs |
 | Endpoint | 모델 스크립트의 metadata writer, 사람이 작성하는 notes/docs |
 | 넘기는 기준 | 같은 run의 입력, 출력, config, metric을 나중에 재현 가능하게 남겨야 함 |
 

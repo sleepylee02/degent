@@ -135,6 +135,12 @@ Post-T seeded replay:
 
 `seed_pre_t_state`는 `state.sqlite`의 compressed `user_states` payload를 T 직전 상태로 만들고, 같은 DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. pre seed DB는 replay 시작점 복원용이므로 `user_raw_events`, `user_positive_events` row를 펼쳐 저장하지 않는다. post-T replay는 이 DB를 복사하지 않는다. 각 stream stage가 post `replay.sqlite`에서 state를 먼저 찾고, 없으면 pre `state.sqlite`에서 lazy-load한 뒤 touched user만 post DB에 기록한다.
 
+### Temporal Verification Boundary
+
+이 runbook은 temporal cutoff와 artifact 경로 계약의 정본이다. 현재 문서화된 구현 smoke는 cutoff helper, CLI option, SQLite seed fallback, interest processed marker, replay/runtime store 경로를 확인한 상태다. 다만 full temporal chain인 pre-T train -> canonical extract -> cluster -> seed state -> post-T seeded replay는 실행 환경과 시간이 필요하므로 별도 run으로 검증해야 한다.
+
+`outputs/pre/temporal_2022/`나 `outputs/post/temporal_2022_*` 아래 기존 로컬 artifact는 freshness가 섞여 있을 수 있다. 새 결과를 인용하거나 공유할 때는 새 `--run-id`와 새 output root를 쓰고, 대표 결론만 `docs/`에 요약한다.
+
 ## Minimum Runbook
 
 필수 입력:

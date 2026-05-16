@@ -28,6 +28,12 @@ Batch와 streaming은 같은 checkpoint(`outputs/sasrec_cl.pt`)와 item vocabula
 
 Temporal streaming run에서는 기본 루트 산출물 대신 `outputs/pre/<run_label>/` 아래의 checkpoint/item2idx/canonical/user state/interest state를 명시적으로 넘긴다. 예: 2022 E2E는 `T=2022-01-01T00:00:00Z`, pre-T는 `ratedAt < T`, post-T replay는 `ratedAt >= T`를 사용한다.
 
+## Current Verification Boundary
+
+현재 GitHub-visible 문서는 code contract와 대표 smoke 기준이다. `e2e_streaming_smoke_auto_fallback`은 CUDA가 보이지만 런타임/드라이버 조합이 맞지 않는 환경에서 `--cluster-backend auto`가 CPU fallback으로 replay를 완료하는 기준 run이다: user 28, 30/30 events, 2 micro-batches, refit opened/closed/skipped 2/2/0, elapsed 약 32.4초.
+
+Temporal 2022 runbook은 cutoff와 artifact 경로 계약을 정리한 상태다. pre-T train, canonical extraction, cluster, seed state, post-T seeded replay를 한 번에 잇는 full temporal verification은 아직 별도 대표 run으로 남겨야 한다. 기존 `outputs/pre/temporal_2022/`와 `outputs/post/temporal_2022_*` artifact는 최신 full 검증 결과로 가정하지 않는다.
+
 ## 2. Batch Pipeline
 
 ### 2.1 Train
@@ -46,8 +52,8 @@ python3 -m model.batch.train
 - `outputs/sasrec_cl.pt`
 - `outputs/sasrec_cl_best.pt`
 - `outputs/item2idx.json`
-- `experiments/model/<run_id>/manifest.json`
-- `experiments/model/<run_id>/metrics.jsonl`
+- local `experiments/model/<run_id>/manifest.json`
+- local `experiments/model/<run_id>/metrics.jsonl`
 
 현재 모델은 `SASRecCL`이다. 기본 설정은 `seq_len=100`, `d_model=128`, `num_heads=2`, `num_layers=2`, `dropout=0.2`, `cl_lambda=0.1` 계열이다. 학습 단계는 batch와 streaming 양쪽에서 사용할 item embedding과 sequence encoder를 만든다.
 
@@ -69,8 +75,8 @@ python3 -m model.batch.extract_canonical
 출력:
 
 - `outputs/canonical_embeddings.npz`
-- `experiments/model/<run_id>/manifest.json`
-- `experiments/model/<run_id>/metrics.jsonl`
+- local `experiments/model/<run_id>/manifest.json`
+- local `experiments/model/<run_id>/metrics.jsonl`
 
 `canonical_embeddings.npz`는 positive event 하나당 row 하나를 저장한다.
 
@@ -103,8 +109,8 @@ python3 -m model.batch.cluster
 
 - `outputs/user_interests.npz`
 - `outputs/batch/state.sqlite`
-- `experiments/model/<run_id>/manifest.json`
-- `experiments/model/<run_id>/metrics.jsonl`
+- local `experiments/model/<run_id>/manifest.json`
+- local `experiments/model/<run_id>/metrics.jsonl`
 
 `model.batch.cluster`는 user별 embedding sequence에 UMAP + HDBSCAN을 수행한다. Cluster backend는 `--cluster-backend auto|gpu|cpu`이며, 공통 구현은 `model.common.cluster`에 있다. `auto`는 RAPIDS/cuML GPU 사용 가능 여부를 먼저 확인하고, 불가능하거나 runtime 실패가 나면 CPU 구현으로 진행한다.
 
@@ -559,7 +565,7 @@ Streaming threshold, refit trigger, cluster backend, recommend option이 여러 
 수정 후보:
 
 - full batch rerun, full canonical extraction, representative replay를 새 run id로 재생성
-- `experiments/model/<run_id>/notes.md`에 artifact freshness 기록
+- 로컬 `experiments/model/<run_id>/notes.md`에 artifact freshness를 기록하고, GitHub에 남길 결론은 `docs/`에 요약
 - dashboard 기본 path가 demo artifact인지 production-scale artifact인지 명확히 표시
 
 ## 7. 바로 이어질 작업 제안
