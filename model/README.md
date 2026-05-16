@@ -153,7 +153,7 @@ python3 -m model.stream.replay_pipeline \
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --recommend --recommend-top-k 20 --run-id trace_replay_with_recommend
 
 # 2-12. replay runtime DB 병목/상태 report
-python3 -m model.stream.runtime_report --db outputs/stream/replay_demo/replay.sqlite --top-events 10
+python3 -m model.stream.runtime_report --db outputs/post/replay_demo/replay.sqlite --top-events 10
 
 # 3. 클러스터링 (배치, 전체 유저)
 python3 -m model.batch.cluster
@@ -248,7 +248,7 @@ git diff <old_commit>..<new_commit> -- model/
 | cluster_refit: cluster_backend | `auto` | cuML/CUDA runtime 사용 가능 시 GPU, 아니면 CPU fallback |
 | cluster_refit: refit_min_events | 20 | refit 실행 최소 active embedding 수 |
 | cluster_refit: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
-| replay: output_root | `outputs/stream/replay_demo` | trace replay 산출물 격리 경로 |
+| replay: output_root | `outputs/post/replay_demo` | trace replay 산출물 격리 경로 |
 | replay: speed | 1.0 | trace timestamp를 wall-clock으로 압축하는 배속. `100`이면 trace 100초가 실제 1초 |
 | recommend: top_k | 20 | batch/stream recommendation 기본 후보 수 |
 | recommend: normalize | false | 기본 raw dot product 사용. true면 cosine-normalized dot product 사용 |
@@ -290,16 +290,16 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/stream/refit_events.jsonl` | refit request 소비/skip/close 결과 log |
 | `outputs/stream/stream_recommendations.jsonl` | `stream/recommend_online.py` 단독 실행 추천 결과 |
-| `outputs/stream/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
-| `outputs/stream/replay_demo/ingress_events.jsonl` | trace scheduler가 event를 emit한 시각과 `scheduledAt`/`injectorLagSec` log |
-| `outputs/stream/replay_demo/replay_events.jsonl` | event-level replay progress, processing latency, lag, assignment/refit count log |
-| `outputs/stream/replay_demo/replay.sqlite` | SQLite runtime/state store. run/event/stage/user/interest/refit/embedding index 기록 |
-| `outputs/stream/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint. `paths.replayDb` 포함 |
-| `outputs/stream/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding |
-| `outputs/stream/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
-| `outputs/stream/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
-| `outputs/stream/replay_demo/refit_events.jsonl` | replay run의 refit close/skip 결과 log |
-| `outputs/stream/replay_demo/stream_recommendations.jsonl` | `replay_pipeline --recommend` 실행 시 replay scope에 append되는 추천 결과 |
+| `outputs/post/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
+| `outputs/post/replay_demo/ingress_events.jsonl` | trace scheduler가 event를 emit한 시각과 `scheduledAt`/`injectorLagSec` log |
+| `outputs/post/replay_demo/replay_events.jsonl` | event-level replay progress, processing latency, lag, assignment/refit count log |
+| `outputs/post/replay_demo/replay.sqlite` | SQLite runtime/state store. run/event/stage/user/interest/refit/embedding index 기록 |
+| `outputs/post/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint. `paths.replayDb` 포함 |
+| `outputs/post/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding |
+| `outputs/post/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
+| `outputs/post/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
+| `outputs/post/replay_demo/refit_events.jsonl` | replay run의 refit close/skip 결과 log |
+| `outputs/post/replay_demo/stream_recommendations.jsonl` | `replay_pipeline --recommend` 실행 시 replay scope에 append되는 추천 결과 |
 | `outputs/embeddings.npz` | 삭제된 overlap-window extract entrypoint가 만들던 legacy 산출물. 현재 공식 경로는 `canonical_embeddings.npz` |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |

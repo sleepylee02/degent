@@ -143,7 +143,7 @@ rating event를 online user state로 반영하고, active positive embedding을 
 |---|---|
 | 담당 파일 | `replay/`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `docs/streaming-replay-dashboard-contract.md`, `replay/README.md` |
 | Input | `data/ratings_drop_processed.jsonl`, C 파트 model artifact, optional D 파트 pre-T seed state |
-| Output | `outputs/stream/replay_demo/replay_input_events.jsonl`, `replay.sqlite`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl`. Temporal run은 별도 root 예: `outputs/post/temporal_2022_events_1000/` |
+| Output | `outputs/post/replay_demo/replay_input_events.jsonl`, `replay.sqlite`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl`. Temporal run은 별도 root 예: `outputs/post/temporal_2022_events_1000/` |
 | Endpoint | `make -C replay`, `replay/bin/rating_replay`, `python3 -m model.stream.replay_pipeline --speed N` |
 | 넘기는 기준 | 모든 replay artifact는 지정된 `--output-root` 아래에 격리되어야 함 |
 
@@ -152,12 +152,12 @@ rating event를 online user state로 반영하고, active positive embedding을 
 | step | 파일 | Input | Output |
 |---|---|---|---|
 | build replay binary | `replay/Makefile`, `replay/cpp/` | C++ source | `replay/bin/rating_replay` |
-| generate replay input | `replay/bin/rating_replay` | `data/ratings_drop_processed.jsonl` | `outputs/stream/replay_demo/replay_input_events.jsonl` |
-| trace replay runner | `model/stream/replay_pipeline.py` | replay input events, model artifact, `--speed N` | `outputs/stream/replay_demo/replay_summary.json`, `replay.sqlite`, `ingress_events.jsonl`, `replay_events.jsonl`, replay-scoped states/logs, optional `stream_recommendations.jsonl` |
+| generate replay input | `replay/bin/rating_replay` | `data/ratings_drop_processed.jsonl` | `outputs/post/replay_demo/replay_input_events.jsonl` |
+| trace replay runner | `model/stream/replay_pipeline.py` | replay input events, model artifact, `--speed N` | `outputs/post/replay_demo/replay_summary.json`, `replay.sqlite`, `ingress_events.jsonl`, `replay_events.jsonl`, replay-scoped states/logs, optional `stream_recommendations.jsonl` |
 
 ### E 파트가 F 파트에 넘기는 것
 
-- 필수 entrypoint: `outputs/stream/replay_demo/replay_summary.json`
+- 필수 entrypoint: `outputs/post/replay_demo/replay_summary.json`
 - 추가 read files: `replay.sqlite` 우선, 없으면 `ingress_events.jsonl`, `replay_events.jsonl`, `interest_assignments.jsonl`, `refit_requests.jsonl`, `refit_events.jsonl`, `stream_recommendations.jsonl`
 - 세부 파일 계약: `docs/streaming-replay-dashboard-contract.md`
 
@@ -178,7 +178,7 @@ batch cluster 결과나 replay 진행 상황을 사람이 탐색하는 read-only
 | view | Input | Contract |
 |---|---|---|
 | Cluster explorer | `data/clustering/user_clusters.parquet` 또는 `.csv/.jsonl/.ndjson` | `dashboard/README.md`의 필수 컬럼: `userId`, `clusterLabel`, `x`, `y` |
-| Replay monitor | `outputs/stream/replay_demo/replay_summary.json` | `docs/streaming-replay-dashboard-contract.md` |
+| Replay monitor | `outputs/post/replay_demo/replay_summary.json` | `docs/streaming-replay-dashboard-contract.md` |
 
 ### F 파트 연결 기준
 
@@ -219,4 +219,4 @@ Known issue:
 - output을 새로 만들면 누가 소비하는지 명시한다.
 - 기존 output을 대체하면 이전 consumer가 깨지지 않게 migration 기준을 남긴다.
 - dashboard는 replay/stream 내부 함수에 의존하지 않고 artifact만 읽는다.
-- replay demo output은 `outputs/stream/replay_demo/` 아래에만 쓴다.
+- replay demo output은 `outputs/post/replay_demo/` 아래에만 쓴다.

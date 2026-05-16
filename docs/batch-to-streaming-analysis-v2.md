@@ -692,7 +692,7 @@ GPU auto:
 ```text
 C++ generator
   data/ratings_drop_processed.jsonl
-    -> outputs/stream/replay_demo/replay_input_events.jsonl
+    -> outputs/post/replay_demo/replay_input_events.jsonl
 
 Python orchestrator
   replay_input_events.jsonl
@@ -763,19 +763,19 @@ Subprocess 체인을 택한 이유:
 추가된 artifact:
 
 ```text
-outputs/stream/replay_demo/replay_input_events.jsonl
-outputs/stream/replay_demo/ingress_events.jsonl
-outputs/stream/replay_demo/replay_events.jsonl
-outputs/stream/replay_demo/replay_summary.json
-outputs/stream/replay_demo/user_states/{user_id}.json
-outputs/stream/replay_demo/online_embeddings.npz
-outputs/stream/replay_demo/interest_assignments.jsonl
-outputs/stream/replay_demo/refit_requests.jsonl
-outputs/stream/replay_demo/refit_events.jsonl
-outputs/stream/replay_demo/interest_states/{user_id}.json
+outputs/post/replay_demo/replay_input_events.jsonl
+outputs/post/replay_demo/ingress_events.jsonl
+outputs/post/replay_demo/replay_events.jsonl
+outputs/post/replay_demo/replay_summary.json
+outputs/post/replay_demo/user_states/{user_id}.json
+outputs/post/replay_demo/online_embeddings.npz
+outputs/post/replay_demo/interest_assignments.jsonl
+outputs/post/replay_demo/refit_requests.jsonl
+outputs/post/replay_demo/refit_events.jsonl
+outputs/post/replay_demo/interest_states/{user_id}.json
 ```
 
-중요한 점은 replay artifact가 `outputs/stream/replay_demo/` 아래에 격리된다는 것이다. 기본 `outputs/stream/*`를 덮어쓰지 않는다.
+중요한 점은 replay artifact가 `outputs/post/replay_demo/` 아래에 격리된다는 것이다. 기본 `outputs/stream/*`를 덮어쓰지 않는다.
 
 이 단계가 낸 답:
 
@@ -816,7 +816,7 @@ Dashboard는 Phase 5 artifact를 읽기만 한다.
 기본 entrypoint:
 
 ```text
-outputs/stream/replay_demo/replay_summary.json
+outputs/post/replay_demo/replay_summary.json
 ```
 
 읽는 파일:
@@ -862,10 +862,10 @@ Phase 6은 Phase 5 내부 구현을 호출하지 않는다.
 
 ```text
 Phase 5 owns writes under:
-  outputs/stream/replay_demo/
+  outputs/post/replay_demo/
 
 Phase 6 reads:
-  outputs/stream/replay_demo/
+  outputs/post/replay_demo/
 
 Phase 6 must not depend on:
   Phase 5 internal functions

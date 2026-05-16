@@ -8,8 +8,8 @@
 
 ## Ownership
 
-- Trace replay owns writes under `outputs/stream/replay_demo/`.
-- Dashboard reads `outputs/stream/replay_demo/` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
+- Trace replay owns writes under `outputs/post/replay_demo/`.
+- Dashboard reads `outputs/post/replay_demo/` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
 - When `replay_summary.json` contains `paths.replayDb`, dashboard must prefer SQLite runtime store reads and fall back to JSONL/JSON artifacts only when the DB is absent or unreadable.
 - Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
@@ -18,7 +18,7 @@
 All demo artifacts live under:
 
 ```text
-outputs/stream/replay_demo/
+outputs/post/replay_demo/
 ```
 
 Phase 5 must not overwrite the existing default Phase 3~4-1 artifacts:
@@ -35,19 +35,19 @@ outputs/stream/refit_events.jsonl
 ## Trace Replay Outputs
 
 ```text
-outputs/stream/replay_demo/replay_input_events.jsonl
-outputs/stream/replay_demo/ingress_events.jsonl
-outputs/stream/replay_demo/replay_events.jsonl
-outputs/stream/replay_demo/replay.sqlite
-outputs/stream/replay_demo/replay_summary.json
-outputs/stream/replay_demo/user_states/{user_id}.json
-outputs/stream/replay_demo/interest_states/{user_id}.json
-outputs/stream/replay_demo/online_embeddings.npz
-outputs/stream/replay_demo/online_embedding_events.jsonl
-outputs/stream/replay_demo/interest_assignments.jsonl
-outputs/stream/replay_demo/refit_requests.jsonl
-outputs/stream/replay_demo/refit_events.jsonl
-outputs/stream/replay_demo/stream_recommendations.jsonl
+outputs/post/replay_demo/replay_input_events.jsonl
+outputs/post/replay_demo/ingress_events.jsonl
+outputs/post/replay_demo/replay_events.jsonl
+outputs/post/replay_demo/replay.sqlite
+outputs/post/replay_demo/replay_summary.json
+outputs/post/replay_demo/user_states/{user_id}.json
+outputs/post/replay_demo/interest_states/{user_id}.json
+outputs/post/replay_demo/online_embeddings.npz
+outputs/post/replay_demo/online_embedding_events.jsonl
+outputs/post/replay_demo/interest_assignments.jsonl
+outputs/post/replay_demo/refit_requests.jsonl
+outputs/post/replay_demo/refit_events.jsonl
+outputs/post/replay_demo/stream_recommendations.jsonl
 ```
 
 ## SQLite Runtime Store
@@ -252,16 +252,16 @@ Required fields:
     "meanEndToEndLagSec": 19.24
   },
   "paths": {
-    "replayInputEvents": "outputs/stream/replay_demo/replay_input_events.jsonl",
-    "ingressEvents": "outputs/stream/replay_demo/ingress_events.jsonl",
-    "replayEvents": "outputs/stream/replay_demo/replay_events.jsonl",
-    "replayDb": "outputs/stream/replay_demo/replay.sqlite",
-    "onlineEmbeddings": "outputs/stream/replay_demo/online_embeddings.npz",
-    "interestAssignments": "outputs/stream/replay_demo/interest_assignments.jsonl",
-    "refitRequests": "outputs/stream/replay_demo/refit_requests.jsonl",
-    "refitEvents": "outputs/stream/replay_demo/refit_events.jsonl",
-    "interestStateDir": "outputs/stream/replay_demo/interest_states",
-    "streamRecommendations": "outputs/stream/replay_demo/stream_recommendations.jsonl"
+    "replayInputEvents": "outputs/post/replay_demo/replay_input_events.jsonl",
+    "ingressEvents": "outputs/post/replay_demo/ingress_events.jsonl",
+    "replayEvents": "outputs/post/replay_demo/replay_events.jsonl",
+    "replayDb": "outputs/post/replay_demo/replay.sqlite",
+    "onlineEmbeddings": "outputs/post/replay_demo/online_embeddings.npz",
+    "interestAssignments": "outputs/post/replay_demo/interest_assignments.jsonl",
+    "refitRequests": "outputs/post/replay_demo/refit_requests.jsonl",
+    "refitEvents": "outputs/post/replay_demo/refit_events.jsonl",
+    "interestStateDir": "outputs/post/replay_demo/interest_states",
+    "streamRecommendations": "outputs/post/replay_demo/stream_recommendations.jsonl"
   }
 }
 ```

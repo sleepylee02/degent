@@ -132,7 +132,7 @@ degent/
 - 대시보드 코드는 `dashboard/` 아래에 둔다.
 - 시각화용 입력 산출물은 스크립트로 재생성 가능해야 하며, 원본 데이터처럼 수동 편집하지 않는다.
 - batch cluster 결과를 dashboard에 연결할 때는 `python3 -m model.batch.export_clusters`로 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet` 등 테이블 포맷으로 변환한다.
-- Replay monitor는 replay output root 아래 artifact를 읽기만 하며 replay/stream state를 생성하거나 수정하지 않는다. 기본 demo root는 `outputs/stream/replay_demo/`이고, temporal post-T run은 `outputs/post/<run_label>_events_<N>/`, `outputs/post/<run_label>_events_<N>_recommend/`, `outputs/post/<run_label>_full/`처럼 실행 범위가 드러나는 root를 사용한다.
+- Dashboard는 `PRE Cluster`, `PRE Seed State`, `POST Replay`, `POST Interest State` view로 pre/post 산출물을 분리해 읽는다. `PRE Cluster`는 `outputs/pre/**/user_interests.npz`, `PRE Seed State`는 `outputs/pre/**/pre_summary.json`과 `state.sqlite`, post view는 `outputs/post/**/replay_summary.json`과 `replay.sqlite`를 자동 탐색한다. Dashboard는 replay/stream state를 생성하거나 수정하지 않는다. Temporal post-T run은 `outputs/post/<run_label>_events_<N>/`, `outputs/post/<run_label>_events_<N>_recommend/`, `outputs/post/<run_label>_full/`처럼 실행 범위가 드러나는 root를 사용한다.
 - 인터랙티브 시각화를 위한 새 패키지를 추가하면 반드시 `requirements.txt`에 반영한다.
 
 ### 모델 실험
@@ -145,7 +145,7 @@ degent/
 - `python3 -m model.stream.interest_assign`은 active positive embedding을 SQLite interest state에 assign하고 refit request를 `outputs/stream/` 아래에 기록한다.
 - `python3 -m model.stream.cluster_refit`은 refit request를 소비해 user별 interest state를 갱신한다.
 - `python3 -m model.stream.recommend_online`은 streaming interest state와 item embedding으로 top-K 추천을 만들고 `outputs/stream/stream_recommendations.jsonl`에 기록한다.
-- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 timestamp trace로 읽고, `--speed N` 기준 virtual clock에 맞춰 event를 주입한다. replay 산출물은 `--output-root` 아래에 격리하며, 기본값은 `outputs/stream/replay_demo/`다. Temporal post-T run은 output root 이름에 event 범위와 추천 여부를 포함한다. `--seed-state-db --seed-run-id`를 주면 pre-T SQLite seed store를 복사하지 않고 lazy-load한다. `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`에 runtime state, schedule/lag/throughput metric을 남긴다. `--recommend`를 주면 event 처리 후 `recommend_online`도 호출해 output root의 `stream_recommendations.jsonl`을 남긴다.
+- `python3 -m model.stream.replay_pipeline`은 `replay/bin/rating_replay` 출력 또는 기존 replay JSONL을 timestamp trace로 읽고, `--speed N` 기준 virtual clock에 맞춰 event를 주입한다. replay 산출물은 `--output-root` 아래에 격리하며, 기본값은 `outputs/post/replay_demo/`다. Temporal post-T run은 output root 이름에 event 범위와 추천 여부를 포함한다. `--seed-state-db --seed-run-id`를 주면 pre-T SQLite seed store를 복사하지 않고 lazy-load한다. `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`에 runtime state, schedule/lag/throughput metric을 남긴다. `--recommend`를 주면 event 처리 후 `recommend_online`도 호출해 output root의 `stream_recommendations.jsonl`을 남긴다.
 - `python3 -m model.stream.runtime_report`는 `replay.sqlite`를 읽어 stage latency, event lag, refit lifecycle, assignment/repeated-processing, user state progress를 요약한다.
 - `experiments/model/<run_id>/manifest.json`과 `metrics.jsonl`은 로컬 실험 비교용 기록이다.
 - `experiments/model/<run_id>/notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 로컬 메모다.

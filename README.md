@@ -234,15 +234,15 @@ python3 eda/processed/eda_processed.py
 
 ## 추천 대시보드
 
-사용자 상태 임베딩 cluster 결과와 streaming replay 진행 상황을 인터랙티브하게 탐색할 수 있다.
+사용자 상태 임베딩 cluster 결과, pre-T seed state, post-T replay 진행 상황, replay 이후 interest state를 인터랙티브하게 탐색할 수 있다.
 
 ```bash
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-사이드바의 `Dashboard view`에서 `Cluster explorer`와 `Replay monitor`를 전환한다. 기본 replay artifact가 있으면 replay view가 먼저 열리고, 없으면 기존 cluster view가 먼저 열린다.
+사이드바의 `Dashboard view`에서 `PRE Cluster`, `PRE Seed State`, `POST Replay`, `POST Interest State`를 전환한다. 기본 post replay artifact가 있으면 `POST Replay`가 먼저 열리고, 없으면 `PRE Cluster`가 먼저 열린다.
 
-Cluster explorer는 기본적으로 아래 결과 파일을 기대한다.
+PRE Cluster는 기본적으로 아래 결과 파일을 기대한다.
 
 - `data/clustering/user_clusters.parquet`
 
@@ -271,9 +271,9 @@ python3 -m model.batch.export_clusters \
 - `sequenceLength`
 - `embeddingNorm`
 
-실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
+Dashboard는 네 view로 나뉜다. `PRE Cluster`는 `outputs/pre/**/user_interests.npz`를 자동 탐색해 pre-T batch cluster를 선택할 수 있게 하고, `PRE Seed State`는 `outputs/pre/**/pre_summary.json`과 `state.sqlite`를 읽어 replay 시작 상태를 요약한다. 실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 cluster UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
 
-Replay monitor는 trace replay가 `outputs/stream/replay_demo/` 아래에 생성한 artifact를 읽는 read-only view다. Stable entrypoint는 `outputs/stream/replay_demo/replay_summary.json`이며, summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. `paths.replayDb`가 있으면 `outputs/stream/replay_demo/replay.sqlite`를 우선 읽고, 없으면 기존 JSONL artifact를 fallback으로 읽는다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+`POST Replay`는 `outputs/post/**/replay_summary.json`을 자동 탐색해 post-T replay artifact를 읽는 read-only view다. 선택한 summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. `paths.replayDb`가 있으면 해당 `replay.sqlite`를 우선 읽고, 없으면 같은 post run root의 JSONL artifact를 fallback으로 읽는다. `POST Interest State`는 같은 `replay.sqlite`에서 replay 이후 final interest state와 interest vector projection을 표시한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 모델 실험 기록
 
@@ -293,7 +293,7 @@ Replay monitor는 trace replay가 `outputs/stream/replay_demo/` 아래에 생성
 
 `python3 -m model.stream.recommend_online`은 `outputs/stream/interest_states/{user_id}.json`의 interest vector와 SASRec item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산해 `outputs/stream/stream_recommendations.jsonl`에 top-K 추천을 append한다. seen positive item은 기본적으로 제외한다.
 
-`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출한다. `outputs/stream/replay_demo/` 아래에는 `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, replay-scoped state/log/embedding을 기록한다. SQLite는 payload/state/metadata/lifecycle/runtime metric을 기록하고, 대형 vector artifact는 기존 NPZ/checkpoint 파일로 유지한다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 `outputs/stream/replay_demo/stream_recommendations.jsonl`도 남긴다.
+`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출한다. 기본 replay root는 `outputs/post/replay_demo/`이고, temporal run은 `--output-root outputs/post/<run_label>_events_<N>[_recommend]`처럼 명시해 실행 범위를 드러낸다. 각 root 아래에는 `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, replay-scoped state/log/embedding을 기록한다. SQLite는 payload/state/metadata/lifecycle/runtime metric을 기록하고, 대형 vector artifact는 기존 NPZ/checkpoint 파일로 유지한다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 output root의 `stream_recommendations.jsonl`도 남긴다.
 
 로컬 실험 기록:
 

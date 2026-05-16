@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle은 `outputs/stream/replay_demo/replay.sqlite`에 기록하고, JSONL/JSON/NPZ artifact는 fallback/debug와 대형 vector 파일 정본으로 유지한다.
+2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle은 `outputs/post/replay_demo/replay.sqlite`에 기록하고, JSONL/JSON/NPZ artifact는 fallback/debug와 대형 vector 파일 정본으로 유지한다.
 
 검증 command:
 
@@ -160,7 +160,7 @@ make -C replay
 작은 smoke는 위 Current Status command를 그대로 실행한다. 모든 trace replay 산출물은 아래 경로로 격리된다.
 
 ```text
-outputs/stream/replay_demo/
+outputs/post/replay_demo/
 ```
 
 기본 stream 산출물인 `outputs/stream/online_embeddings.npz`와 state DB/legacy state directory를 덮어쓰지 않는다.
@@ -169,7 +169,7 @@ Replay가 끝난 뒤 runtime/control-plane 상태는 SQLite report로 바로 요
 
 ```bash
 .venv/bin/python -m model.stream.runtime_report \
-  --db outputs/stream/replay_demo/replay.sqlite \
+  --db outputs/post/replay_demo/replay.sqlite \
   --top-events 10
 ```
 
@@ -216,7 +216,7 @@ Input:
 
 Output:
 
-- `outputs/stream/replay_demo/replay_input_events.jsonl`
+- `outputs/post/replay_demo/replay_input_events.jsonl`
 
 한 줄은 replay할 rating event 하나다.
 
@@ -248,7 +248,7 @@ Input:
 
 Emit log:
 
-- `outputs/stream/replay_demo/ingress_events.jsonl`
+- `outputs/post/replay_demo/ingress_events.jsonl`
 
 각 input event는 아래 schedule 기준으로 emitted 된다.
 
@@ -475,7 +475,7 @@ Output:
   "throughputEventsPerSec": 0.158,
   "refitBackend": "auto",
   "paths": {
-    "replayDb": "outputs/stream/replay_demo/replay.sqlite"
+    "replayDb": "outputs/post/replay_demo/replay.sqlite"
   },
   "totals": {
     "activeEmbeddingRows": 10,
@@ -560,5 +560,5 @@ dashboard를 바꿀 때:
 - 현재 smoke는 user 28, 5 events 기준의 작은 trace-clock 검증이다.
 - `u_k` 기반 추천 scoring은 `stream/recommend_online.py`와 `replay_pipeline --recommend`로 가능하다. 다만 Recall@K/NDCG@K 같은 offline evaluation은 아직 없다.
 - replay는 event마다 full active snapshot을 다시 assign/refit 후보로 읽으므로 `already_processed` record가 정상적으로 생긴다.
-- `outputs/stream/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/stream/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
+- `outputs/post/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/post/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
 - GPU backend는 환경 의존적이다. `auto`를 쓰면 가능한 경우 GPU를 쓰고, 현재 로컬처럼 CUDA runtime이 맞지 않으면 CPU fallback으로 진행한다.

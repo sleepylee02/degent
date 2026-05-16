@@ -56,16 +56,16 @@
 | `outputs/stream/refit_requests.jsonl` | streaming refit request log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/stream/refit_events.jsonl` | streaming refit event log | `python3 -m model.stream.cluster_refit` | append/regenerate |
 | `outputs/stream/stream_recommendations.jsonl` | streaming recommendation log | `python3 -m model.stream.recommend_online` | append/regenerate |
-| `outputs/stream/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
-| `outputs/stream/replay_demo/ingress_events.jsonl` | trace replay event emit log with schedule/lag | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
-| `outputs/stream/replay_demo/replay.sqlite` | SQLite runtime/state store for trace replay run/event/stage/state/refit/embedding index | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
-| `outputs/stream/replay_demo/replay_summary.json` | trace replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
-| `outputs/stream/replay_demo/replay_events.jsonl` | event-level trace replay progress and lag log | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
-| `outputs/stream/replay_demo/online_embeddings.npz` | replay-scoped online embeddings | `python3 -m model.stream.replay_pipeline` | regenerate |
-| `outputs/stream/replay_demo/interest_assignments.jsonl` | replay-scoped assignment log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
-| `outputs/stream/replay_demo/refit_requests.jsonl` | replay-scoped refit request log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
-| `outputs/stream/replay_demo/refit_events.jsonl` | replay-scoped refit event log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
-| `outputs/stream/replay_demo/stream_recommendations.jsonl` | replay-scoped recommendation log | `python3 -m model.stream.replay_pipeline --recommend` | append/regenerate |
+| `outputs/post/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
+| `outputs/post/replay_demo/ingress_events.jsonl` | trace replay event emit log with schedule/lag | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
+| `outputs/post/replay_demo/replay.sqlite` | SQLite runtime/state store for trace replay run/event/stage/state/refit/embedding index | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
+| `outputs/post/replay_demo/replay_summary.json` | trace replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
+| `outputs/post/replay_demo/replay_events.jsonl` | event-level trace replay progress and lag log | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
+| `outputs/post/replay_demo/online_embeddings.npz` | replay-scoped online embeddings | `python3 -m model.stream.replay_pipeline` | regenerate |
+| `outputs/post/replay_demo/interest_assignments.jsonl` | replay-scoped assignment log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/post/replay_demo/refit_requests.jsonl` | replay-scoped refit request log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/post/replay_demo/refit_events.jsonl` | replay-scoped refit event log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
+| `outputs/post/replay_demo/stream_recommendations.jsonl` | replay-scoped recommendation log | `python3 -m model.stream.replay_pipeline --recommend` | append/regenerate |
 | `outputs/post/temporal_2022_events_<N>/` | temporal post-T replay artifact root | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N> --seed-state-db outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022 --start-rated-at 2022-01-01T00:00:00Z` | regenerate |
 | `outputs/post/temporal_2022_events_<N>/replay.sqlite` | temporal post-T SQLite runtime/state store with touched state | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N>` | regenerate |
 | `outputs/post/temporal_2022_events_<N>/replay_summary.json` | temporal post-T replay summary entrypoint | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N>` | regenerate |

@@ -193,7 +193,7 @@ Event input은 camelCase와 snake_case를 모두 수용한다.
 - `rating`
 - `ratedAt` 또는 `rated_at`
 
-Trace replay pipeline은 `replay_input_events.jsonl`의 `ratedAtTs`를 기준으로 event별 schedule을 계산하고, `extract_online --event-json`에 단일 event payload를 넘긴다. 주입 시각과 lag는 `outputs/stream/replay_demo/ingress_events.jsonl`에 append된다.
+Trace replay pipeline은 `replay_input_events.jsonl`의 `ratedAtTs`를 기준으로 event별 schedule을 계산하고, `extract_online --event-json`에 단일 event payload를 넘긴다. 주입 시각과 lag는 `outputs/post/replay_demo/ingress_events.jsonl`에 append된다.
 
 ### 3.1.1 Pre-T User State Seed
 
@@ -251,7 +251,7 @@ State 버전:
 기본 위치:
 
 - standalone: `outputs/stream/online_embeddings.npz`
-- replay: `outputs/stream/replay_demo/online_embeddings.npz`
+- replay: `outputs/post/replay_demo/online_embeddings.npz`
 
 주요 key:
 
@@ -413,15 +413,15 @@ python3 -m model.stream.replay_pipeline \
 
 기본 output root:
 
-- `outputs/stream/replay_demo/`
+- `outputs/post/replay_demo/`
 
 Replay pipeline은 새 모델 로직을 구현하지 않는다. replay input의 `ratedAtTs`를 trace clock으로 삼고, `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed` 기준으로 event를 emit한 뒤 기존 streaming CLI를 event 단위로 호출한다.
 
 Temporal seeded replay는 `--start-rated-at <T>`로 post-T input을 만들고, `--seed-state-db --seed-run-id`로 pre-T state를 lazy-load한다. pre state는 replay output root로 복사하지 않는다. 예: `--output-root outputs/post/temporal_2022_events_1000 --seed-state-db outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022`.
 
-`outputs/stream/replay_demo/replay.sqlite`는 runtime state/control-plane 정본이다. Payload, state summary, assignment, refit lifecycle, stage latency, recommendation metadata, embedding snapshot row index를 SQLite에 기록한다. Checkpoint, `online_embeddings.npz`, canonical/batch embedding matrix 같은 대형 vector artifact는 파일 정본으로 유지하고 SQLite에는 metadata/index만 둔다.
+`outputs/post/replay_demo/replay.sqlite`는 runtime state/control-plane 정본이다. Payload, state summary, assignment, refit lifecycle, stage latency, recommendation metadata, embedding snapshot row index를 SQLite에 기록한다. Checkpoint, `online_embeddings.npz`, canonical/batch embedding matrix 같은 대형 vector artifact는 파일 정본으로 유지하고 SQLite에는 metadata/index만 둔다.
 
-`python3 -m model.stream.runtime_report --db outputs/stream/replay_demo/replay.sqlite`는 이 DB를 읽어 dominant stage latency, event lag, refit lifecycle, repeated processing signal, user state progress를 markdown/JSON으로 요약한다. 이는 dashboard 입력 정본은 아니고, replay 후 문제 포인트를 빠르게 찾기 위한 read-only 분석 도구다.
+`python3 -m model.stream.runtime_report --db outputs/post/replay_demo/replay.sqlite`는 이 DB를 읽어 dominant stage latency, event lag, refit lifecycle, repeated processing signal, user state progress를 markdown/JSON으로 요약한다. 이는 dashboard 입력 정본은 아니고, replay 후 문제 포인트를 빠르게 찾기 위한 read-only 분석 도구다.
 
 Event 처리 순서:
 
@@ -468,9 +468,9 @@ outputs/user_interests.npz
 Replay monitor branch:
 
 ```text
-outputs/stream/replay_demo/replay_summary.json
+outputs/post/replay_demo/replay_summary.json
   -> summary.paths.replayDb
-  -> outputs/stream/replay_demo/replay.sqlite
+  -> outputs/post/replay_demo/replay.sqlite
   -> summary.paths.*
   -> dashboard/cluster_dashboard.py Replay monitor
 ```
