@@ -90,8 +90,9 @@ POST Replay는 post-T trace replay가 생성한 artifact를 읽기만 하는 rea
 Stable entrypoint:
 
 - `outputs/post/**/replay_summary.json`
+- 진행 중 run은 아직 summary가 없을 수 있으므로 sibling `outputs/post/**/replay.sqlite`도 자동 탐색한다.
 
-앱은 `outputs/post/**/replay_summary.json`을 자동 탐색해 sidebar selectbox에 최신순으로 표시한다. `replay_summary.json`에 `paths`가 있으면 해당 경로를 우선 사용한다. `paths.replayDb`가 가리키는 SQLite runtime store가 있으면 그 DB를 우선 읽고, 없으면 선택한 post run root의 아래 JSONL 파일들을 fallback으로 사용한다.
+앱은 `outputs/post/**/replay_summary.json`과 summary가 아직 없는 `outputs/post/**/replay.sqlite`를 자동 탐색해 sidebar selectbox에 최신순으로 표시한다. `replay_summary.json`에 `paths`가 있으면 해당 경로를 우선 사용한다. summary 없이 SQLite runtime store만 있으면 `runs`와 runtime table count에서 표시용 summary를 만든다. SQLite runtime store가 있으면 그 DB를 우선 읽고, 없으면 선택한 post run root의 아래 JSONL 파일들을 fallback으로 사용한다.
 
 - `replay.sqlite`
 - `replay_events.jsonl`
@@ -116,7 +117,7 @@ POST Replay에서 표시하는 내용:
 Stable input:
 
 - `outputs/post/**/replay_summary.json`
-- 선택된 summary의 `paths.replayDb`, 보통 `outputs/post/<run>/replay.sqlite`
+- 선택된 replay artifact의 `replay.sqlite`; 완료/실패 run은 보통 summary의 `paths.replayDb`, 진행 중 run은 sibling `outputs/post/<run>/replay.sqlite`
 
 POST Interest State는 replay 이후 touched user의 final `interest_states`, `interest_vectors`, `refit_attempts`, assignment status count, recommendation rows를 SQLite에서 직접 읽는다. 같은 summary에 pre seed DB metadata가 있으면 pre interest count와 post interest count를 같은 table에서 비교한다.
 

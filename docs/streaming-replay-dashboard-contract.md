@@ -11,6 +11,7 @@
 - Trace replay owns writes under `outputs/post/replay_demo/`.
 - Dashboard reads `outputs/post/replay_demo/` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
 - When `replay_summary.json` contains `paths.replayDb`, dashboard must prefer SQLite runtime store reads and fall back to JSONL/JSON artifacts only when the DB is absent or unreadable.
+- While a replay is still running, `replay_summary.json` may not exist yet. In that case dashboard may discover sibling `replay.sqlite` directly and synthesize display summary fields from `runs` and runtime table counts without writing to the replay root.
 - Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
 ## Default Root
@@ -214,6 +215,8 @@ Trace replay fields:
 ## Replay Summary JSON
 
 `replay_summary.json` is the stable summary entrypoint for Phase 6.
+
+For in-progress runs without `replay_summary.json`, dashboard may use `replay.sqlite` as the temporary entrypoint and derive run status, processed/input event counts, elapsed time, and aggregate totals from SQLite. The trace runner still owns the final `replay_summary.json` write at terminal status.
 
 When `paths.replayDb` exists, dashboard must prefer SQLite runtime store reads for replay monitor tables. JSONL files remain fallback/debug artifacts.
 

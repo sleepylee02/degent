@@ -25,13 +25,17 @@ DEFAULT_REPLAY_RECOMMENDATIONS_PATH = DEFAULT_POST_REPLAY_ROOT / "stream_recomme
 REQUIRED_COLUMNS = {"userId", "clusterLabel", "x", "y"}
 NOISE_LABEL = -1
 REPLAY_PATH_KEYS = {
+    "replayInputEvents": "replay_input_events.jsonl",
     "ingressEvents": "ingress_events.jsonl",
     "replayEvents": "replay_events.jsonl",
     "replayDb": "replay.sqlite",
+    "stateDb": "replay.sqlite",
     "onlineEmbeddings": "online_embeddings.npz",
+    "onlineEmbeddingEvents": "online_embedding_events.jsonl",
     "interestAssignments": "interest_assignments.jsonl",
     "refitRequests": "refit_requests.jsonl",
     "refitEvents": "refit_events.jsonl",
+    "userStateDir": "user_states",
     "interestStateDir": "interest_states",
     "streamRecommendations": "stream_recommendations.jsonl",
 }
@@ -379,6 +383,23 @@ def discover_post_replay_summary_paths() -> list[Path]:
     )
 
 
+def discover_post_replay_artifact_paths() -> list[Path]:
+    if not DEFAULT_POST_REPLAY_ROOT.exists():
+        return []
+    summary_paths = discover_post_replay_summary_paths()
+    summary_roots = {path.parent.resolve() for path in summary_paths}
+    db_paths = [
+        path.resolve()
+        for path in DEFAULT_POST_REPLAY_ROOT.rglob("replay.sqlite")
+        if path.is_file() and path.parent.resolve() not in summary_roots
+    ]
+    return sorted(
+        [*summary_paths, *db_paths],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
 def replay_summary_option_label(path_value: str) -> str:
     path = resolve_repo_path(path_value)
     label = repo_display_path(path)
@@ -398,15 +419,37 @@ def replay_summary_option_label(path_value: str) -> str:
     return f"{label} ({suffix})" if suffix else label
 
 
+def replay_artifact_option_label(path_value: str) -> str:
+    path = resolve_repo_path(path_value)
+    if path.name == "replay_summary.json":
+        return replay_summary_option_label(path_value)
+
+    label = repo_display_path(path)
+    if path.name != "replay.sqlite":
+        return label
+    try:
+        summary = load_sqlite_run_summary(path)
+    except Exception:
+        return label
+
+    run_id = summary.get("runId")
+    status = summary.get("status")
+    processed = summary.get("processedEvents")
+    total = summary.get("inputEvents")
+    parts = [str(value) for value in (run_id, status) if value]
+    if processed is not None and total is not None:
+        parts.append(f"{processed}/{total} events")
+    suffix = " | ".join(parts)
+    return f"{label} ({suffix})" if suffix else label
+
+
 def default_post_recommendation_path() -> Path:
-    for summary_path in discover_post_replay_summary_paths():
+    for artifact_path in discover_post_replay_artifact_paths():
         try:
-            summary = load_json(summary_path)
+            _, paths = load_replay_artifact(artifact_path)
         except Exception:
             continue
-        summary_paths = summary.get("paths", {})
-        path_value = summary_paths.get("streamRecommendations") if isinstance(summary_paths, dict) else None
-        recommendation_path = resolve_repo_path(path_value) if path_value else summary_path.parent / "stream_recommendations.jsonl"
+        recommendation_path = paths["streamRecommendations"]
         if recommendation_path.exists():
             return recommendation_path
     return DEFAULT_REPLAY_RECOMMENDATIONS_PATH
@@ -435,6 +478,147 @@ def read_sql_frame(db_path: Path, query: str, params: tuple[Any, ...] = ()) -> p
     conn = sqlite3.connect(db_path)
     try:
         return pd.read_sql_query(query, conn, params=params)
+    finally:
+        conn.close()
+
+
+def sqlite_scalar(conn: sqlite3.Connection, query: str, params: tuple[Any, ...] = ()) -> Any:
+    row = conn.execute(query, params).fetchone()
+    return None if row is None else row[0]
+
+
+def sqlite_count(conn: sqlite3.Connection, table: str, run_id: str | None = None, where: str | None = None) -> int:
+    if not sqlite_table_exists(conn, table):
+        return 0
+    clauses: list[str] = []
+    params: list[Any] = []
+    if run_id is not None:
+        clauses.append("run_id=?")
+        params.append(run_id)
+    if where:
+        clauses.append(where)
+    where_sql = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return int(sqlite_scalar(conn, f"SELECT COUNT(*) FROM {table}{where_sql}", tuple(params)) or 0)
+
+
+def count_jsonl_records(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    with path.open("r", encoding="utf-8") as handle:
+        return sum(1 for line in handle if line.strip())
+
+
+def elapsed_seconds(started_at: Any, ended_at: Any) -> float | None:
+    if not started_at:
+        return None
+    try:
+        start = pd.to_datetime(started_at, errors="coerce")
+        if pd.isna(start):
+            return None
+        if ended_at:
+            end = pd.to_datetime(ended_at, errors="coerce")
+        else:
+            end = pd.Timestamp.now(tz=start.tz)
+        if pd.isna(end):
+            return None
+        return max(0.0, float((end - start).total_seconds()))
+    except Exception:
+        return None
+
+
+def load_sqlite_run_summary(db_path: Path) -> dict[str, Any]:
+    if not db_path.exists():
+        raise FileNotFoundError(f"Replay DB does not exist: {db_path}")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        run_row = conn.execute(
+            """
+            SELECT *
+            FROM runs
+            ORDER BY COALESCE(started_at, created_at, updated_at) DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if run_row is None:
+            raise ValueError(f"No runs found in replay DB: {db_path}")
+
+        run = dict(run_row)
+        run_id = str(run["run_id"])
+        input_events = count_jsonl_records(db_path.parent / "replay_input_events.jsonl")
+        if input_events is None:
+            input_events = sqlite_count(conn, "input_events", run_id)
+        processed_events = sqlite_count(conn, "event_progress", run_id, "status='completed'")
+        unique_users = int(
+            sqlite_scalar(conn, "SELECT COUNT(DISTINCT user_id) FROM user_states WHERE run_id=?", (run_id,))
+            or 0
+        ) if sqlite_table_exists(conn, "user_states") else 0
+        elapsed_sec = elapsed_seconds(run.get("started_at"), run.get("ended_at"))
+
+        trace_row = None
+        if sqlite_table_exists(conn, "input_events"):
+            trace_row = conn.execute(
+                """
+                SELECT
+                    MIN(rated_at_ts) AS traceStartTs,
+                    MAX(rated_at_ts) AS traceEndTs,
+                    MIN(rated_at) AS traceStartRatedAt,
+                    MAX(rated_at) AS traceEndRatedAt
+                FROM input_events
+                WHERE run_id=?
+                """,
+                (run_id,),
+            ).fetchone()
+        trace = dict(trace_row) if trace_row is not None else {}
+        speed = run.get("speed")
+        trace_span_sec = None
+        scheduled_span_sec = None
+        target_events_per_sec = None
+        if trace.get("traceStartTs") is not None and trace.get("traceEndTs") is not None:
+            trace_span_sec = max(0.0, float(trace["traceEndTs"]) - float(trace["traceStartTs"]))
+            if speed and float(speed) > 0:
+                scheduled_span_sec = trace_span_sec / float(speed)
+                if scheduled_span_sec > 0:
+                    target_events_per_sec = input_events / scheduled_span_sec
+
+        throughput = None if not elapsed_sec else processed_events / elapsed_sec
+        totals = {
+            "activeEmbeddingRows": sqlite_count(conn, "active_embedding_cache", run_id, "status='active'"),
+            "assignmentRecords": sqlite_count(conn, "assignments", run_id),
+            "refitRequestsOpened": sqlite_count(conn, "refit_requests", run_id),
+            "refitClosed": sqlite_count(conn, "refit_attempts", run_id, "status='closed'"),
+            "refitSkipped": sqlite_count(conn, "refit_attempts", run_id, "status='skipped'"),
+            "recommendationRows": sqlite_count(conn, "recommendation_rows", run_id),
+            "behindScheduleEvents": sqlite_count(conn, "event_progress", run_id, "behind_schedule=1"),
+            "stageExecution": "in_process",
+        }
+        return {
+            "version": "sqlite_runtime_summary.v1",
+            "runId": run_id,
+            "status": run.get("status"),
+            "startedAt": run.get("started_at"),
+            "endedAt": run.get("ended_at"),
+            "elapsedSec": elapsed_sec,
+            "inputEvents": input_events,
+            "processedEvents": processed_events,
+            "uniqueUsers": unique_users,
+            "speed": speed,
+            "traceStartTs": trace.get("traceStartTs"),
+            "traceEndTs": trace.get("traceEndTs"),
+            "traceStartRatedAt": trace.get("traceStartRatedAt"),
+            "traceEndRatedAt": trace.get("traceEndRatedAt"),
+            "traceSpanSec": trace_span_sec,
+            "scheduledSpanSec": scheduled_span_sec,
+            "throughputEventsPerSec": throughput,
+            "targetEventsPerSec": target_events_per_sec,
+            "refitBackend": None,
+            "totals": totals,
+            "seed": {},
+            "paths": {
+                key: str(path)
+                for key, path in default_replay_paths(db_path.parent).items()
+            },
+        }
     finally:
         conn.close()
 
@@ -906,6 +1090,18 @@ def replay_paths_from_summary(summary: dict[str, Any], summary_path: Path | None
         if path_value:
             paths[key] = resolve_repo_path(str(path_value))
     return paths
+
+
+def load_replay_artifact(path: Path) -> tuple[dict[str, Any], dict[str, Path]]:
+    if path.name == "replay.sqlite":
+        summary = load_sqlite_run_summary(path)
+        paths = default_replay_paths(path.parent)
+        paths["replayDb"] = path
+        paths["stateDb"] = path
+        return summary, paths
+
+    summary = load_json(path)
+    return summary, replay_paths_from_summary(summary, path)
 
 
 def path_status_rows(paths: dict[str, Path]) -> list[dict[str, Any]]:
@@ -1775,31 +1971,30 @@ def render_interest_vector_projection(frame: pd.DataFrame) -> None:
 def render_post_interest_state_dashboard() -> None:
     st.subheader("POST Interest State")
     st.caption("Final touched-user interest state after post-cutoff replay processing and refit.")
-    replay_summary_paths = discover_post_replay_summary_paths()
+    replay_artifact_paths = discover_post_replay_artifact_paths()
 
     with st.sidebar:
         st.header("POST Interest Data")
-        if replay_summary_paths:
-            summary_options = [repo_display_path(path) for path in replay_summary_paths]
-            summary_path_text = st.selectbox(
-                "POST replay summary",
-                options=summary_options,
-                format_func=replay_summary_option_label,
+        if replay_artifact_paths:
+            artifact_options = [repo_display_path(path) for path in replay_artifact_paths]
+            artifact_path_text = st.selectbox(
+                "POST replay artifact",
+                options=artifact_options,
+                format_func=replay_artifact_option_label,
             )
         else:
-            summary_path_text = ""
-            st.info(f"No post replay summaries found under `{repo_display_path(DEFAULT_POST_REPLAY_ROOT)}`.")
+            artifact_path_text = ""
+            st.info(f"No post replay artifacts found under `{repo_display_path(DEFAULT_POST_REPLAY_ROOT)}`.")
         max_rows = st.number_input("Rows per table", min_value=20, max_value=5000, value=200, step=20)
 
-    summary_path = resolve_repo_path(summary_path_text)
-    if not summary_path.is_file():
-        st.info(f"No POST replay summary found at `{summary_path}`.")
+    artifact_path = resolve_repo_path(artifact_path_text)
+    if not artifact_path.is_file():
+        st.info(f"No POST replay artifact found at `{artifact_path}`.")
         return
 
     try:
-        summary = load_json(summary_path)
-        run_id = str(summary.get("runId") or summary_path.parent.name)
-        paths = replay_paths_from_summary(summary, summary_path)
+        summary, paths = load_replay_artifact(artifact_path)
+        run_id = str(summary.get("runId") or artifact_path.parent.name)
         db_path = paths["replayDb"]
         frames = load_post_interest_frames(db_path, run_id)
         vector_rows, vectors = decode_interest_vector_frame(frames["interest_vectors"])
@@ -1919,33 +2114,32 @@ def render_post_interest_state_dashboard() -> None:
 def render_replay_dashboard() -> None:
     st.subheader("POST Replay")
     st.caption("Read-only monitor for post-T replay artifacts under the replay/dashboard contract.")
-    replay_summary_paths = discover_post_replay_summary_paths()
+    replay_artifact_paths = discover_post_replay_artifact_paths()
 
     with st.sidebar:
         st.header("Replay Data")
-        if replay_summary_paths:
-            summary_options = [repo_display_path(path) for path in replay_summary_paths]
-            summary_path_text = st.selectbox(
-                "Replay summary",
-                options=summary_options,
-                format_func=replay_summary_option_label,
+        if replay_artifact_paths:
+            artifact_options = [repo_display_path(path) for path in replay_artifact_paths]
+            artifact_path_text = st.selectbox(
+                "Replay artifact",
+                options=artifact_options,
+                format_func=replay_artifact_option_label,
             )
         else:
-            summary_path_text = ""
-            st.info(f"No post replay summaries found under `{repo_display_path(DEFAULT_POST_REPLAY_ROOT)}`.")
+            artifact_path_text = ""
+            st.info(f"No post replay artifacts found under `{repo_display_path(DEFAULT_POST_REPLAY_ROOT)}`.")
         max_rows = st.number_input("Rows per table", min_value=20, max_value=5000, value=200, step=20)
 
-    summary_path = resolve_repo_path(summary_path_text)
-    if not summary_path.is_file():
-        st.info(f"No replay summary found at `{summary_path}`.")
+    artifact_path = resolve_repo_path(artifact_path_text)
+    if not artifact_path.is_file():
+        st.info(f"No replay artifact found at `{artifact_path}`.")
         st.write("The dashboard reads post replay artifacts only when they exist. Use the cluster explorer for existing pre-T cluster data.")
         with st.expander("Expected post replay paths", expanded=True):
             st.dataframe(pd.DataFrame(path_status_rows(default_replay_paths(DEFAULT_POST_REPLAY_ROOT))), use_container_width=True, hide_index=True)
         return
 
     try:
-        summary = load_json(summary_path)
-        paths = replay_paths_from_summary(summary, summary_path)
+        summary, paths = load_replay_artifact(artifact_path)
         sqlite_frames = load_sqlite_replay_frames(paths["replayDb"])
         if sqlite_frames:
             replay_events = sqlite_frames["replay_events"]
@@ -1984,7 +2178,7 @@ def main() -> None:
     st.title("Recommendation Dashboard")
 
     view_options = ["POST Replay", "POST Interest State", "PRE Cluster", "PRE Seed State"]
-    if discover_post_replay_summary_paths():
+    if discover_post_replay_artifact_paths():
         default_view = "POST Replay"
     elif discover_pre_cluster_result_paths():
         default_view = "PRE Cluster"
