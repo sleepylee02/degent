@@ -1293,6 +1293,7 @@ def record_recommendations(
     run_id: str,
     records: list[dict[str, Any]],
     event_id: int | None = None,
+    target_user_ids: list[int] | None = None,
     top_k: int,
     normalize: bool,
     include_seen: bool,
@@ -1300,7 +1301,11 @@ def record_recommendations(
 ) -> str:
     init_store(db_path)
     now = local_timestamp()
-    target_users = sorted({int(record["userId"]) for record in records})
+    target_users = (
+        sorted({int(value) for value in target_user_ids})
+        if target_user_ids is not None
+        else sorted({int(record["userId"]) for record in records})
+    )
     user_part = "none" if not target_users else "-".join(str(value) for value in target_users[:5])
     recommendation_run_id = f"{run_id}:{event_id if event_id is not None else 'manual'}:{user_part}:{int(time.time() * 1_000_000)}"
     with connect(db_path) as conn:

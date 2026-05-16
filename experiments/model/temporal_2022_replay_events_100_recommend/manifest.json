@@ -2,42 +2,21 @@
   "created_at": "2026-05-15T20:40:25+09:00",
   "run_id": "temporal_2022_replay_events_100_recommend",
   "git": {
-    "commit": "a2ff779c8e20d6b2ada94b8833aa36b42f2e734d",
+    "commit": "4de5daf540964f32214cf88ebdf62be27332a8fd",
     "branch": "full-streaming",
     "dirty": true,
     "status_short": [
-      "M PROJECT_GUIDE.md",
-      " M docs/artifacts.md",
-      " M docs/current-pipeline-snapshot.md",
-      " M docs/data-flow.md",
-      " M docs/part-contracts.md",
-      " M docs/streaming-e2e-pipeline.md",
-      " M experiments/model/temporal_2022/manifest.json",
-      " M experiments/model/temporal_2022/metrics.jsonl",
-      " M experiments/model/temporal_2022_replay_recommend_100/manifest.json",
-      " M experiments/model/temporal_2022_replay_recommend_100/metrics.jsonl",
-      " M model/IMPLEMENTATION_STATUS.md",
-      " M model/README.md",
-      " M model/batch/cluster.py",
-      " M model/stream/cluster_refit.py",
-      " M model/stream/extract_online.py",
-      " M model/stream/interest_assign.py",
+      "M experiments/model/temporal_2022_replay_events_100_recommend/manifest.json",
+      " M experiments/model/temporal_2022_replay_events_100_recommend/metrics.jsonl",
       " M model/stream/recommend_online.py",
-      " M model/stream/runtime_store.py",
-      " M model/stream/seed_pre_t_state.py",
-      " M model/stream/trace_replay.py",
-      " M outputs/readme.md",
-      " M plan/active/temporal_2022_streaming_e2e.md",
-      " M replay/README.md",
-      " M todo.md",
-      "?? experiments/model/temporal_2022_replay_events_100_recommend/"
+      " M model/stream/runtime_store.py"
     ]
   },
   "stages": {
     "extract_online": {
       "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/extract_online.py --run-id temporal_2022_replay_events_100_recommend --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --checkpoint /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/sasrec_cl.pt --item2idx /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/item2idx.json --output /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/online_embeddings.npz --event-log /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/online_embedding_events.jsonl --event-json '{\"userId\": 115861, \"movieId\": 249392, \"rating\": 3.5, \"ratedAt\": \"2022-01-01T00:13:22Z\"}' --min-ratings-for-zscore 3 --z-threshold 0.0 --batch-size 256 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/replay.sqlite --event-id 18455745 --seed-state-db /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022",
       "log": {
-        "path": "outputs/logs/extract_online_20260515_213230.log",
+        "path": "outputs/logs/extract_online_20260515_220903.log",
         "exists": false
       },
       "inputs": {
@@ -145,22 +124,22 @@
           "path": "outputs/post/temporal_2022_events_100_recommend/online_embeddings.npz",
           "exists": true,
           "size_bytes": 556282,
-          "mtime_ns": 1778848352254522728,
+          "mtime_ns": 1778850545090730147,
           "sha256": "22d94e29b6efbc35d9ecdb7dac3ebec874cb9e48e6c15cc47493250ada69986b"
         },
         "event_log": {
           "path": "outputs/post/temporal_2022_events_100_recommend/online_embedding_events.jsonl",
           "exists": true,
           "size_bytes": 91115,
-          "mtime_ns": 1778848352276522601,
-          "sha256": "a2acf55d4262745480aba7c714b61a574d0829fb36cfa4ade1c6a33ac5619ef1"
+          "mtime_ns": 1778850545112730023,
+          "sha256": "3739afb1736564369808c37fbdeace127f2585825b9ffe9129e83b68f1abe635"
         },
         "metrics": {
           "path": "experiments/model/temporal_2022_replay_events_100_recommend/metrics.jsonl",
           "exists": true,
-          "size_bytes": 173819,
-          "mtime_ns": 1778848352276522601,
-          "sha256": "68f5e3b031dfdc68ac8d7fe17c9c1406c9903232e50ec732f39cdc4d32f29853"
+          "size_bytes": 262446,
+          "mtime_ns": 1778850545112730023,
+          "sha256": "ed6c59eaec3f52c9244722d361a4f2430cad9d5721eeb734cd2810046223739d"
         }
       },
       "summary_metrics": {
@@ -181,7 +160,7 @@
     "interest_assign": {
       "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/interest_assign.py --run-id temporal_2022_replay_events_100_recommend --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/online_embeddings.npz --assignments /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/interest_assignments.jsonl --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/refit_requests.jsonl --similarity-threshold 0.2 --refit-min-events 20 --assign-trigger-count 50 --outlier-trigger-count 10 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/replay.sqlite --event-id 18455745 --seed-state-db /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022",
       "log": {
-        "path": "outputs/logs/interest_assign_20260515_213233.log",
+        "path": "outputs/logs/interest_assign_20260515_220906.log",
         "exists": false
       },
       "inputs": {
@@ -189,7 +168,7 @@
           "path": "outputs/post/temporal_2022_events_100_recommend/online_embeddings.npz",
           "exists": true,
           "size_bytes": 556282,
-          "mtime_ns": 1778848352254522728
+          "mtime_ns": 1778850545090730147
         }
       },
       "assignment_config": {
@@ -234,22 +213,22 @@
           "path": "outputs/post/temporal_2022_events_100_recommend/interest_assignments.jsonl",
           "exists": true,
           "size_bytes": 3541926,
-          "mtime_ns": 1778848353533515327,
-          "sha256": "3e68625b4d6be438bd8f5bbe95e52f31a6550225372cf65792b512fe6cec35df"
+          "mtime_ns": 1778850546398722729,
+          "sha256": "37d84e5c4a0fe7e7767cab757632497f289cd802851ddafc1514ab66f98e3c72"
         },
         "refit_requests": {
           "path": "outputs/post/temporal_2022_events_100_recommend/refit_requests.jsonl",
           "exists": true,
           "size_bytes": 3373,
-          "mtime_ns": 1778848353533515327,
-          "sha256": "3e14ba043cb63a645f0508caa05aa424889439b1ab9569fecc6a0e482184c872"
+          "mtime_ns": 1778850546398722729,
+          "sha256": "b40f5024e23eec71cb7ce52ea650a7a5d1e48ed7595979851ab07982558f5855"
         },
         "metrics": {
           "path": "experiments/model/temporal_2022_replay_events_100_recommend/metrics.jsonl",
           "exists": true,
-          "size_bytes": 174080,
-          "mtime_ns": 1778848353552515217,
-          "sha256": "f47a128cf4942a809c6e2fe5ca84148a80ae013b87600b1e127105f3f13de34b"
+          "size_bytes": 262707,
+          "mtime_ns": 1778850546421722598,
+          "sha256": "6eb1a074810dc5fac28ebbc54dac9fe8666b717787cf5587bccd1dcae8bd7684"
         }
       },
       "summary_metrics": {
@@ -270,7 +249,7 @@
     "cluster_refit": {
       "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/cluster_refit.py --run-id temporal_2022_replay_events_100_recommend --embeddings /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/online_embeddings.npz --refit-requests /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/refit_requests.jsonl --refit-events /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/refit_events.jsonl --cluster-backend auto --refit-min-events 20 --min-cluster-size 10 --cluster-dim 10 --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --user-id 115861 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/replay.sqlite --event-id 18455745 --seed-state-db /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022",
       "log": {
-        "path": "outputs/logs/cluster_refit_20260515_213234.log",
+        "path": "outputs/logs/cluster_refit_20260515_220907.log",
         "exists": false
       },
       "inputs": {
@@ -278,13 +257,13 @@
           "path": "outputs/post/temporal_2022_events_100_recommend/online_embeddings.npz",
           "exists": true,
           "size_bytes": 556282,
-          "mtime_ns": 1778848352254522728
+          "mtime_ns": 1778850545090730147
         },
         "refit_requests": {
           "path": "outputs/post/temporal_2022_events_100_recommend/refit_requests.jsonl",
           "exists": true,
           "size_bytes": 3373,
-          "mtime_ns": 1778848353533515327
+          "mtime_ns": 1778850546398722729
         }
       },
       "refit_config": {
@@ -308,11 +287,11 @@
         "active_embedding_users": 1,
         "user_summaries": [
           {
-            "recordedAt": "2026-05-15T21:32:36+09:00",
+            "recordedAt": "2026-05-15T22:09:09+09:00",
             "runId": "temporal_2022_replay_events_100_recommend",
             "userId": 115861,
             "request": {
-              "recordedAt": "2026-05-15T21:32:33+09:00",
+              "recordedAt": "2026-05-15T22:09:06+09:00",
               "runId": "temporal_2022_replay_events_100_recommend",
               "userId": 115861,
               "status": "open",
@@ -333,7 +312,7 @@
             "backendFallbackReason": null,
             "activeEmbeddingRows": 824,
             "status": "closed",
-            "refitElapsedSec": 0.20054149627685547,
+            "refitElapsedSec": 0.20430469512939453,
             "interestCount": 13,
             "processedRawEventCount": 824,
             "clusterSummary": {
@@ -382,16 +361,16 @@
         "refit_events": {
           "path": "outputs/post/temporal_2022_events_100_recommend/refit_events.jsonl",
           "exists": true,
-          "size_bytes": 10738,
-          "mtime_ns": 1778848356961495496,
-          "sha256": "c2e5a41a97baea19a98e519cb5c9b69cb40b98c7afc8049dfdbea8eefe6a453e"
+          "size_bytes": 10736,
+          "mtime_ns": 1778850549856703120,
+          "sha256": "24a9a46bdcd8713f9dd88cd8057702901991fd281c155a22190e3b3ffec37f72"
         },
         "metrics": {
           "path": "experiments/model/temporal_2022_replay_events_100_recommend/metrics.jsonl",
           "exists": true,
-          "size_bytes": 174396,
-          "mtime_ns": 1778848356961495496,
-          "sha256": "c08d7c7e04fc10d997e8fe1c1501a6d51f69a87e2dcbbe32d079b1bc33f8bf6f"
+          "size_bytes": 263023,
+          "mtime_ns": 1778850549856703120,
+          "sha256": "807452dca63a593fa5a308d13360dec731efe207b8fcfc2de5a9226386c3d481"
         }
       },
       "summary_metrics": {
@@ -403,14 +382,14 @@
         "cluster_backend_requested": "auto",
         "cluster_backend_selected": "gpu",
         "backend_fallback_reason": null,
-        "elapsed_sec": 0.22452235221862793,
+        "elapsed_sec": 0.22793865203857422,
         "embedding_dim": 128
       }
     },
     "recommend_online": {
       "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/recommend_online.py --run-id temporal_2022_replay_events_100_recommend --checkpoint /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/sasrec_cl.pt --item2idx /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/item2idx.json --movies /home/hungrylee/Desktop/0proj/degent/data/movies_processed_drop.csv --output-jsonl /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/stream_recommendations.jsonl --top-k 20 --user-id 115861 --runtime-db /home/hungrylee/Desktop/0proj/degent/outputs/post/temporal_2022_events_100_recommend/replay.sqlite --event-id 18455745 --seed-state-db /home/hungrylee/Desktop/0proj/degent/outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022",
       "log": {
-        "path": "outputs/logs/recommend_online_20260515_213238.log",
+        "path": "outputs/logs/recommend_online_20260515_220911.log",
         "exists": false
       },
       "inputs": {
@@ -454,15 +433,15 @@
           "path": "outputs/post/temporal_2022_events_100_recommend/stream_recommendations.jsonl",
           "exists": true,
           "size_bytes": 657402,
-          "mtime_ns": 1778848358467486787,
-          "sha256": "2ca8258a32f573e3f356be0546ba12bc80e3a7e6848e0a62257ddff1bf8b76ce"
+          "mtime_ns": 1778850551373694519,
+          "sha256": "51b5690027ef314e1e66176b8c55562815e167c544e33e7818d80b3650618ce2"
         },
         "metrics": {
           "path": "experiments/model/temporal_2022_replay_events_100_recommend/metrics.jsonl",
           "exists": true,
-          "size_bytes": 174672,
-          "mtime_ns": 1778848358476486735,
-          "sha256": "6534f3e7b20725af2fe806a055158b2c85e0cbf20dc8572fece0dd25a640a103"
+          "size_bytes": 263299,
+          "mtime_ns": 1778850551383694462,
+          "sha256": "55f3b43de9d23a80ed2ecc5eb19eafe657e91b2a4a14779742a6a85545758c13"
         }
       },
       "summary_metrics": {
@@ -481,24 +460,24 @@
     "trace_replay": {
       "command": "/home/hungrylee/Desktop/0proj/degent/model/stream/replay_pipeline.py --run-id temporal_2022_replay_events_100_recommend --output-root outputs/post/temporal_2022_events_100_recommend --reset-output --generate-events --start-rated-at 2022-01-01T00:00:00Z --limit-events 100 --speed 1000 --checkpoint outputs/pre/temporal_2022/sasrec_cl.pt --item2idx outputs/pre/temporal_2022/item2idx.json --seed-state-db outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022 --cluster-backend auto --recommend --recommend-top-k 20",
       "log": {
-        "path": "outputs/logs/trace_replay_20260515_212317.log",
+        "path": "outputs/logs/trace_replay_20260515_215951.log",
         "exists": true,
         "size_bytes": 293203,
-        "mtime_ns": 1778848357384493050
+        "mtime_ns": 1778850550295700631
       },
       "inputs": {
         "replay_input_events": {
           "path": "outputs/post/temporal_2022_events_100_recommend/replay_input_events.jsonl",
           "exists": true,
           "size_bytes": 21223,
-          "mtime_ns": 1778847841822591814,
+          "mtime_ns": 1778850036089642541,
           "sha256": "2de6b1fa42709ac3f7b7301a95f04e13032c0b6aa011a9907d6cc02e2342a529"
         },
         "seed_state_db": {
           "path": "outputs/pre/temporal_2022/state.sqlite",
           "exists": true,
           "size_bytes": 1396187136,
-          "mtime_ns": 1778848353521515397,
+          "mtime_ns": 1778850546373722871,
           "sha256": null,
           "sha256_skipped": "size_exceeds_limit",
           "sha256_limit_bytes": 104857600
@@ -512,38 +491,38 @@
           "path": "outputs/post/temporal_2022_events_100_recommend/replay_summary.json",
           "exists": true,
           "size_bytes": 2786,
-          "mtime_ns": 1778848358698485451,
-          "sha256": "ed4527ae210b4ce89734fddd74cf728f77842ed9526b8e47c3dfe13f676df640"
+          "mtime_ns": 1778850551603693215,
+          "sha256": "4dd4c3a72fb86537f8e3472b7ac93eb33bce25f7d718edec524a12f67a1d166e"
         },
         "replay_events": {
           "path": "outputs/post/temporal_2022_events_100_recommend/replay_events.jsonl",
           "exists": true,
-          "size_bytes": 100993,
-          "mtime_ns": 1778848358715485353,
-          "sha256": "512ef0bc6b9c8502ddb8a0ab8d75136dcacbbcd649408af509ad5c2c34ef9e8a"
+          "size_bytes": 101024,
+          "mtime_ns": 1778850551619693124,
+          "sha256": "7e7092ebdd1a5629d89f86296e4fff65936951951c05c75c224990d3d2bbb2bc"
         },
         "ingress_events": {
           "path": "outputs/post/temporal_2022_events_100_recommend/ingress_events.jsonl",
           "exists": true,
-          "size_bytes": 50860,
-          "mtime_ns": 1778848349477538800,
-          "sha256": "65a783a4c776c75b05e1c8557706261264bb04984d0aa488079eef5f8a45c71e"
+          "size_bytes": 50867,
+          "mtime_ns": 1778850542325745827,
+          "sha256": "cbdf18a19e6e3fec0d8bd473771c0b933d86f35dd9f3672077f0dcb41a38eff4"
         },
         "replay_db": {
           "path": "outputs/post/temporal_2022_events_100_recommend/replay.sqlite",
           "exists": true,
           "size_bytes": 21139456,
-          "mtime_ns": 1778848358710485382,
-          "sha256": "a4b39951b6e03dddd9863c2dd5b8734e0a8188ee4061e7a5120421b3f885efc0"
+          "mtime_ns": 1778850551614693152,
+          "sha256": "c086c0b637e0a7456677d8b94e0c2cc601e319ab84dd45f6dff20d351cde550d"
         }
       },
       "summary_metrics": {
         "version": "stream_trace_replay_summary.v1",
         "runId": "temporal_2022_replay_events_100_recommend",
         "status": "completed",
-        "startedAt": "2026-05-15T21:24:01+09:00",
-        "endedAt": "2026-05-15T21:32:38+09:00",
-        "elapsedSec": 516.83145570755,
+        "startedAt": "2026-05-15T22:00:36+09:00",
+        "endedAt": "2026-05-15T22:09:11+09:00",
+        "elapsedSec": 515.4699895381927,
         "inputEvents": 100,
         "processedEvents": 100,
         "uniqueUsers": 11,
@@ -554,7 +533,7 @@
         "traceEndRatedAt": "2022-01-01T00:13:22Z",
         "traceSpanSec": 777.0,
         "scheduledSpanSec": 0.777,
-        "throughputEventsPerSec": 0.19348667519297658,
+        "throughputEventsPerSec": 0.19399771476432517,
         "targetEventsPerSec": 128.7001287001287,
         "refitBackend": "auto",
         "totals": {
@@ -566,12 +545,12 @@
           "recommendationRows": 1360,
           "behindScheduleEvents": 100,
           "refitBackend": "auto",
-          "maxInjectorLagSec": 506.83475395599817,
-          "meanInjectorLagSec": 261.2746466968922,
-          "maxProcessingLagSec": 9.287051152998174,
-          "meanProcessingLagSec": 5.156293398359995,
-          "maxEndToEndLagSec": 516.0425646759977,
-          "meanEndToEndLagSec": 266.43094009525225
+          "maxInjectorLagSec": 505.416832709001,
+          "meanInjectorLagSec": 260.6486289008535,
+          "maxProcessingLagSec": 9.264241315999243,
+          "meanProcessingLagSec": 5.142305806260411,
+          "maxEndToEndLagSec": 514.6810740250003,
+          "meanEndToEndLagSec": 265.79093470711393
         },
         "seed": {
           "stateDb": {
@@ -606,5 +585,5 @@
       }
     }
   },
-  "updated_at": "2026-05-15T21:32:38+09:00"
+  "updated_at": "2026-05-15T22:09:11+09:00"
 }
