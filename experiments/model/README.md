@@ -1,6 +1,6 @@
 # Model Experiments
 
-This directory stores lightweight metadata for model runs.
+This directory stores local metadata for model runs. This README is tracked to document the structure; individual run directories are ignored by git.
 
 Each run uses:
 
@@ -11,7 +11,7 @@ experiments/model/<run_id>/
 └── notes.md
 ```
 
-Heavy artifacts such as checkpoints, embeddings, and clustering outputs stay under `outputs/` and remain outside git tracking. The metadata records enough information to compare runs later: command, git state, input file metadata, schema versions, configs, output refs, and metrics.
+Heavy artifacts such as checkpoints, embeddings, and clustering outputs stay under `outputs/` and remain outside git tracking. The local metadata records enough information to compare runs later on the same machine: command, git state, input file metadata, schema versions, configs, output refs, and metrics.
 
 Use this directory for run-level history, not for copied source snapshots.
 

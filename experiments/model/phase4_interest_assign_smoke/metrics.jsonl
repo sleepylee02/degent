@@ -1,3 +1,0 @@
-{"recorded_at": "2026-05-06T11:48:03+09:00", "stage": "interest_assign", "input_rows": 1579, "processed_users": 1, "assignment_records": 1579, "refit_requests": 1, "status_counts": {"pending_no_interest": 19, "pending_refit_required": 1560}, "embedding_dim": 128}
-{"recorded_at": "2026-05-06T11:48:36+09:00", "stage": "interest_assign", "input_rows": 1579, "processed_users": 1, "assignment_records": 1579, "refit_requests": 0, "status_counts": {"assigned": 1579}, "embedding_dim": 128}
-{"recorded_at": "2026-05-06T11:50:26+09:00", "stage": "interest_assign", "input_rows": 1, "processed_users": 1, "assignment_records": 1, "refit_requests": 1, "status_counts": {"outlier": 1}, "embedding_dim": 2}

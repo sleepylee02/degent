@@ -1,2 +1,0 @@
-{"recorded_at": "2026-05-13T19:05:23+09:00", "stage": "extract_online", "processed_users": 1, "input_events": 5, "embedding_rows": 3, "embedding_dim": 128, "unique_users": 1, "row_count": 3, "nan_embedding_rows": 0, "max_history_len": 3, "invalid_history_rows": 0, "invalid_context_rows": 0, "all_rows_active": true}
-{"recorded_at": "2026-05-13T19:05:25+09:00", "stage": "interest_assign", "input_rows": 3, "processed_users": 1, "assignment_records": 3, "refit_requests": 1, "status_counts": {"pending_no_interest": 1, "pending_refit_required": 2}, "embedding_dim": 128}

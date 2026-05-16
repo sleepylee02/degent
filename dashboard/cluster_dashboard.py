@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import sqlite3
 import time
@@ -18,9 +19,9 @@ import streamlit as st
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CLUSTER_PATH = REPO_ROOT / "data" / "clustering" / "user_clusters.parquet"
-DEFAULT_REPLAY_ROOT = REPO_ROOT / "outputs" / "stream" / "replay_demo"
-DEFAULT_REPLAY_SUMMARY_PATH = DEFAULT_REPLAY_ROOT / "replay_summary.json"
-DEFAULT_REPLAY_RECOMMENDATIONS_PATH = DEFAULT_REPLAY_ROOT / "stream_recommendations.jsonl"
+DEFAULT_PRE_CLUSTER_ROOT = REPO_ROOT / "outputs" / "pre"
+DEFAULT_POST_REPLAY_ROOT = REPO_ROOT / "outputs" / "post"
+DEFAULT_REPLAY_RECOMMENDATIONS_PATH = DEFAULT_POST_REPLAY_ROOT / "stream_recommendations.jsonl"
 REQUIRED_COLUMNS = {"userId", "clusterLabel", "x", "y"}
 NOISE_LABEL = -1
 REPLAY_PATH_KEYS = {
@@ -313,12 +314,171 @@ def resolve_repo_path(path_value: str | Path) -> Path:
     return REPO_ROOT / path
 
 
-def default_replay_paths() -> dict[str, Path]:
-    return {key: DEFAULT_REPLAY_ROOT / relative_path for key, relative_path in REPLAY_PATH_KEYS.items()}
+def repo_display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def discover_pre_cluster_result_paths() -> list[Path]:
+    if not DEFAULT_PRE_CLUSTER_ROOT.exists():
+        return []
+    return sorted(
+        (path.resolve() for path in DEFAULT_PRE_CLUSTER_ROOT.rglob("user_interests.npz") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def cluster_result_option_label(path_value: str) -> str:
+    path = resolve_repo_path(path_value)
+    label = repo_display_path(path)
+    try:
+        run_label = path.relative_to(DEFAULT_PRE_CLUSTER_ROOT).parts[0]
+    except (ValueError, IndexError):
+        run_label = None
+    return f"{label} ({run_label} pre cluster)" if run_label else label
+
+
+def discover_pre_seed_summary_paths() -> list[Path]:
+    if not DEFAULT_PRE_CLUSTER_ROOT.exists():
+        return []
+    return sorted(
+        (path.resolve() for path in DEFAULT_PRE_CLUSTER_ROOT.rglob("pre_summary.json") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def pre_seed_option_label(path_value: str) -> str:
+    path = resolve_repo_path(path_value)
+    label = repo_display_path(path)
+    try:
+        summary = load_json(path)
+    except Exception:
+        return label
+
+    run_id = summary.get("runId")
+    cutoff = summary.get("maxRatedAtExclusive")
+    seeded_users = summary.get("seededUsers")
+    parts = [str(value) for value in (run_id, cutoff) if value]
+    if seeded_users is not None:
+        parts.append(f"{format_count(seeded_users)} users")
+    suffix = " | ".join(parts)
+    return f"{label} ({suffix})" if suffix else label
+
+
+def discover_post_replay_summary_paths() -> list[Path]:
+    if not DEFAULT_POST_REPLAY_ROOT.exists():
+        return []
+    return sorted(
+        (path.resolve() for path in DEFAULT_POST_REPLAY_ROOT.rglob("replay_summary.json") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def replay_summary_option_label(path_value: str) -> str:
+    path = resolve_repo_path(path_value)
+    label = repo_display_path(path)
+    try:
+        summary = load_json(path)
+    except Exception:
+        return label
+
+    run_id = summary.get("runId")
+    status = summary.get("status")
+    processed = summary.get("processedEvents")
+    total = summary.get("inputEvents")
+    parts = [str(value) for value in (run_id, status) if value]
+    if processed is not None and total is not None:
+        parts.append(f"{processed}/{total} events")
+    suffix = " | ".join(parts)
+    return f"{label} ({suffix})" if suffix else label
+
+
+def default_post_recommendation_path() -> Path:
+    for summary_path in discover_post_replay_summary_paths():
+        try:
+            summary = load_json(summary_path)
+        except Exception:
+            continue
+        summary_paths = summary.get("paths", {})
+        path_value = summary_paths.get("streamRecommendations") if isinstance(summary_paths, dict) else None
+        recommendation_path = resolve_repo_path(path_value) if path_value else summary_path.parent / "stream_recommendations.jsonl"
+        if recommendation_path.exists():
+            return recommendation_path
+    return DEFAULT_REPLAY_RECOMMENDATIONS_PATH
+
+
+def default_replay_paths(root: Path | None = None) -> dict[str, Path]:
+    replay_root = root or DEFAULT_POST_REPLAY_ROOT
+    return {key: replay_root / relative_path for key, relative_path in REPLAY_PATH_KEYS.items()}
 
 
 def load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def sqlite_table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
+def read_sql_frame(db_path: Path, query: str, params: tuple[Any, ...] = ()) -> pd.DataFrame:
+    if not db_path.exists():
+        return pd.DataFrame()
+    conn = sqlite3.connect(db_path)
+    try:
+        return pd.read_sql_query(query, conn, params=params)
+    finally:
+        conn.close()
+
+
+def decode_user_state_payload(row: sqlite3.Row) -> dict[str, Any]:
+    keys = set(row.keys())
+    encoding = row["payload_encoding"] if "payload_encoding" in keys else None
+    payload_blob = row["payload_blob"] if "payload_blob" in keys else None
+    if encoding == "gzip_json_v1" and payload_blob is not None:
+        return json.loads(gzip.decompress(bytes(payload_blob)).decode("utf-8"))
+    return json.loads(str(row["payload_json"]))
+
+
+def fetch_user_state_payload(db_path: Path, *, run_id: str, user_id: int) -> dict[str, Any] | None:
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute(
+            """
+            SELECT payload_json, payload_encoding, payload_blob
+            FROM user_states
+            WHERE run_id=? AND user_id=?
+            """,
+            (run_id, user_id),
+        ).fetchone()
+        return None if row is None else decode_user_state_payload(row)
+    finally:
+        conn.close()
+
+
+def fetch_interest_state_payload(db_path: Path, *, run_id: str, user_id: int) -> dict[str, Any] | None:
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT payload_json FROM interest_states WHERE run_id=? AND user_id=?",
+            (run_id, user_id),
+        ).fetchone()
+        return None if row is None else json.loads(str(row[0]))
+    finally:
+        conn.close()
 
 
 def load_jsonl_records(path: Path) -> list[dict[str, Any]]:
@@ -495,6 +655,234 @@ def load_sqlite_replay_frames(db_path: Path) -> dict[str, pd.DataFrame]:
     }
 
 
+def pre_state_db_from_summary(summary: dict[str, Any], summary_path: Path) -> Path:
+    state_db = summary.get("stateDb")
+    if not state_db:
+        state_store = summary.get("stateStore", {})
+        state_db = state_store.get("path") if isinstance(state_store, dict) else None
+    return resolve_repo_path(str(state_db)) if state_db else summary_path.parent / "state.sqlite"
+
+
+def seed_counts_from_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    state_store = summary.get("stateStore", {})
+    counts = state_store.get("counts", {}) if isinstance(state_store, dict) else {}
+    return {
+        "seededUsers": summary.get("seededUsers"),
+        "usersWithPreTEvents": summary.get("usersWithPreTEvents"),
+        "userStates": counts.get("userStates"),
+        "interestStates": counts.get("interestStates"),
+        "interestVectors": counts.get("interestVectors"),
+        "rawEvents": summary.get("rawEvents"),
+        "positiveEvents": summary.get("positiveEvents"),
+        "activeEvents": summary.get("activeEvents"),
+        "skippedUnknownItems": summary.get("skippedUnknownItems"),
+    }
+
+
+def load_seed_state_frames(db_path: Path, run_id: str, *, max_rows: int) -> dict[str, pd.DataFrame]:
+    user_states = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            status,
+            raw_event_count AS rawEventCount,
+            positive_event_count AS positiveEventCount,
+            active_event_count AS activeEventCount,
+            skipped_unknown_items AS skippedUnknownItems,
+            last_raw_event_id AS lastRawEventId,
+            updated_at AS updatedAt
+        FROM user_states
+        WHERE run_id=?
+        ORDER BY active_event_count DESC, user_id
+        LIMIT ?
+        """,
+        (run_id, int(max_rows)),
+    )
+    interest_states = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            interest_count AS interestCount,
+            pending_count AS pendingCount,
+            processed_count AS processedCount,
+            assigned_since_last_refit AS assignedSinceLastRefit,
+            outlier_since_last_refit AS outlierSinceLastRefit,
+            refit_required AS refitRequired,
+            refit_request_open AS refitRequestOpen,
+            updated_at AS updatedAt
+        FROM interest_states
+        WHERE run_id=?
+        ORDER BY interest_count DESC, processed_count DESC, user_id
+        LIMIT ?
+        """,
+        (run_id, int(max_rows)),
+    )
+    interest_distribution = read_sql_frame(
+        db_path,
+        """
+        SELECT interest_count AS interestCount, COUNT(*) AS userCount
+        FROM interest_states
+        WHERE run_id=?
+        GROUP BY interest_count
+        ORDER BY interest_count
+        """,
+        (run_id,),
+    )
+    return {
+        "user_states": user_states,
+        "interest_states": interest_states,
+        "interest_distribution": interest_distribution,
+    }
+
+
+def load_post_interest_frames(db_path: Path, run_id: str) -> dict[str, pd.DataFrame]:
+    interest_states = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            interest_count AS interestCount,
+            pending_count AS pendingCount,
+            processed_count AS processedCount,
+            assigned_since_last_refit AS assignedSinceLastRefit,
+            outlier_since_last_refit AS outlierSinceLastRefit,
+            refit_required AS refitRequired,
+            refit_request_open AS refitRequestOpen,
+            updated_at AS updatedAt
+        FROM interest_states
+        WHERE run_id=?
+        ORDER BY user_id
+        """,
+        (run_id,),
+    )
+    vectors = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            run_id AS runId,
+            user_id AS userId,
+            interest_id AS interestId,
+            dim,
+            dtype,
+            vector_blob AS vectorBlob,
+            assigned_count AS assignedCount,
+            source,
+            top_genres_json AS topGenresJson,
+            created_at AS createdAt,
+            updated_at AS updatedAt
+        FROM interest_vectors
+        WHERE run_id=?
+        ORDER BY user_id, interest_id
+        """,
+        (run_id,),
+    )
+    assignments = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            status,
+            COUNT(*) AS count
+        FROM assignments
+        WHERE run_id=?
+        GROUP BY user_id, status
+        ORDER BY user_id, status
+        """,
+        (run_id,),
+    )
+    refits = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            status,
+            active_embedding_rows AS activeEmbeddingRows,
+            interest_count AS interestCount,
+            backend,
+            latency_sec AS latencySec,
+            ended_at AS endedAt,
+            skip_reason AS skipReason,
+            error_type AS errorType,
+            error_message AS errorMessage
+        FROM refit_attempts
+        WHERE run_id=?
+        ORDER BY ended_at, user_id
+        """,
+        (run_id,),
+    )
+    recommendations = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            rr.user_id AS userId,
+            rr.rank,
+            rr.movie_id AS movieId,
+            rr.score,
+            rr.best_interest_id AS bestInterestId,
+            r.event_id AS eventId,
+            r.ended_at AS endedAt,
+            r.top_k AS topK
+        FROM recommendation_rows rr
+        LEFT JOIN recommendation_runs r
+            ON r.recommendation_run_id = rr.recommendation_run_id
+        WHERE rr.run_id=?
+        ORDER BY r.ended_at, rr.user_id, rr.rank
+        """,
+        (run_id,),
+    )
+    return {
+        "interest_states": interest_states,
+        "interest_vectors": vectors,
+        "assignments": assignments,
+        "refits": refits,
+        "recommendations": recommendations,
+    }
+
+
+def decode_interest_vector_frame(frame: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
+    if frame.empty or "vectorBlob" not in frame.columns:
+        return frame.copy(), np.empty((0, 0), dtype=np.float32)
+
+    vectors: list[np.ndarray] = []
+    rows = frame.copy()
+    top_genres: list[str] = []
+    norms: list[float] = []
+    for _, row in rows.iterrows():
+        vector = np.frombuffer(row["vectorBlob"], dtype=np.float32).copy()
+        vectors.append(vector)
+        norms.append(float(np.linalg.norm(vector)))
+        try:
+            parsed = json.loads(row.get("topGenresJson") or "[]")
+        except (TypeError, ValueError):
+            parsed = []
+        top_genres.append(", ".join(str(item) for item in parsed[:5]))
+
+    rows["vectorNorm"] = norms
+    rows["topGenres"] = top_genres
+    rows = rows.drop(columns=["vectorBlob"], errors="ignore")
+    matrix = np.vstack(vectors).astype(np.float32) if vectors else np.empty((0, 0), dtype=np.float32)
+    return rows, matrix
+
+
+def add_vector_projection(frame: pd.DataFrame, vectors: np.ndarray, *, n_components: int = 3) -> pd.DataFrame:
+    result = frame.copy()
+    if vectors.size == 0 or len(result) == 0:
+        return result
+
+    dims = min(int(n_components), vectors.shape[1], len(result))
+    coords = np.zeros((len(result), int(n_components)), dtype=np.float32)
+    if dims > 0 and len(result) > 1:
+        centered = vectors - vectors.mean(axis=0, keepdims=True)
+        _, _, vt = np.linalg.svd(centered, full_matrices=False)
+        coords[:, :dims] = centered @ vt[:dims].T
+    result["x"] = coords[:, 0]
+    result["y"] = coords[:, 1] if coords.shape[1] > 1 else 0.0
+    result["z"] = coords[:, 2] if coords.shape[1] > 2 else 0.0
+    return result
+
+
 def load_replay_recommendations(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
@@ -507,8 +895,8 @@ def load_replay_recommendations(path: Path) -> pd.DataFrame:
     return recommendations
 
 
-def replay_paths_from_summary(summary: dict[str, Any]) -> dict[str, Path]:
-    paths = default_replay_paths()
+def replay_paths_from_summary(summary: dict[str, Any], summary_path: Path | None = None) -> dict[str, Path]:
+    paths = default_replay_paths(summary_path.parent if summary_path else None)
     summary_paths = summary.get("paths", {})
     if not isinstance(summary_paths, dict):
         return paths
@@ -768,28 +1156,41 @@ def render_distribution_chart(frame: pd.DataFrame, metric_column: str) -> None:
 
 
 def render_cluster_dashboard() -> None:
-    st.subheader("Cluster Explorer")
-    st.caption("User-state embeddings reduced for density-based clustering exploration.")
+    st.subheader("PRE Cluster")
+    st.caption("Pre-cutoff batch user-state embeddings reduced for density-based clustering exploration.")
+    cluster_result_paths = discover_pre_cluster_result_paths()
     with st.sidebar:
         st.header("Cluster Data")
-        default_path = st.text_input("Cluster result path", value=str(DEFAULT_CLUSTER_PATH))
-        default_rec_path = st.text_input("Replay recommendation path", value=str(DEFAULT_REPLAY_RECOMMENDATIONS_PATH))
-        use_demo_data = st.toggle("Use demo data", value=not Path(default_path).exists())
-        load_replay_recommendations_flag = st.checkbox("Load replay recommendations", value=Path(default_rec_path).exists())
+        if cluster_result_paths:
+            cluster_options = [repo_display_path(path) for path in cluster_result_paths]
+            default_path = st.selectbox(
+                "Pre cluster result",
+                options=cluster_options,
+                format_func=cluster_result_option_label,
+            )
+        else:
+            default_path = st.text_input("Cluster result path", value=str(DEFAULT_CLUSTER_PATH))
+        default_rec_path = st.text_input("Replay recommendation path", value=str(default_post_recommendation_path()))
+        selected_cluster_path = resolve_repo_path(default_path)
+        use_demo_data = st.toggle("Use synthetic demo data", value=not selected_cluster_path.exists())
+        load_replay_recommendations_flag = st.checkbox(
+            "Load replay recommendations",
+            value=resolve_repo_path(default_rec_path).exists(),
+        )
 
     if use_demo_data:
         frame = generate_demo_frame()
         data_source = "synthetic demo data"
         recommendations = pd.DataFrame()
     else:
-        cluster_path = Path(default_path).expanduser()
+        cluster_path = resolve_repo_path(default_path)
         try:
             frame = load_frame(cluster_path)
         except Exception as exc:
             st.error(f"Failed to load cluster results: {exc}")
             st.stop()
-        data_source = str(cluster_path)
-        recommendation_path = Path(default_rec_path).expanduser()
+        data_source = repo_display_path(cluster_path)
+        recommendation_path = resolve_repo_path(default_rec_path)
         recommendations = load_replay_recommendations(recommendation_path) if load_replay_recommendations_flag else pd.DataFrame()
 
     try:
@@ -1164,26 +1565,387 @@ def render_recommendations_view(recommendations: pd.DataFrame, max_rows: int) ->
         st.dataframe(top_recommendations, use_container_width=True, hide_index=True)
 
 
+def render_seed_user_browser(db_path: Path, run_id: str) -> None:
+    st.subheader("Seed user browser")
+    user_text = st.text_input("User ID", value="")
+    if not user_text.strip():
+        st.info("Enter a user ID to inspect one seed user state.")
+        return
+    try:
+        user_id = int(user_text.strip())
+    except ValueError:
+        st.warning("User ID must be numeric.")
+        return
+
+    user_summary = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            status,
+            raw_event_count AS rawEventCount,
+            positive_event_count AS positiveEventCount,
+            active_event_count AS activeEventCount,
+            skipped_unknown_items AS skippedUnknownItems,
+            last_raw_event_id AS lastRawEventId,
+            updated_at AS updatedAt
+        FROM user_states
+        WHERE run_id=? AND user_id=?
+        """,
+        (run_id, user_id),
+    )
+    if user_summary.empty:
+        st.info(f"No seed user state found for user `{user_id}`.")
+        return
+
+    st.dataframe(user_summary, use_container_width=True, hide_index=True)
+
+    interest_summary = read_sql_frame(
+        db_path,
+        """
+        SELECT
+            user_id AS userId,
+            interest_count AS interestCount,
+            pending_count AS pendingCount,
+            processed_count AS processedCount,
+            assigned_since_last_refit AS assignedSinceLastRefit,
+            outlier_since_last_refit AS outlierSinceLastRefit,
+            refit_required AS refitRequired,
+            refit_request_open AS refitRequestOpen,
+            updated_at AS updatedAt
+        FROM interest_states
+        WHERE run_id=? AND user_id=?
+        """,
+        (run_id, user_id),
+    )
+    if not interest_summary.empty:
+        st.markdown("**Seed interest state**")
+        st.dataframe(interest_summary, use_container_width=True, hide_index=True)
+
+        vectors = read_sql_frame(
+            db_path,
+            """
+            SELECT
+                interest_id AS interestId,
+                assigned_count AS assignedCount,
+                source,
+                top_genres_json AS topGenresJson,
+                created_at AS createdAt,
+                updated_at AS updatedAt
+            FROM interest_vectors
+            WHERE run_id=? AND user_id=?
+            ORDER BY interest_id
+            """,
+            (run_id, user_id),
+        )
+        if not vectors.empty:
+            vectors["topGenres"] = vectors["topGenresJson"].map(lambda value: ", ".join(parse_list_value(value)[:5]))
+            vectors = vectors.drop(columns=["topGenresJson"], errors="ignore")
+            st.dataframe(vectors, use_container_width=True, hide_index=True)
+    else:
+        st.info("This user has no pre-T batch interest state in the seed DB.")
+
+    if st.checkbox("Show decoded event samples", value=False):
+        payload = fetch_user_state_payload(db_path, run_id=run_id, user_id=user_id)
+        if payload is None:
+            st.info("No decodable user state payload found.")
+            return
+        raw_events = payload.get("rawEvents", [])
+        positive_events = payload.get("positiveEvents", [])
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Recent raw events**")
+            st.dataframe(pd.DataFrame(raw_events[-10:]), use_container_width=True, hide_index=True)
+        with right:
+            st.markdown("**Recent positive events**")
+            st.dataframe(pd.DataFrame(positive_events[-10:]), use_container_width=True, hide_index=True)
+
+
+def render_pre_seed_state_dashboard() -> None:
+    st.subheader("PRE Seed State")
+    st.caption("Replay starting state generated from pre-cutoff user history and batch interest state.")
+    seed_summary_paths = discover_pre_seed_summary_paths()
+
+    with st.sidebar:
+        st.header("PRE Seed Data")
+        if seed_summary_paths:
+            summary_options = [repo_display_path(path) for path in seed_summary_paths]
+            summary_path_text = st.selectbox(
+                "PRE summary",
+                options=summary_options,
+                format_func=pre_seed_option_label,
+            )
+        else:
+            summary_path_text = ""
+            st.info(f"No pre summaries found under `{repo_display_path(DEFAULT_PRE_CLUSTER_ROOT)}`.")
+        max_rows = st.number_input("Rows per table", min_value=20, max_value=5000, value=200, step=20)
+
+    summary_path = resolve_repo_path(summary_path_text)
+    if not summary_path.is_file():
+        st.info(f"No PRE summary found at `{summary_path}`.")
+        return
+
+    try:
+        summary = load_json(summary_path)
+        run_id = str(summary.get("runId") or summary_path.parent.name)
+        state_db = pre_state_db_from_summary(summary, summary_path)
+        frames = load_seed_state_frames(state_db, run_id, max_rows=int(max_rows))
+    except Exception as exc:
+        st.error(f"Failed to load PRE seed artifacts: {exc}")
+        st.stop()
+
+    counts = seed_counts_from_summary(summary)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Seeded users", format_count(counts.get("seededUsers")))
+    col2.metric("Seed interest users", format_count(counts.get("interestStates")))
+    col3.metric("Interest vectors", format_count(counts.get("interestVectors")))
+    col4.metric("Active events", format_count(counts.get("activeEvents")))
+
+    col5, col6, col7, col8 = st.columns(4)
+    col5.metric("Raw events", format_count(counts.get("rawEvents")))
+    col6.metric("Positive events", format_count(counts.get("positiveEvents")))
+    col7.metric("Skipped unknown", format_count(counts.get("skippedUnknownItems")))
+    col8.metric("Cutoff", str(summary.get("maxRatedAtExclusive", "-")))
+
+    metadata = {
+        "runId": run_id,
+        "stateDb": repo_display_path(state_db),
+        "firstRatedAt": summary.get("firstRatedAt"),
+        "lastRatedAt": summary.get("lastRatedAt"),
+        "positivePolicy": summary.get("positivePolicy", {}).get("name")
+        if isinstance(summary.get("positivePolicy"), dict)
+        else None,
+    }
+    st.dataframe(pd.DataFrame([metadata]), use_container_width=True, hide_index=True)
+
+    distribution = frames["interest_distribution"]
+    if not distribution.empty:
+        figure = px.bar(
+            distribution,
+            x="interestCount",
+            y="userCount",
+            title="PRE users by interest count",
+        )
+        figure.update_layout(height=340, xaxis_title="Interest count", yaxis_title="Users")
+        st.plotly_chart(figure, use_container_width=True)
+
+    tab1, tab2 = st.tabs(["Top user states", "Seed interest states"])
+    with tab1:
+        st.dataframe(frames["user_states"], use_container_width=True, hide_index=True)
+    with tab2:
+        st.dataframe(frames["interest_states"], use_container_width=True, hide_index=True)
+
+    render_seed_user_browser(state_db, run_id)
+
+
+def render_interest_vector_projection(frame: pd.DataFrame) -> None:
+    if frame.empty or not {"x", "y"}.issubset(frame.columns):
+        st.info("No interest vectors available for projection.")
+        return
+
+    color_column = "userId" if frame["userId"].nunique() > 1 else "interestId"
+    hover_data = [
+        column
+        for column in ["userId", "interestId", "assignedCount", "source", "topGenres", "vectorNorm"]
+        if column in frame.columns
+    ]
+    if "z" in frame.columns:
+        figure = px.scatter_3d(
+            frame,
+            x="x",
+            y="y",
+            z="z",
+            color=color_column,
+            hover_data=hover_data,
+            title="POST interest vectors",
+        )
+    else:
+        figure = px.scatter(
+            frame,
+            x="x",
+            y="y",
+            color=color_column,
+            hover_data=hover_data,
+            title="POST interest vectors",
+        )
+    figure.update_layout(height=560, legend_title_text=color_column)
+    st.plotly_chart(figure, use_container_width=True)
+
+
+def render_post_interest_state_dashboard() -> None:
+    st.subheader("POST Interest State")
+    st.caption("Final touched-user interest state after post-cutoff replay processing and refit.")
+    replay_summary_paths = discover_post_replay_summary_paths()
+
+    with st.sidebar:
+        st.header("POST Interest Data")
+        if replay_summary_paths:
+            summary_options = [repo_display_path(path) for path in replay_summary_paths]
+            summary_path_text = st.selectbox(
+                "POST replay summary",
+                options=summary_options,
+                format_func=replay_summary_option_label,
+            )
+        else:
+            summary_path_text = ""
+            st.info(f"No post replay summaries found under `{repo_display_path(DEFAULT_POST_REPLAY_ROOT)}`.")
+        max_rows = st.number_input("Rows per table", min_value=20, max_value=5000, value=200, step=20)
+
+    summary_path = resolve_repo_path(summary_path_text)
+    if not summary_path.is_file():
+        st.info(f"No POST replay summary found at `{summary_path}`.")
+        return
+
+    try:
+        summary = load_json(summary_path)
+        run_id = str(summary.get("runId") or summary_path.parent.name)
+        paths = replay_paths_from_summary(summary, summary_path)
+        db_path = paths["replayDb"]
+        frames = load_post_interest_frames(db_path, run_id)
+        vector_rows, vectors = decode_interest_vector_frame(frames["interest_vectors"])
+        vector_points = add_vector_projection(vector_rows, vectors)
+    except Exception as exc:
+        st.error(f"Failed to load POST interest artifacts: {exc}")
+        st.stop()
+
+    states = frames["interest_states"]
+    refits = frames["refits"]
+    assignments = frames["assignments"]
+    recommendations = frames["recommendations"]
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Touched users", format_count(states["userId"].nunique() if not states.empty else 0))
+    col2.metric("Final interests", format_count(len(vector_rows)))
+    col3.metric("Refit attempts", format_count(len(refits)))
+    col4.metric("Recommendations", format_count(len(recommendations)))
+
+    closed_refits = int((refits["status"].astype(str) == "closed").sum()) if not refits.empty and "status" in refits else 0
+    assigned_total = int(assignments["count"].sum()) if not assignments.empty and "count" in assignments else 0
+    col5, col6, col7, col8 = st.columns(4)
+    col5.metric("Closed refits", format_count(closed_refits))
+    col6.metric("Assignment records", format_count(assigned_total))
+    col7.metric("Replay events", format_count(summary.get("processedEvents")))
+    col8.metric("Speed", str(summary.get("speed", "-")))
+    st.caption(f"State source: `{repo_display_path(db_path)}`")
+
+    seed = summary.get("seed", {})
+    state_db_info = seed.get("stateDb", {}) if isinstance(seed, dict) else {}
+    seed_db_path = resolve_repo_path(state_db_info.get("path")) if isinstance(state_db_info, dict) and state_db_info.get("path") else None
+    seed_run_id = state_db_info.get("runId") if isinstance(state_db_info, dict) else None
+    compare_frame = states.copy()
+    if seed_db_path is not None and seed_run_id:
+        pre_states = read_sql_frame(
+            seed_db_path,
+            """
+            SELECT
+                user_id AS userId,
+                interest_count AS preInterestCount,
+                processed_count AS preProcessedCount
+            FROM interest_states
+            WHERE run_id=?
+            """,
+            (str(seed_run_id),),
+        )
+        if not pre_states.empty and not compare_frame.empty:
+            compare_frame = compare_frame.merge(pre_states, on="userId", how="left")
+            compare_frame["interestDelta"] = compare_frame["interestCount"] - compare_frame["preInterestCount"].fillna(0)
+
+    user_options = ["All users"] + sorted([str(value) for value in states["userId"].dropna().unique()]) if not states.empty else ["All users"]
+    selected_user = st.selectbox("Touched user", user_options)
+    selected_user_id = None if selected_user == "All users" else int(selected_user)
+    if selected_user_id is not None:
+        vector_points = vector_points[vector_points["userId"] == selected_user_id]
+        compare_frame = compare_frame[compare_frame["userId"] == selected_user_id]
+        refits = refits[refits["userId"] == selected_user_id]
+        assignments = assignments[assignments["userId"] == selected_user_id]
+        recommendations = recommendations[recommendations["userId"] == selected_user_id]
+
+    render_interest_vector_projection(vector_points)
+
+    tab1, tab2, tab3, tab4 = st.tabs(["Final states", "Interest vectors", "Refits", "Assignments / recommendations"])
+    with tab1:
+        st.dataframe(compact_columns(compare_frame.tail(int(max_rows)), [
+            "userId",
+            "preInterestCount",
+            "interestCount",
+            "interestDelta",
+            "processedCount",
+            "pendingCount",
+            "assignedSinceLastRefit",
+            "outlierSinceLastRefit",
+            "updatedAt",
+        ]), use_container_width=True, hide_index=True)
+    with tab2:
+        st.dataframe(compact_columns(vector_points.tail(int(max_rows)), [
+            "userId",
+            "interestId",
+            "assignedCount",
+            "source",
+            "topGenres",
+            "vectorNorm",
+            "createdAt",
+            "updatedAt",
+        ]), use_container_width=True, hide_index=True)
+    with tab3:
+        st.dataframe(compact_columns(refits.tail(int(max_rows)), [
+            "userId",
+            "status",
+            "activeEmbeddingRows",
+            "interestCount",
+            "backend",
+            "latencySec",
+            "endedAt",
+            "skipReason",
+            "errorType",
+        ]), use_container_width=True, hide_index=True)
+    with tab4:
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Assignment status counts**")
+            st.dataframe(assignments.tail(int(max_rows)), use_container_width=True, hide_index=True)
+        with right:
+            st.markdown("**Recommendation rows**")
+            st.dataframe(compact_columns(recommendations.tail(int(max_rows)), [
+                "userId",
+                "rank",
+                "movieId",
+                "score",
+                "bestInterestId",
+                "eventId",
+                "endedAt",
+            ]), use_container_width=True, hide_index=True)
+
+
 def render_replay_dashboard() -> None:
-    st.subheader("Replay Monitor")
-    st.caption("Read-only monitor for Phase 5 replay artifacts under the streaming replay/dashboard contract.")
+    st.subheader("POST Replay")
+    st.caption("Read-only monitor for post-T replay artifacts under the replay/dashboard contract.")
+    replay_summary_paths = discover_post_replay_summary_paths()
 
     with st.sidebar:
         st.header("Replay Data")
-        summary_path_text = st.text_input("Replay summary path", value=str(DEFAULT_REPLAY_SUMMARY_PATH))
+        if replay_summary_paths:
+            summary_options = [repo_display_path(path) for path in replay_summary_paths]
+            summary_path_text = st.selectbox(
+                "Replay summary",
+                options=summary_options,
+                format_func=replay_summary_option_label,
+            )
+        else:
+            summary_path_text = ""
+            st.info(f"No post replay summaries found under `{repo_display_path(DEFAULT_POST_REPLAY_ROOT)}`.")
         max_rows = st.number_input("Rows per table", min_value=20, max_value=5000, value=200, step=20)
 
     summary_path = resolve_repo_path(summary_path_text)
     if not summary_path.is_file():
         st.info(f"No replay summary found at `{summary_path}`.")
-        st.write("The dashboard reads Phase 5 artifacts only when they exist. Use the cluster explorer for existing dashboard data.")
-        with st.expander("Expected default replay paths", expanded=True):
-            st.dataframe(pd.DataFrame(path_status_rows(default_replay_paths())), use_container_width=True, hide_index=True)
+        st.write("The dashboard reads post replay artifacts only when they exist. Use the cluster explorer for existing pre-T cluster data.")
+        with st.expander("Expected post replay paths", expanded=True):
+            st.dataframe(pd.DataFrame(path_status_rows(default_replay_paths(DEFAULT_POST_REPLAY_ROOT))), use_container_width=True, hide_index=True)
         return
 
     try:
         summary = load_json(summary_path)
-        paths = replay_paths_from_summary(summary)
+        paths = replay_paths_from_summary(summary, summary_path)
         sqlite_frames = load_sqlite_replay_frames(paths["replayDb"])
         if sqlite_frames:
             replay_events = sqlite_frames["replay_events"]
@@ -1213,24 +1975,37 @@ def render_replay_dashboard() -> None:
             st.dataframe(stage_attempts.tail(int(max_rows)), use_container_width=True, hide_index=True)
     render_assignment_refit_view(assignments, refit_requests, refit_events, int(max_rows))
     render_recommendations_view(recommendations, int(max_rows))
-    render_interest_state_browser(paths["interestStateDir"])
+    if paths["replayDb"].exists():
+        st.info("Final interest state is stored in replay.sqlite. Use the POST Interest State view for the current interest state.")
 
 
 def main() -> None:
     st.set_page_config(page_title="Recommendation Dashboard", layout="wide")
     st.title("Recommendation Dashboard")
 
-    default_view = "Replay monitor" if DEFAULT_REPLAY_SUMMARY_PATH.is_file() else "Cluster explorer"
+    view_options = ["POST Replay", "POST Interest State", "PRE Cluster", "PRE Seed State"]
+    if discover_post_replay_summary_paths():
+        default_view = "POST Replay"
+    elif discover_pre_cluster_result_paths():
+        default_view = "PRE Cluster"
+    elif discover_pre_seed_summary_paths():
+        default_view = "PRE Seed State"
+    else:
+        default_view = "PRE Cluster"
     with st.sidebar:
         st.header("View")
         view = st.radio(
             "Dashboard view",
-            options=["Replay monitor", "Cluster explorer"],
-            index=0 if default_view == "Replay monitor" else 1,
+            options=view_options,
+            index=view_options.index(default_view),
         )
 
-    if view == "Replay monitor":
+    if view == "POST Replay":
         render_replay_dashboard()
+    elif view == "POST Interest State":
+        render_post_interest_state_dashboard()
+    elif view == "PRE Seed State":
+        render_pre_seed_state_dashboard()
     else:
         render_cluster_dashboard()
 

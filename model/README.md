@@ -154,7 +154,7 @@ python3 -m model.stream.replay_pipeline \
 python3 -m model.stream.replay_pipeline --reset-output --generate-events --replay-user-id 28 --limit-events 5 --speed 100 --refit-min-events 3 --assign-trigger-count 3 --outlier-trigger-count 3 --min-cluster-size 2 --cluster-dim 3 --cluster-backend cpu --skip-refit --recommend --recommend-top-k 20 --run-id trace_replay_with_recommend
 
 # 2-12. replay runtime DB 병목/상태 report
-python3 -m model.stream.runtime_report --db outputs/stream/replay_demo/replay.sqlite --top-events 10
+python3 -m model.stream.runtime_report --db outputs/post/replay_demo/replay.sqlite --top-events 10
 
 # 3. 클러스터링 (배치, 전체 유저)
 python3 -m model.batch.cluster
@@ -198,7 +198,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 - `python3 -m model.batch.extract_canonical`, `python3 -m model.batch.cluster`, `python3 -m model.batch.recommend`, `python3 -m model.stream.recommend_online`은 `--run-id`가 없으면 `outputs/latest_model_run_id.txt`의 run id를 이어받는다.
 - `python3 -m model.stream.replay_pipeline`은 `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, 선택적 `stream_recommendations.jsonl` metadata를 run별 manifest/metrics에 기록한다.
 - Temporal cutoff run은 `--max-rated-at-exclusive`와 `--start-rated-at`를 같은 T로 맞추고, 모델 관련 산출물은 `outputs/pre/<run_label>/` 아래에 두는 것을 권장한다. 기존 루트 산출물은 default/legacy 호환 경로다.
-- run별 메타데이터는 `experiments/model/<run_id>/` 아래에 저장된다.
+- run별 메타데이터는 로컬 `experiments/model/<run_id>/` 아래에 저장되며 git 추적 대상이 아니다.
 - `manifest.json`에는 command, git 상태, 입력 파일 metadata, 스키마 버전, config, 출력 ref를 기록한다.
 - `metrics.jsonl`에는 epoch별 학습 지표와 extract/cluster/refit/recommend/replay summary를 append한다.
 - `notes.md`는 사람이 run 목적, 이전 run 대비 차이, 관찰 내용을 적는 파일이다.
@@ -212,7 +212,7 @@ python3 -m model.batch.visualize_clusters --user-id 28  # 특정 유저만
 
 1. 현재 공식 구조와 실행 경로: `PROJECT_GUIDE.md`, `model/README.md`
 2. 구조 변경과 모델링 판단 이유: `docs/decisions/`
-3. 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: `experiments/model/<run_id>/`
+3. 실험별 config, metric, 산출물 참조, 이전 run 대비 관찰: 로컬 `experiments/model/<run_id>/`
 4. 특정 파일의 과거 코드: git history
 
 ```bash
@@ -250,7 +250,7 @@ git diff <old_commit>..<new_commit> -- model/
 | cluster_refit: cluster_backend | `auto` | cuML/CUDA runtime 사용 가능 시 GPU, 아니면 CPU fallback |
 | cluster_refit: refit_min_events | 20 | refit 실행 최소 active embedding 수 |
 | cluster_refit: min_cluster_size | 10 | HDBSCAN 최소 클러스터 크기 |
-| replay: output_root | `outputs/stream/replay_demo` | trace replay 산출물 격리 경로 |
+| replay: output_root | `outputs/post/replay_demo` | trace replay 산출물 격리 경로 |
 | replay: speed | 1.0 | trace timestamp를 wall-clock으로 압축하는 배속. `100`이면 trace 100초가 실제 1초 |
 | recommend: top_k | 20 | batch/stream recommendation 기본 후보 수 |
 | recommend: normalize | false | 기본 raw dot product 사용. true면 cosine-normalized dot product 사용 |
@@ -292,23 +292,23 @@ git diff <old_commit>..<new_commit> -- model/
 | `outputs/stream/refit_requests.jsonl` | Phase 4-1 이후 refit backend가 소비할 open refit request log |
 | `outputs/stream/refit_events.jsonl` | refit request 소비/skip/close 결과 log |
 | `outputs/stream/stream_recommendations.jsonl` | `stream/recommend_online.py` 단독 실행 추천 결과 |
-| `outputs/stream/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
-| `outputs/stream/replay_demo/ingress_events.jsonl` | trace scheduler가 event를 emit한 시각과 `scheduledAt`/`injectorLagSec` log |
-| `outputs/stream/replay_demo/replay_events.jsonl` | event-level replay progress, processing latency, lag, assignment/refit count log |
-| `outputs/stream/replay_demo/replay.sqlite` | SQLite runtime/state store. run/event/stage/user/interest/refit/active embedding cache 기록 |
-| `outputs/stream/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint. `paths.replayDb` 포함 |
-| `outputs/stream/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding debug/export. 기본값은 생성하지 않으며 `--export-online-embeddings-npz` 사용 시 생성 |
-| `outputs/stream/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
-| `outputs/stream/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
-| `outputs/stream/replay_demo/refit_events.jsonl` | replay run의 refit close/skip 결과 log |
-| `outputs/stream/replay_demo/stream_recommendations.jsonl` | `replay_pipeline --recommend` 실행 시 replay scope에 append되는 추천 결과 |
+| `outputs/post/replay_demo/replay_input_events.jsonl` | C++ replay generator가 만든 timestamp-sorted rating event stream |
+| `outputs/post/replay_demo/ingress_events.jsonl` | trace scheduler가 event를 emit한 시각과 `scheduledAt`/`injectorLagSec` log |
+| `outputs/post/replay_demo/replay_events.jsonl` | event-level replay progress, processing latency, lag, assignment/refit count log |
+| `outputs/post/replay_demo/replay.sqlite` | SQLite runtime/state store. run/event/stage/user/interest/refit/active embedding cache 기록 |
+| `outputs/post/replay_demo/replay_summary.json` | dashboard가 읽는 trace replay run summary entrypoint. `paths.replayDb` 포함 |
+| `outputs/post/replay_demo/online_embeddings.npz` | replay run의 active positive online embedding debug/export. 기본값은 생성하지 않으며 `--export-online-embeddings-npz` 사용 시 생성 |
+| `outputs/post/replay_demo/interest_assignments.jsonl` | replay run의 assignment/pending/outlier 결과 log |
+| `outputs/post/replay_demo/refit_requests.jsonl` | replay run의 refit request log |
+| `outputs/post/replay_demo/refit_events.jsonl` | replay run의 refit close/skip 결과 log |
+| `outputs/post/replay_demo/stream_recommendations.jsonl` | `replay_pipeline --recommend` 실행 시 replay scope에 append되는 추천 결과 |
 | `outputs/embeddings.npz` | 삭제된 overlap-window extract entrypoint가 만들던 legacy 산출물. 현재 공식 경로는 `canonical_embeddings.npz` |
 | `outputs/embeddings.npy` | 이전 추출 워크플로우에서 남은 legacy 산출물 |
 | `outputs/viz/user{id}.png` | 유저별 클러스터 변화 시각화 |
 | `outputs/logs/*.log` | 로컬 스크립트별 실행 로그. git 추적 제외 |
-| `experiments/model/<run_id>/manifest.json` | run별 config, git 상태, 입력/출력 metadata |
-| `experiments/model/<run_id>/metrics.jsonl` | run별 metric 기록 |
-| `experiments/model/<run_id>/notes.md` | run별 해석 메모 |
+| `experiments/model/<run_id>/manifest.json` | 로컬 run별 config, git 상태, 입력/출력 metadata. git 추적 제외 |
+| `experiments/model/<run_id>/metrics.jsonl` | 로컬 run별 metric 기록. git 추적 제외 |
+| `experiments/model/<run_id>/notes.md` | 로컬 run별 해석 메모. git 추적 제외 |
 
 ---
 

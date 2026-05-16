@@ -13,7 +13,7 @@ make -C replay
 ```bash
 replay/bin/rating_replay \
   --input data/ratings_drop_processed.jsonl \
-  --output outputs/stream/replay_demo/replay_input_events.jsonl \
+  --output outputs/post/replay_demo/replay_input_events.jsonl \
   --user-id 28 \
   --limit-events 100
 ```
@@ -25,8 +25,8 @@ The generated JSONL follows `docs/streaming-replay-dashboard-contract.md`.
 ```bash
 .venv/bin/python -m model.stream.replay_pipeline \
   --run-id trace_replay_smoke \
-  --input-events outputs/stream/replay_demo/replay_input_events.jsonl \
-  --output-root outputs/stream/replay_demo \
+  --input-events outputs/post/replay_demo/replay_input_events.jsonl \
+  --output-root outputs/post/replay_demo \
   --speed 100
 ```
 
@@ -36,9 +36,9 @@ The runner replays each event according to:
 scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / speed
 ```
 
-It writes emitted ingress events, replay progress, lag/throughput summary, and stream artifacts under `outputs/stream/replay_demo/`.
+It writes emitted ingress events, replay progress, lag/throughput summary, and replay artifacts under `outputs/post/replay_demo/`.
 
-Add `--recommend` to run online recommendation after each emitted event. Recommendation rows are appended to `outputs/stream/replay_demo/stream_recommendations.jsonl` and exposed through the replay summary `paths`.
+Add `--recommend` to run online recommendation after each emitted event. Recommendation rows are appended to `outputs/post/replay_demo/stream_recommendations.jsonl` and exposed through the replay summary `paths`.
 
 For temporal E2E runs, generate only post-cutoff events and lazy-load replay state from the pre-cutoff SQLite seed store:
 

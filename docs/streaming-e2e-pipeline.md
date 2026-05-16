@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle, post replay active online embedding cache는 `outputs/stream/replay_demo/replay.sqlite`에 기록한다. JSONL/JSON artifact는 fallback/debug로 유지하고, post replay의 `online_embeddings.npz`는 `--export-online-embeddings-npz`를 줄 때만 생성하는 debug/export 산출물이다.
+2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle, post replay active online embedding cache는 `outputs/post/replay_demo/replay.sqlite`에 기록한다. JSONL/JSON artifact는 fallback/debug로 유지하고, post replay의 `online_embeddings.npz`는 `--export-online-embeddings-npz`를 줄 때만 생성하는 debug/export 산출물이다.
 
 검증 command:
 
@@ -135,6 +135,12 @@ Post-T seeded replay:
 
 `seed_pre_t_state`는 `state.sqlite`의 compressed `user_states` payload를 T 직전 상태로 만들고, 같은 DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. pre seed DB는 replay 시작점 복원용이므로 `user_raw_events`, `user_positive_events` row를 펼쳐 저장하지 않는다. post-T replay는 이 DB를 복사하지 않는다. 각 stream stage가 post `replay.sqlite`에서 state를 먼저 찾고, 없으면 pre `state.sqlite`에서 lazy-load한 뒤 touched user만 post DB에 기록한다.
 
+### Temporal Verification Boundary
+
+이 runbook은 temporal cutoff와 artifact 경로 계약의 정본이다. 현재 문서화된 구현 smoke는 cutoff helper, CLI option, SQLite seed fallback, interest processed marker, replay/runtime store 경로를 확인한 상태다. 다만 full temporal chain인 pre-T train -> canonical extract -> cluster -> seed state -> post-T seeded replay는 실행 환경과 시간이 필요하므로 별도 run으로 검증해야 한다.
+
+`outputs/pre/temporal_2022/`나 `outputs/post/temporal_2022_*` 아래 기존 로컬 artifact는 freshness가 섞여 있을 수 있다. 새 결과를 인용하거나 공유할 때는 새 `--run-id`와 새 output root를 쓰고, 대표 결론만 `docs/`에 요약한다.
+
 ## Minimum Runbook
 
 필수 입력:
@@ -154,7 +160,7 @@ make -C replay
 작은 smoke는 위 Current Status command를 그대로 실행한다. 모든 trace replay 산출물은 아래 경로로 격리된다.
 
 ```text
-outputs/stream/replay_demo/
+outputs/post/replay_demo/
 ```
 
 기본 stream 산출물인 `outputs/stream/online_embeddings.npz`와 state DB/legacy state directory를 덮어쓰지 않는다.
@@ -163,7 +169,7 @@ Replay가 끝난 뒤 runtime/control-plane 상태는 SQLite report로 바로 요
 
 ```bash
 .venv/bin/python -m model.stream.runtime_report \
-  --db outputs/stream/replay_demo/replay.sqlite \
+  --db outputs/post/replay_demo/replay.sqlite \
   --top-events 10
 ```
 
@@ -211,7 +217,7 @@ Input:
 
 Output:
 
-- `outputs/stream/replay_demo/replay_input_events.jsonl`
+- `outputs/post/replay_demo/replay_input_events.jsonl`
 
 한 줄은 replay할 rating event 하나다.
 
@@ -243,7 +249,7 @@ Input:
 
 Emit log:
 
-- `outputs/stream/replay_demo/ingress_events.jsonl`
+- `outputs/post/replay_demo/ingress_events.jsonl`
 
 각 input event는 아래 schedule 기준으로 emitted 된다.
 
@@ -476,7 +482,7 @@ Output:
   "throughputEventsPerSec": 0.158,
   "refitBackend": "auto",
   "paths": {
-    "replayDb": "outputs/stream/replay_demo/replay.sqlite"
+    "replayDb": "outputs/post/replay_demo/replay.sqlite"
   },
   "totals": {
     "activeEmbeddingRows": 10,
@@ -563,5 +569,5 @@ dashboard를 바꿀 때:
 - 현재 smoke는 user 28, 5 events 기준의 작은 trace-clock 검증이다.
 - `u_k` 기반 추천 scoring은 `stream/recommend_online.py`와 `replay_pipeline --recommend`로 가능하다. 다만 Recall@K/NDCG@K 같은 offline evaluation은 아직 없다.
 - replay는 event마다 full active snapshot을 다시 assign/refit 후보로 읽으므로 `already_processed` record가 정상적으로 생긴다.
-- `outputs/stream/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/stream/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
+- `outputs/post/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/post/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
 - GPU backend는 환경 의존적이다. `auto`를 쓰면 가능한 경우 GPU를 쓰고, 현재 로컬처럼 CUDA runtime이 맞지 않으면 CPU fallback으로 진행한다.

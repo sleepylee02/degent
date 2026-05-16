@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         description="Replay timestamp-sorted rating events with an N-speed trace clock."
     )
     parser.add_argument("--run-id", type=str, default=None)
-    parser.add_argument("--output-root", type=Path, default=Path("outputs/stream/replay_demo"))
+    parser.add_argument("--output-root", type=Path, default=Path("outputs/post/replay_demo"))
     parser.add_argument("--input-events", type=Path, default=None)
     parser.add_argument(
         "--runtime-db",
