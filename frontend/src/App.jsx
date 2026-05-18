@@ -1,21 +1,34 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { fetchUserIds, fetchTimeline, fetchFrame } from './api';
 import KTimeline from './components/KTimeline';
 import ClusterView from './components/ClusterView';
 import Recommendations from './components/Recommendations';
+import PerfOverlay from './components/PerfOverlay';
+import { usePerf } from './hooks/usePerf';
 import './App.css';
 
+const PREFETCH_AHEAD = 3; // number of frames to prefetch during playback
+
+const MemoKTimeline      = memo(KTimeline);
+const MemoClusterView    = memo(ClusterView);
+const MemoRecommendations = memo(Recommendations);
+
 export default function App() {
-  const [userIds, setUserIds]         = useState([]);
-  const [userId, setUserId]           = useState(null);
-  const [timeline, setTimeline]       = useState([]);
-  const [sliderIdx, setSliderIdx]     = useState(0); // slider UI position (no API call)
-  const [appliedIdx, setAppliedIdx]   = useState(0); // committed index → triggers API fetch
-  const [frame, setFrame]             = useState(null);
-  const [playing, setPlaying]         = useState(false);
-  const [speed, setSpeed]             = useState(600);
-  const intervalRef = useRef(null);
-  const frameAbort  = useRef(null);
+  const [userIds, setUserIds]       = useState([]);
+  const [userId, setUserId]         = useState(null);
+  const [timeline, setTimeline]     = useState([]);
+  const [sliderIdx, setSliderIdx]   = useState(0);
+  const [appliedIdx, setAppliedIdx] = useState(0);
+  const [frame, setFrame]           = useState(null);
+  const [playing, setPlaying]       = useState(false);
+  const [speed, setSpeed]           = useState(600);
+  const [perfVisible, setPerfVisible] = useState(false);
+
+  const intervalRef  = useRef(null);
+  const frameAbort   = useRef(null);
+  const cache        = useRef(new Map()); // event_id → frame
+
+  const { record, renderRef, stats } = usePerf();
 
   // Load user list on mount
   useEffect(() => {
@@ -26,9 +39,10 @@ export default function App() {
     return () => ac.abort();
   }, []);
 
-  // Load timeline when user changes
+  // Load timeline when user changes — clear cache
   useEffect(() => {
     if (userId == null) return;
+    cache.current.clear();
     setTimeline([]);
     setSliderIdx(0);
     setAppliedIdx(0);
@@ -41,18 +55,41 @@ export default function App() {
     return () => ac.abort();
   }, [userId]);
 
-  // Load frame only when appliedIdx is committed
-  useEffect(() => {
-    const row = timeline[appliedIdx];
-    if (!row || userId == null) return;
+  // Fetch frame for appliedIdx, with cache
+  const loadFrame = useCallback(async (idx, tl, uid) => {
+    const row = tl[idx];
+    if (!row || uid == null) return;
     if (frameAbort.current) frameAbort.current.abort();
     frameAbort.current = new AbortController();
-    fetchFrame(userId, row.event_id, frameAbort.current.signal)
-      .then(setFrame)
-      .catch(() => {});
-  }, [userId, timeline, appliedIdx]);
+    const sig = frameAbort.current.signal;
 
-  // Playback — advances both slider and applied together
+    const cached = cache.current.has(row.event_id);
+    const result = await record(
+      () => cached
+        ? Promise.resolve(cache.current.get(row.event_id))
+        : fetchFrame(uid, row.event_id, sig),
+      { cached }
+    );
+    if (!cached) cache.current.set(row.event_id, result);
+    setFrame(result);
+  }, [record]);
+
+  useEffect(() => {
+    loadFrame(appliedIdx, timeline, userId).catch(() => {});
+  }, [appliedIdx, timeline, userId, loadFrame]);
+
+  // Prefetch next N frames whenever appliedIdx advances
+  useEffect(() => {
+    for (let i = appliedIdx + 1; i <= appliedIdx + PREFETCH_AHEAD; i++) {
+      const row = timeline[i];
+      if (!row || cache.current.has(row.event_id)) continue;
+      fetchFrame(userId, row.event_id)
+        .then(f => cache.current.set(row.event_id, f))
+        .catch(() => {});
+    }
+  }, [appliedIdx, timeline, userId]);
+
+  // Playback
   useEffect(() => {
     if (!playing) { clearInterval(intervalRef.current); return; }
     intervalRef.current = setInterval(() => {
@@ -69,14 +106,18 @@ export default function App() {
   const togglePlay = () => setPlaying(p => !p);
 
   const eventData = timeline[sliderIdx] ?? null;
-  const points    = frame?.visualization?.points_data ?? [];
-  const clusters  = frame?.clusters ?? [];
-  const recs      = frame?.recommendations ?? [];
+
+  const points   = useMemo(() => frame?.visualization?.points_data ?? [], [frame]);
+  const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
+  const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 6), [frame]);
 
   return (
     <div className="dashboard">
       <header className="dash-header">
-        <h1>Replay Dashboard</h1>
+        <div className="dash-header__top">
+          <h1>Replay Dashboard</h1>
+          <PerfOverlay stats={stats} visible={perfVisible} onToggle={() => setPerfVisible(v => !v)} />
+        </div>
 
         <div className="user-selector">
           <label>User</label>
@@ -111,9 +152,7 @@ export default function App() {
             onKeyUp={e => setAppliedIdx(Number(e.currentTarget.value))}
             disabled={!timeline.length}
           />
-          <span className="event-label">
-            {eventData ? `#${eventData.event_id}` : '—'}
-          </span>
+          <span className="event-label">{eventData ? `#${eventData.event_id}` : '—'}</span>
           {eventData && (
             <span className="event-meta">
               {new Date(eventData.timestamp).toLocaleDateString('ko-KR')}
@@ -125,16 +164,21 @@ export default function App() {
       </header>
 
       <div className="grid-full">
-        <KTimeline
+        <MemoKTimeline
           timeline={timeline}
           selectedIdx={eventData?.event_id}
-          onSelect={id => { setPlaying(false); const i = timeline.findIndex(r => r.event_id === id); setSliderIdx(i); setAppliedIdx(i); }}
+          onSelect={id => {
+            setPlaying(false);
+            const i = timeline.findIndex(r => r.event_id === id);
+            setSliderIdx(i);
+            setAppliedIdx(i);
+          }}
         />
       </div>
 
-      <div className="grid-main">
-        <ClusterView points={points} clusterInfo={clusters} eventData={eventData} />
-        <Recommendations recs={recs.slice(0, 6)} />
+      <div className="grid-main" ref={renderRef}>
+        <MemoClusterView points={points} clusterInfo={clusters} eventData={eventData} />
+        <MemoRecommendations recs={recs} />
       </div>
     </div>
   );

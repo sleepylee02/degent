@@ -27,12 +27,58 @@ body {
 
 .dash-header { margin-bottom: 20px; }
 
+.dash-header__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
 .dash-header h1 {
   font-size: 20px;
   font-weight: 600;
-  margin: 0 0 12px;
+  margin: 0;
   color: var(--text);
 }
+
+/* ── Perf overlay ──────────────────────────────────────────── */
+.perf-toggle-wrap { position: relative; }
+
+.perf-toggle {
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.perf-toggle:hover { color: var(--text); }
+
+.perf-overlay {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #12141c;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-width: 220px;
+  z-index: 100;
+  font-size: 11px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.perf-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.perf-label { color: var(--text-muted); width: 46px; flex-shrink: 0; }
+.perf-value { font-weight: 700; color: var(--accent); }
+.perf-avg   { color: var(--text-muted); }
 
 .user-selector {
   display: flex;

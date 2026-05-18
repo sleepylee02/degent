@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const PALETTE = ['#a78bfa', '#34d399', '#fb923c', '#60a5fa', '#f472b6', '#facc15'];
@@ -15,14 +16,12 @@ function CustomTooltip({ active, payload }) {
 }
 
 export default function ClusterView({ points, clusterInfo, eventData }) {
-  const grouped = {};
-  grouped[-1] = [];
-  clusterInfo.forEach(c => { grouped[c.cluster_id] = []; });
-
-  points.forEach(p => {
-    if (grouped[p.c] !== undefined) grouped[p.c].push(p);
-    else grouped[-1].push(p);
-  });
+  const grouped = useMemo(() => {
+    const g = { [-1]: [] };
+    clusterInfo.forEach(c => { g[c.cluster_id] = []; });
+    points.forEach(p => (g[p.c] !== undefined ? g[p.c] : g[-1]).push(p));
+    return g;
+  }, [points, clusterInfo]);
 
   return (
     <div className="panel">
