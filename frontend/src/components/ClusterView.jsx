@@ -1,5 +1,8 @@
 import { useMemo } from 'react';
-import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const DOT_R = 3; // px — change this to resize all dots
+const Dot = ({ cx, cy, fill, opacity }) => <circle cx={cx} cy={cy} r={DOT_R} fill={fill} opacity={opacity ?? 1} />;
 
 const PALETTE = ['#a78bfa', '#34d399', '#fb923c', '#60a5fa', '#f472b6', '#facc15'];
 const NOISE_COLOR = '#4b5563';
@@ -39,16 +42,16 @@ export default function ClusterView({ points, clusterInfo, eventData }) {
           <CartesianGrid strokeDasharray="3 3" stroke="#2e303a" />
           <XAxis type="number" dataKey="x" name="x" tick={{ fontSize: 10 }} />
           <YAxis type="number" dataKey="y" name="y" tick={{ fontSize: 10 }} />
-          <ZAxis range={[12, 12]} />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
-          <Scatter name={`Noise (${grouped[-1].length})`} data={grouped[-1]} fill={NOISE_COLOR} opacity={0.4} />
+          <Scatter name={`Noise (${grouped[-1].length})`} data={grouped[-1]} fill={NOISE_COLOR} opacity={0.4} shape={<Dot />} />
           {clusterInfo.map((c, i) => (
             <Scatter
               key={c.cluster_id}
               name={`C${c.cluster_id} (${c.size})`}
               data={grouped[c.cluster_id] || []}
               fill={PALETTE[i % PALETTE.length]}
+              shape={<Dot />}
             />
           ))}
         </ScatterChart>
