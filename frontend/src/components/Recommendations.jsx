@@ -46,7 +46,7 @@ function MovieCard({ rec }) {
 export default function Recommendations({ recs }) {
   return (
     <div className="panel panel--recs">
-      <h2>Recommendation panel</h2>
+      <h2>추천 영화</h2>
       <div className="movie-grid">
         {recs.map(r => <MovieCard key={r.rank} rec={r} />)}
       </div>
