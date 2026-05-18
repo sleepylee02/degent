@@ -78,3 +78,5 @@ outputs/stream/*
 !outputs/logs/
 outputs/logs/**
 !outputs/logs/.gitkeep
+
+data/MLP-20M/**
