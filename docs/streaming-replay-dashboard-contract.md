@@ -1,6 +1,6 @@
 # Streaming Replay/Dashboard Contract
 
-이 문서는 trace-clock replay runner와 dashboard가 공유하는 replay artifact 인터페이스 계약이다. 현재 우선 경로는 SQLite runtime store이며, 기존 JSONL/JSON 파일은 fallback/debug로 유지한다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다.
+이 문서는 trace-clock replay runner와 POST replay dashboard가 공유하는 replay artifact 인터페이스 계약이다. Production runtime store는 replay 실행/복구/리포트용 정본이고, dashboard는 history run에서 생성한 compact projection만 읽는다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다.
 
 ## Version
 
@@ -8,18 +8,24 @@
 
 ## Ownership
 
-- Trace replay owns writes under `outputs/post/replay_demo/`.
-- Dashboard reads `outputs/post/replay_demo/` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
-- When `replay_summary.json` contains `paths.replayDb`, dashboard must prefer SQLite runtime store reads and fall back to JSONL/JSON artifacts only when the DB is absent or unreadable.
-- While a replay is still running, `replay_summary.json` may not exist yet. In that case dashboard may discover sibling `replay.sqlite` directly and synthesize display summary fields from `runs` and runtime table counts without writing to the replay root.
+- Trace replay owns writes under `outputs/post/<run_id>_production/` and `outputs/post/<run_id>_history/`.
+- Dashboard reads `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
+- Dashboard must not read `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, or JSONL debug artifacts as fallback inputs.
+- While a replay is still running, `dashboard_compact/dashboard_compact.sqlite` may not exist yet. In that case the compact dashboard should show an unavailable/empty state rather than reading runtime stores directly.
 - Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
-## Default Root
+## Default Roots
 
-All demo artifacts live under:
+Production-only default artifacts live under:
 
 ```text
-outputs/post/replay_demo/
+outputs/post/<run_id>_production/
+```
+
+History replay artifacts live under:
+
+```text
+outputs/post/<run_id>_history/
 ```
 
 Phase 5 must not overwrite the existing default Phase 3~4-1 artifacts:
@@ -36,26 +42,29 @@ outputs/stream/refit_events.jsonl
 ## Trace Replay Outputs
 
 ```text
-outputs/post/replay_demo/replay_input_events.jsonl
-outputs/post/replay_demo/ingress_events.jsonl
-outputs/post/replay_demo/replay_events.jsonl
-outputs/post/replay_demo/replay.sqlite
-outputs/post/replay_demo/replay_summary.json
-outputs/post/replay_demo/user_states/{user_id}.json
-outputs/post/replay_demo/interest_states/{user_id}.json
-outputs/post/replay_demo/online_embeddings.npz  # optional: --export-online-embeddings-npz
-outputs/post/replay_demo/online_embedding_events.jsonl
-outputs/post/replay_demo/interest_assignments.jsonl
-outputs/post/replay_demo/refit_requests.jsonl
-outputs/post/replay_demo/refit_events.jsonl
-outputs/post/replay_demo/stream_recommendations.jsonl
+outputs/post/<run_id>_production/replay_summary.json
+outputs/post/<run_id>_production/production/production.sqlite
+outputs/post/<run_id>_production/production/replay_input_events.jsonl
+outputs/post/<run_id>_production/production/ingress_events.jsonl
+outputs/post/<run_id>_production/production/replay_events.jsonl
+outputs/post/<run_id>_production/production/online_embeddings.npz  # optional: --export-online-embeddings-npz
+outputs/post/<run_id>_production/production/online_embedding_events.jsonl
+outputs/post/<run_id>_production/production/interest_assignments.jsonl
+outputs/post/<run_id>_production/production/refit_requests.jsonl
+outputs/post/<run_id>_production/production/refit_events.jsonl
+outputs/post/<run_id>_production/production/stream_recommendations.jsonl
+
+outputs/post/<run_id>_history/replay_summary.json
+outputs/post/<run_id>_history/production/production.sqlite
+outputs/post/<run_id>_history/history/history.sqlite
+outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite
 ```
 
 ## SQLite Runtime Store
 
-`replay.sqlite` is the runtime/state/control-plane store for a replay run. Post replay active online embeddings are stored in SQLite `active_embedding_cache`; per-event delta assignment reads `embedding_cache_changes`. Large batch matrices such as canonical embeddings, model checkpoints, and batch outputs remain file-backed. `online_embeddings.npz` is optional debug/export output when `--export-online-embeddings-npz` is passed.
+`production/production.sqlite` is the runtime/state/control-plane store for a replay run. Legacy roots may still expose the same store as `replay.sqlite`. Post replay active online embeddings are stored in SQLite `active_embedding_cache`; per-event delta assignment reads `embedding_cache_changes`. Large batch matrices such as canonical embeddings, model checkpoints, and batch outputs remain file-backed. `online_embeddings.npz` is optional debug/export output when `--export-online-embeddings-npz` is passed.
 
-Dashboard-readable tables:
+Runtime/report-readable tables:
 
 | table | role |
 |---|---|
@@ -198,7 +207,7 @@ Allowed `status` values:
 - `skipped`
 - `failed`
 
-Phase 6 must tolerate missing optional metrics and render available fields.
+Debug/replay-monitor readers should tolerate missing optional metrics and render available fields. The compact POST replay dashboard does not read these JSONL progress fields directly.
 
 Trace replay fields:
 
@@ -214,11 +223,9 @@ Trace replay fields:
 
 ## Replay Summary JSON
 
-`replay_summary.json` is the stable summary entrypoint for Phase 6.
+`replay_summary.json` is the stable summary entrypoint for replay runs and reports. The compact dashboard can use it only to locate `paths.dashboardCompactDb`; the dashboard display itself is driven by `dashboard_compact/dashboard_compact.sqlite`.
 
-For in-progress runs without `replay_summary.json`, dashboard may use `replay.sqlite` as the temporary entrypoint and derive run status, processed/input event counts, elapsed time, and aggregate totals from SQLite. The trace runner still owns the final `replay_summary.json` write at terminal status.
-
-When `paths.replayDb` exists, dashboard must prefer SQLite runtime store reads for replay monitor tables. JSONL files remain fallback/debug artifacts.
+For in-progress runs without compact output, the dashboard should render an unavailable state. It must not temporarily read `production/production.sqlite` or legacy `replay.sqlite`.
 
 Required fields:
 
@@ -257,21 +264,27 @@ Required fields:
     "meanEndToEndLagSec": 19.24
   },
   "paths": {
-    "replayInputEvents": "outputs/post/replay_demo/replay_input_events.jsonl",
-    "ingressEvents": "outputs/post/replay_demo/ingress_events.jsonl",
-    "replayEvents": "outputs/post/replay_demo/replay_events.jsonl",
-    "replayDb": "outputs/post/replay_demo/replay.sqlite",
+    "productionRoot": "outputs/post/trace_replay_smoke_production/production",
+    "historyRoot": "outputs/post/trace_replay_smoke_production/history",
+    "dashboardCompactRoot": "outputs/post/trace_replay_smoke_production/dashboard_compact",
+    "replayInputEvents": "outputs/post/trace_replay_smoke_production/production/replay_input_events.jsonl",
+    "ingressEvents": "outputs/post/trace_replay_smoke_production/production/ingress_events.jsonl",
+    "replayEvents": "outputs/post/trace_replay_smoke_production/production/replay_events.jsonl",
+    "replayDb": "outputs/post/trace_replay_smoke_production/production/production.sqlite",
+    "productionDb": "outputs/post/trace_replay_smoke_production/production/production.sqlite",
+    "historyDb": null,
+    "dashboardCompactDb": null,
     "onlineEmbeddings": null,
-    "interestAssignments": "outputs/post/replay_demo/interest_assignments.jsonl",
-    "refitRequests": "outputs/post/replay_demo/refit_requests.jsonl",
-    "refitEvents": "outputs/post/replay_demo/refit_events.jsonl",
-    "interestStateDir": "outputs/post/replay_demo/interest_states",
-    "streamRecommendations": "outputs/post/replay_demo/stream_recommendations.jsonl"
+    "interestAssignments": "outputs/post/trace_replay_smoke_production/production/interest_assignments.jsonl",
+    "refitRequests": "outputs/post/trace_replay_smoke_production/production/refit_requests.jsonl",
+    "refitEvents": "outputs/post/trace_replay_smoke_production/production/refit_events.jsonl",
+    "interestStateDir": "outputs/post/trace_replay_smoke_production/production/interest_states",
+    "streamRecommendations": "outputs/post/trace_replay_smoke_production/production/stream_recommendations.jsonl"
   }
 }
 ```
 
-Phase 6 should use `paths` from this file when present and fall back to the default paths above. `paths.onlineEmbeddings` may be `null` in the default post replay path.
+Tools should use `paths` from this file when present. `paths.onlineEmbeddings` may be `null` in the default post replay path. The compact dashboard uses `paths.dashboardCompactDb` when available and otherwise lets the user select a compact DB path manually.
 
 ## Stream Recommendations JSONL
 
@@ -298,23 +311,16 @@ Fields currently written per line:
 }
 ```
 
-Phase 6 should tolerate either `movieId` or `recommendedMovieId` as the recommended item field. If the file is absent, recommendation panels should render an empty state without failing the replay monitor.
+Legacy/debug readers should tolerate either `movieId` or `recommendedMovieId` as the recommended item field. The compact dashboard does not read this JSONL file; it reads the compact `recommendations` table.
 
-## Phase 6 Read Scope
+## Compact Dashboard Read Scope
 
-Phase 6 may read:
+The POST replay dashboard may read:
 
-- `replay.sqlite`
-- `replay_summary.json`
-- `ingress_events.jsonl`
-- `replay_events.jsonl`
-- `interest_assignments.jsonl`
-- `refit_requests.jsonl`
-- `refit_events.jsonl`
-- `interest_states/{user_id}.json`
-- `stream_recommendations.jsonl`
+- `dashboard_compact/dashboard_compact.sqlite`
+- optional `replay_summary.json` only for discovering `paths.dashboardCompactDb`
 
-Phase 6 must not mutate these files.
+The dashboard must not mutate these files. It must not read production/history/runtime/debug artifacts as display fallbacks.
 
 ## Non-Goals
 

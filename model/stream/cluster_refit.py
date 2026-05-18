@@ -11,7 +11,6 @@ import model.stream.runtime_store as runtime_store
 from model.common.cluster import (
     choose_backend,
     cluster_with_fallback,
-    compute_interest_vectors,
     top_genres_for_cluster,
 )
 from model.common.runtime import (
@@ -126,16 +125,18 @@ def labels_to_interest_vectors(
     movie_ids: np.ndarray | None = None,
     genre_map_idx: dict[int, list[int]] | None = None,
     all_genres: list[str] | None = None,
-) -> tuple[list[Interest], dict[str, Any]]:
+) -> tuple[list[Interest], dict[str, Any], dict[int, int]]:
     labels = labels.astype(np.int64)
     unique_clusters = sorted(set(labels.tolist()) - {-1})
+    label_to_interest_id = {int(cluster_id): int(idx) for idx, cluster_id in enumerate(unique_clusters)}
     timestamp = local_timestamp()
 
     interests: list[Interest] = []
     cluster_sizes: dict[int, int] = {}
     has_genre_info = movie_ids is not None and genre_map_idx is not None and all_genres is not None
 
-    for new_interest_id, cluster_id in enumerate(unique_clusters):
+    for cluster_id in unique_clusters:
+        new_interest_id = label_to_interest_id[int(cluster_id)]
         mask = labels == cluster_id
         cluster_sizes[int(cluster_id)] = int(mask.sum())
         vector = embeddings[mask].mean(axis=0).astype(float).tolist()
@@ -178,7 +179,7 @@ def labels_to_interest_vectors(
         "labelCounts": label_counts,
         "clusterSizes": {str(key): value for key, value in cluster_sizes.items()},
     }
-    return interests, summary
+    return interests, summary, label_to_interest_id
 
 
 def run_refit(
@@ -194,7 +195,7 @@ def run_refit(
     genre_map_idx: dict[int, list[int]] | None = None,
     all_genres: list[str] | None = None,
     logger: Any,
-) -> tuple[list[Interest], dict[str, Any], str, str | None]:
+) -> tuple[list[Interest], dict[str, Any], str, str | None, dict[str, Any]]:
     result, actual_backend, actual_fallback = cluster_with_fallback(
         embeddings,
         requested_backend=requested_backend,
@@ -205,7 +206,7 @@ def run_refit(
         random_state=random_state,
         logger=logger,
     )
-    interests, summary = labels_to_interest_vectors(
+    interests, summary, label_to_interest_id = labels_to_interest_vectors(
         embeddings, result.labels,
         backend=actual_backend,
         movie_ids=movie_ids,
@@ -217,7 +218,12 @@ def run_refit(
         "nNeighbors": result.n_neighbors,
         **({"autoFallbackReason": actual_fallback} if actual_fallback != fallback_reason else {}),
     })
-    return interests, summary, actual_backend, actual_fallback
+    detail = {
+        "labels": result.labels,
+        "zCluster": result.z_cluster,
+        "labelToInterestId": label_to_interest_id,
+    }
+    return interests, summary, actual_backend, actual_fallback, detail
 
 
 def update_state_after_refit(
@@ -454,7 +460,7 @@ if __name__ == "__main__":
             active_raw_event_ids = [int(row["rawEventId"]) for row in user_rows]
             user_movie_ids = np.array([int(row["movieId"]) for row in user_rows], dtype=np.int64)
             user_start = time.time()
-            interests, cluster_summary, actual_backend, actual_fallback_reason = run_refit(
+            interests, cluster_summary, actual_backend, actual_fallback_reason, _refit_detail = run_refit(
                 user_embeddings,
                 requested_backend=args.cluster_backend,
                 selected_backend=selected_backend,

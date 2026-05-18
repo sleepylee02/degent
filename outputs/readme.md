@@ -28,18 +28,14 @@ Standalone streaming 산출물은 `outputs/stream/` 아래에 둔다. `--runtime
 - `outputs/stream/refit_events.jsonl`: triggered refit backend의 close/skip 결과 로그
 - `outputs/stream/stream_recommendations.jsonl`: `model.stream.recommend_online`이 append하는 top-K 추천 결과 로그
 
-Streaming trace replay demo 산출물은 기본적으로 `outputs/stream/replay_demo/` 아래에 격리한다. Temporal post-T replay는 `outputs/post/<run_label>_events_<N>/`, `outputs/post/<run_label>_events_<N>_recommend/`, `outputs/post/<run_label>_full/` 같은 별도 output root를 사용한다. 두 경로 모두 같은 파일 계약을 따른다.
+Post-T trace replay 신규 산출물은 mode별 root를 분리한다.
 
-- `<replay_output_root>/replay_input_events.jsonl`: timestamp-sorted replay input event stream
-- `<replay_output_root>/replay.sqlite`: replay-scoped runtime/state/control-plane store. event progress, stage attempts, touched user/interest payload, assignment, refit lifecycle, recommendation metadata, embedding snapshot index를 기록
-- `<replay_output_root>/ingress_events.jsonl`: trace-clock event emit schedule/lag 로그
-- `<replay_output_root>/replay_events.jsonl`: event-level replay progress, processing/end-to-end lag, assignment/refit count 로그
-- `<replay_output_root>/replay_summary.json`: dashboard stable entrypoint. speed, trace span, scheduled span, target/actual throughput을 포함
-- `<replay_output_root>/online_embeddings.npz`: replay-scoped active online embeddings
-- `<replay_output_root>/online_embedding_events.jsonl`: replay-scoped online ingest/extract 실행 요약 로그
-- `<replay_output_root>/interest_assignments.jsonl`: replay-scoped assignment/pending/outlier 결과 로그
-- `<replay_output_root>/refit_requests.jsonl`: replay-scoped refit 요청 로그
-- `<replay_output_root>/refit_events.jsonl`: replay-scoped refit close/skip 결과 로그
-- `<replay_output_root>/stream_recommendations.jsonl`: `replay_pipeline --recommend` 사용 시 replay-scoped top-K 추천 결과 로그
+- `outputs/post/<run_id>_production/replay_summary.json`: production-only run summary
+- `outputs/post/<run_id>_production/production/production.sqlite`: clean production runtime/current-state store
+- `outputs/post/<run_id>_production/production/*.jsonl`: replay input, ingress/progress, assignment/refit/recommendation debug logs
+- `outputs/post/<run_id>_history/replay_summary.json`: history run summary
+- `outputs/post/<run_id>_history/production/production.sqlite`: history run 내부의 production current-state store
+- `outputs/post/<run_id>_history/history/history.sqlite`: append-only event/state-version history store
+- `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`: history DB에서 만든 dashboard용 compact projection
 
-Replay dashboard는 `replay_summary.json`의 `paths.replayDb`가 있으면 SQLite를 우선 읽고, 기존 JSONL/JSON 파일은 fallback/debug 경로로 사용한다. 위 파일을 읽기만 하며 생성/수정/삭제하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+기존 `outputs/post/<run_label>_events_<N>/`, `outputs/post/<run_label>_full/`, root-level `replay.sqlite` 계약은 legacy/default 호환 경로로 유지한다. Replay dashboard는 `replay_summary.json`의 `paths.replayDb`/`paths.productionDb`가 있으면 SQLite를 우선 읽고, 기존 JSONL/JSON 파일은 fallback/debug 경로로 사용한다. 위 파일을 읽기만 하며 생성/수정/삭제하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
