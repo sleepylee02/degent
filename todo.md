@@ -2,12 +2,6 @@
 
 ## Active
 
-- POST Replay Flow History
-  - owner: sleepylee / LLM
-  - plan: `plan/active/post_replay_flow_history.md`
-  - files: `docs/post-replay-output-areas.md`, `docs/streaming-replay-dashboard-contract.md`, `docs/artifacts.md`, `docs/data-flow.md`, `outputs/readme.md`, `PROJECT_GUIDE.md`, `model/stream/runtime_store.py`, `model/stream/history_store.py`, `model/stream/cluster_refit.py`, `model/stream/compact_dashboard.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `model/README.md`, `todo.md`
-  - status: production/history/compact artifact 생성 구현은 대부분 완료. `runtime_store.py`는 production store, `history_store.py`는 append-only history, `compact_dashboard.py`는 compact projection으로 분리했다. py_compile, CLI help, synthetic history/compact smoke, `git diff --check` 통과. `outputs/pre/temporal_2022` artifacts로 2-event history-mode replay smoke(`post_history_real_smoke`)도 완료. 남은 작업은 100~1000 event production/history E2E 비교 run뿐이다.
-
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM
   - files: `model/IMPLEMENTATION_STATUS.md`, `model/README.md`, `PROJECT_GUIDE.md`
@@ -26,6 +20,12 @@
   - status: 현재 작업 방향에서는 별도 train/canonical/cluster/state seed 재현 plan을 active로 유지하지 않는다. 이미 존재하는 `outputs/pre/temporal_2022` artifact를 사용해 POST replay history/dashboard 작업을 진행한다.
 
 ## Done
+
+- POST Replay Flow History
+  - owner: sleepylee / LLM
+  - plan: `plan/done/post_replay_flow_history.md`
+  - files: `docs/post-replay-output-areas.md`, `docs/streaming-replay-dashboard-contract.md`, `docs/artifacts.md`, `docs/data-flow.md`, `outputs/readme.md`, `PROJECT_GUIDE.md`, `model/stream/runtime_store.py`, `model/stream/history_store.py`, `model/stream/cluster_refit.py`, `model/stream/compact_dashboard.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `model/README.md`, `todo.md`
+  - status: production/history/compact artifact 생성 구현과 3000-event production/history E2E 검증 완료. `temporal_2022_events_3000_new_versions_production`과 `temporal_2022_events_3000_new_versions_history` 모두 3000/3000 events completed, stage 실패 0, refit 274 closed / 5 skipped, recommendation rows 54,460 확인. History run의 compact DB는 dashboard 필수 table 4개와 timeline 3000 rows, visualization states 3000 rows를 제공하고 Streamlit dashboard reader/server smoke를 통과했다.
 
 - POST Replay Compact Dashboard
   - owner: sleepylee / LLM
