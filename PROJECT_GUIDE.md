@@ -134,8 +134,9 @@ degent/
 ### 대시보드
 - 대시보드 코드는 `dashboard/` 아래에 둔다.
 - 시각화용 입력 산출물은 스크립트로 재생성 가능해야 하며, 원본 데이터처럼 수동 편집하지 않는다.
-- batch cluster 결과를 dashboard에 연결할 때는 `python3 -m model.batch.export_clusters`로 `outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet` 등 테이블 포맷으로 변환한다.
-- Dashboard는 `PRE Cluster`, `PRE Seed State`, `POST Replay`, `POST Interest State` view로 pre/post 산출물을 분리해 읽는다. `PRE Cluster`는 `outputs/pre/**/user_interests.npz`, `PRE Seed State`는 `outputs/pre/**/pre_summary.json`과 `state.sqlite`, post view는 `outputs/post/**/replay_summary.json`과 summary `paths.replayDb`/`paths.productionDb`를 자동 탐색한다. 신규 history run은 `dashboard_compact/dashboard_compact.sqlite`를 추가로 만들 수 있지만, dashboard UI/reader 변경은 별도 작업으로 다룬다. Dashboard는 replay/stream state를 생성하거나 수정하지 않는다. Temporal post-T 신규 run은 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/`처럼 mode가 드러나는 root를 사용하며, 기존 `outputs/post/<run_label>_events_<N>/` 계열은 legacy/default 호환 root로 유지한다.
+- 현재 공식 POST replay dashboard는 compact-only reader다. 입력은 `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` 하나이며, `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` table만 읽는다.
+- Dashboard는 `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact를 직접 읽지 않는다. Replay/stream state를 생성하거나 수정하지도 않는다.
+- Temporal post-T 신규 run은 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/`처럼 mode가 드러나는 root를 사용하며, 기존 `outputs/post/<run_label>_events_<N>/` 계열은 legacy/default 호환 root로 유지한다.
 - 인터랙티브 시각화를 위한 새 패키지를 추가하면 반드시 `requirements.txt`에 반영한다.
 
 ### 모델 실험

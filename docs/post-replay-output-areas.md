@@ -121,7 +121,7 @@ POST replay flow의 시점 단위는 global clock snapshot이 아니라 user별 
 
 ## Production Store Flow
 
-Production store는 현재 상태와 실행 상태를 빠르게 조회하기 위한 store다. 과거 상태를 완전 복원하는 목적이 아니며, dashboard는 history/compact가 없는 production DB에 대해서 기존 final-state view로 fallback해야 한다.
+Production store는 현재 상태와 실행 상태를 빠르게 조회하기 위한 store다. 과거 상태를 완전 복원하는 목적이 아니며, 현재 공식 POST replay dashboard의 입력도 아니다. Dashboard는 `dashboard_compact/dashboard_compact.sqlite`만 읽고, history/compact가 없는 production DB에 대해서 final-state fallback을 제공하지 않는다.
 
 ```text
 post-T input event
@@ -955,7 +955,7 @@ outputs/post/<run_id>_history/history/history.sqlite
 outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite
 ```
 
-Compact projection은 `dashboard_compact/dashboard_compact.sqlite` 하나로 고정한다. Dashboard가 여러 table을 한 번에 조회하고, legacy/history fallback과 같은 SQLite read path를 공유할 수 있게 하기 위해 별도 Parquet export는 만들지 않는다.
+Compact projection은 `dashboard_compact/dashboard_compact.sqlite` 하나로 고정한다. Dashboard가 여러 table을 한 번에 조회하고 compact-only SQLite read path를 유지할 수 있게 별도 Parquet export는 만들지 않는다.
 
 Compact projection에 넣을 정보는 dashboard가 직접 읽는 최소 schema로 제한한다. Compact schema에서는 `event_idx` 대신 `event_id`로 용어를 통일한다. 기존 구현이나 UI 코드에서 `event_idx`가 필요하면 reader layer에서 alias로 처리한다.
 
@@ -1042,7 +1042,7 @@ Compact projection에서 줄이는 것:
 - repeated unchanged state
 - raw/debug error payload 전문
 
-후속 dashboard 작업에서는 compact projection을 우선 읽고, 없으면 history store를 직접 읽고, history도 없으면 production store final-state view로 fallback하는 reader 정책을 둘 수 있다.
+POST replay dashboard는 compact projection만 읽는다. Compact projection이 없으면 dashboard는 unavailable/empty state를 보여주고, `history/history.sqlite`나 `production/production.sqlite`를 직접 읽지 않는다.
 
 ## Runtime Option
 
@@ -1061,79 +1061,76 @@ Compact projection에서 줄이는 것:
 
 Boolean flag 대신 `--history-mode`로 통일한다. 향후 `debug_full` 같은 모드가 필요하면 같은 옵션의 값을 확장한다.
 
-## Implementation Plan
+## Implementation Status
 
-1. `runtime_store.py`는 production/current-state schema만 소유하고, `history_store.py`에 history schema를 추가한다.
-   - 기존 current/cache table은 변경하지 않는다.
-   - production schema와 history schema init 경로를 파일 단위로 분리한다.
-   - 기존 `replay.sqlite`는 legacy production DB로 계속 읽을 수 있어야 한다.
-   - history table이 없어도 기존 production-only 산출물은 계속 유효해야 한다.
+현재 구현은 아래 책임 분리 기준을 따른다.
 
-2. `history_store.py`에 writer helper를 추가한다.
-   - `record_history_run`
-   - `record_history_run_event`
-   - `record_history_stage_event`
-   - `record_user_state_history`
-   - `record_embedding_change_history`
-   - `record_assignment_decision_history`
-   - `record_user_interest_timeline`
-   - `record_refit_lifecycle_history`
-   - `record_interest_vector_history`
-   - `record_interest_membership_history`
-   - `record_recommendation_history`
-   - `record_recommendation_row_history`
+| file | role |
+|---|---|
+| `runtime_store.py` | production/current-state schema와 writer. History table을 소유하지 않는다. |
+| `history_store.py` | append-only `history/history.sqlite` schema와 writer |
+| `compact_dashboard.py` | `history/history.sqlite`를 `dashboard_compact/dashboard_compact.sqlite`로 변환 |
+| `cluster_refit.py` | 공통 refit 계산. History membership에 필요한 `labels`, `zCluster`, `labelToInterestId`를 반환 |
+| `inprocess_worker.py` | production write 후 `history_db_path`가 있을 때만 history side-write 수행 |
+| `trace_replay.py` | `--history-mode off|history`와 production/history/compact output path 연결 |
 
-3. replay/stream stage에 `history_mode`를 전달한다.
-   - `trace_replay.py` CLI에서 `--history-mode`를 받는다.
-   - `--output-root`는 production-only run에서는 `outputs/post/<run_id>_production/`, history run에서는 `outputs/post/<run_id>_history/`를 가리킨다.
-   - 필요하면 `--production-db`, `--history-db`, `--dashboard-compact-db` 경로를 명시적으로 받을 수 있게 한다.
-   - `inprocess_worker.py`가 stage 호출 context에 history DB path와 replay order를 넘긴다.
-   - 개별 stage 단독 실행의 history 옵션은 후속 필요 시 추가한다.
+History writer API는 실제 구현명을 기준으로 둔다.
 
-4. stage별 full-ish history 기록 지점을 연결한다.
-   - 모든 history writer는 `--history-mode history`일 때만 `history/history.sqlite`에 쓴다.
-   - `inprocess_worker.py` extract stage: `embedding_cache_changes` 기록 직후 `embedding_change_history`
-   - `inprocess_worker.py` assign stage: assignment/refit request 기록 직후 `assignment_decision_history`, `user_interest_timeline`
-   - `inprocess_worker.py` refit stage: refit lifecycle update와 refit close 후 `refit_lifecycle_history`, `interest_vector_history`, `interest_membership_history`
-   - `inprocess_worker.py` recommend stage: recommendation run 생성 시 `recommendation_history`, `recommendation_row_history`
+- `record_history_run`
+- `record_run_event`
+- `record_stage_event`
+- `record_user_state`
+- `record_embedding_changes`
+- `record_assignment_decisions`
+- `record_user_interest_timeline`
+- `record_refit_lifecycle`
+- `record_interest_vectors`
+- `record_interest_memberships`
+- `record_recommendations`
 
-5. `compact_dashboard.py` 계열 entrypoint를 추가한다.
-   - history store를 읽어 dashboard compact projection을 생성한다.
-   - `--history-db`, `--output-root` 또는 `--output-db`를 받는다.
-   - projection은 재생 UI가 필요한 최소 컬럼과 요약만 담는다.
-   - 대형 detail은 원본 history DB를 lazy-load할 수 있게 reference를 남긴다.
+Stage별 기록 지점:
 
-6. 문서와 todo에 신규 history/compact 계약과 검증 결과를 반영한다.
-   - dashboard UI/reader 구현은 별도 후속 plan에서 다룬다.
+- extract: user state history, embedding change history
+- assign: assignment decision history, user interest timeline
+- refit: refit lifecycle, interest vector snapshot, interest membership snapshot
+- recommend: recommendation run/row history
 
-7. 검증한다.
-   - schema smoke: 신규 `/tmp` DB에 history table 생성 확인
-   - writer smoke: synthetic row append 확인
-   - replay smoke: 5-event replay에서 event별 history row 확인
-   - compaction smoke: history DB에서 compact projection 생성 확인
+검증된 항목:
+
+- module `py_compile`
+- CLI help import
+- synthetic history/compact smoke
+- 2-event real history-mode replay smoke `post_history_real_smoke`
+- `git diff --check`
+
+남은 항목:
+
+- 100~1000 event production/history E2E 비교 run
+- dashboard reader/UI 연결
 
 ## Dashboard Projection Rule
 
-후속 dashboard 작업에서는 compact projection이 있으면 아래 순서로 화면을 만들 수 있다. Compact projection이 없을 때만 `history/history.sqlite`를 직접 읽는다.
+Dashboard 화면은 compact projection의 네 table만 읽는다.
 
 ```text
+user selector
+  -> event_timeline
 event slider
-  -> input_events + event_progress
-  -> embedding_change_history for selected event/user
-  -> user_interest_timeline latest <= selected replay_order
-  -> interest_vector_history latest state_version <= selected replay_order
-  -> interest_membership_history for selected state_version
-  -> recommendation_runs linked to selected event/state_version
+  -> event_timeline
+  -> visualization_states
+  -> cluster_snapshots
+  -> recommendations
 ```
 
-대형 vector/membership은 화면에서 선택된 user/event 범위로 lazy load한다. 전체 replay의 모든 vector와 membership을 첫 로딩에 올리지 않는다.
+대형 vector/membership은 compact step에서 이미 줄여진다. Dashboard는 production/history DB를 lazy load fallback으로 사용하지 않는다.
 
 ## Compatibility
 
 - 기존 `replay.sqlite`는 production store DB로 계속 유효하다.
 - 신규 production-only run은 `outputs/post/<run_id>_production/production/production.sqlite`를 생성한다.
 - 신규 history run은 `outputs/post/<run_id>_history/production/production.sqlite`, `outputs/post/<run_id>_history/history/history.sqlite`, `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`를 생성한다.
-- 기존 DB를 대상으로 할 때 신규 history table은 additive schema로 유지한다.
+- history table은 production DB에 추가하지 않고 `history/history.sqlite`에 분리한다.
 - 기존 JSONL artifact는 fallback/debug로 유지한다.
+- 공식 POST replay dashboard는 기존 JSONL/runtime fallback을 읽지 않고 compact DB만 읽는다.
 - 기본 production 산출물의 성능과 저장량을 history 산출물 때문에 악화시키지 않는다.
-- 현재 구현 문서에는 아직 root-level `replay.sqlite` 계약이 남아 있을 수 있다. 이 문서는 신규 계약의 기준 문서이며, 구현 단계에서는 `PROJECT_GUIDE.md`, `docs/artifacts.md`, `docs/data-flow.md`, `docs/streaming-replay-dashboard-contract.md`, `outputs/readme.md`, `model/README.md`를 함께 갱신한다.
+- `PROJECT_GUIDE.md`, `docs/artifacts.md`, `docs/data-flow.md`, `docs/streaming-replay-dashboard-contract.md`, `outputs/readme.md`, `model/README.md`는 신규 output-root 계약을 설명한다. root-level `replay.sqlite` 언급은 legacy/default 호환 맥락으로만 남긴다.

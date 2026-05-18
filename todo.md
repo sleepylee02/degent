@@ -2,17 +2,11 @@
 
 ## Active
 
-- Temporal 2022 Streaming E2E
-  - owner: sleepylee / LLM
-  - plan: `plan/active/temporal_2022_streaming_e2e.md`
-  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
-  - status: cutoff-aware train/canonical, run-scoped model output path, pre/post 경로 계약 구현 후 per-user JSON state directory가 pre에서 12GB, post 복사본도 12GB가 되는 문제가 확인됨. 현재 작업은 pre `state.sqlite` seed store와 post `replay.sqlite` lazy materialize 구조로 전환해 user/interest state를 SQLite 중심으로 정리하는 것. Post replay active embedding은 `replay.sqlite` cache 중심으로 전환했고, 기본 경로는 `online_embeddings.npz` 없이 assign/refit을 처리한다. Replay stage별 Python subprocess도 제거하고 `inprocess_worker.py` 단일 경로로 전환했다. `temporal_2022_inprocess_smoke`에서 2/2 events, refit closed 2, stage command `in-process`, NPZ 미생성 확인.
-
 - POST Replay Flow History
   - owner: sleepylee / LLM
   - plan: `plan/active/post_replay_flow_history.md`
   - files: `docs/post-replay-output-areas.md`, `docs/streaming-replay-dashboard-contract.md`, `docs/artifacts.md`, `docs/data-flow.md`, `outputs/readme.md`, `PROJECT_GUIDE.md`, `model/stream/runtime_store.py`, `model/stream/history_store.py`, `model/stream/cluster_refit.py`, `model/stream/compact_dashboard.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `model/README.md`, `todo.md`
-  - status: post replay 산출물 root를 `outputs/post/<run_id>_production/`과 `outputs/post/<run_id>_history/`로 분리하는 구현 중. Production-only run은 `production/production.sqlite`만 남기는 clean benchmark이고, history run은 `production/production.sqlite`, `history/history.sqlite`, `dashboard_compact/dashboard_compact.sqlite`를 남긴다. `runtime_store.py`는 production store로 두고 `history_store.py`/`compact_dashboard.py`로 history와 compact projection을 분리했다. py_compile, CLI help, synthetic history/compact smoke, `git diff --check` 통과. `outputs/pre/temporal_2022` artifacts로 2-event history-mode replay smoke(`post_history_real_smoke`)도 완료.
+  - status: production/history/compact artifact 생성 구현은 대부분 완료. `runtime_store.py`는 production store, `history_store.py`는 append-only history, `compact_dashboard.py`는 compact projection으로 분리했다. py_compile, CLI help, synthetic history/compact smoke, `git diff --check` 통과. `outputs/pre/temporal_2022` artifacts로 2-event history-mode replay smoke(`post_history_real_smoke`)도 완료. 남은 작업은 100~1000 event production/history E2E 비교 run뿐이다.
 
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM
@@ -23,7 +17,21 @@
 
 - 없음
 
+## Expired
+
+- Temporal 2022 Streaming E2E
+  - owner: sleepylee / LLM
+  - plan: `plan/expired/temporal_2022_streaming_e2e.md`
+  - files: `model/common/dataset.py`, `model/batch/train.py`, `model/common/canonical.py`, `model/batch/extract_canonical.py`, `model/batch/cluster.py`, `model/stream/runtime_store.py`, `model/stream/seed_pre_t_state.py`, `model/stream/extract_online.py`, `model/stream/interest_assign.py`, `model/stream/cluster_refit.py`, `model/stream/recommend_online.py`, `model/stream/inprocess_worker.py`, `model/stream/trace_replay.py`, `docs/`, `model/README.md`, `PROJECT_GUIDE.md`, `todo.md`
+  - status: 현재 작업 방향에서는 별도 train/canonical/cluster/state seed 재현 plan을 active로 유지하지 않는다. 이미 존재하는 `outputs/pre/temporal_2022` artifact를 사용해 POST replay history/dashboard 작업을 진행한다.
+
 ## Done
+
+- POST Replay Compact Dashboard
+  - owner: sleepylee / LLM
+  - plan: `plan/done/post_replay_compact_dashboard.md`
+  - files: `dashboard/`, `dashboard/README.md`, `docs/streaming-replay-dashboard-contract.md`, `docs/post-replay-output-areas.md`, `model/stream/compact_dashboard.py`, `todo.md`
+  - status: 기존 mixed dashboard를 `dashboard/cluster_dashboard.py`에서 제거하고, `dashboard_compact/dashboard_compact.sqlite`만 읽는 compact-only POST replay dashboard로 교체. 필수 기능인 user별 시점 cluster scatter, 전체 기간 K 변화 chart, 선택 시점 recommendation/scoring 결과를 구현했다. `py_compile`, `post_history_real_smoke_history` compact DB reader smoke(users=1, timeline=2, points=1540, clusters=226, recommendations=0), dashboard direct runtime/history DB read check, `git diff --check` 통과. 현재 추천 display는 compact schema에 맞춰 movie_id/rank/score/src_cluster 중심이다.
 
 - Temporal Cutoff 2020 Pipeline Deep Dive
   - owner: sleepylee / LLM

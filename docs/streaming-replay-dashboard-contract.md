@@ -1,6 +1,6 @@
 # Streaming Replay/Dashboard Contract
 
-이 문서는 trace-clock replay runner와 dashboard가 공유하는 replay artifact 인터페이스 계약이다. 현재 우선 경로는 SQLite production runtime store이며, 기존 JSONL/JSON 파일은 fallback/debug로 유지한다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다. History mode 산출물은 dashboard flow 재생용 append-only source와 compact projection을 별도 SQLite로 둔다.
+이 문서는 trace-clock replay runner와 POST replay dashboard가 공유하는 replay artifact 인터페이스 계약이다. Production runtime store는 replay 실행/복구/리포트용 정본이고, dashboard는 history run에서 생성한 compact projection만 읽는다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다.
 
 ## Version
 
@@ -9,9 +9,9 @@
 ## Ownership
 
 - Trace replay owns writes under `outputs/post/<run_id>_production/` and `outputs/post/<run_id>_history/`.
-- Dashboard reads post replay output roots and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
-- When `replay_summary.json` contains `paths.replayDb` or `paths.productionDb`, dashboard must prefer SQLite runtime store reads and fall back to JSONL/JSON artifacts only when the DB is absent or unreadable.
-- While a replay is still running, `replay_summary.json` may not exist yet. In that case dashboard may discover `production/production.sqlite` or legacy sibling `replay.sqlite` directly and synthesize display summary fields from `runs` and runtime table counts without writing to the replay root.
+- Dashboard reads `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
+- Dashboard must not read `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, or JSONL debug artifacts as fallback inputs.
+- While a replay is still running, `dashboard_compact/dashboard_compact.sqlite` may not exist yet. In that case the compact dashboard should show an unavailable/empty state rather than reading runtime stores directly.
 - Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
 ## Default Roots
@@ -64,7 +64,7 @@ outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite
 
 `production/production.sqlite` is the runtime/state/control-plane store for a replay run. Legacy roots may still expose the same store as `replay.sqlite`. Post replay active online embeddings are stored in SQLite `active_embedding_cache`; per-event delta assignment reads `embedding_cache_changes`. Large batch matrices such as canonical embeddings, model checkpoints, and batch outputs remain file-backed. `online_embeddings.npz` is optional debug/export output when `--export-online-embeddings-npz` is passed.
 
-Dashboard-readable tables:
+Runtime/report-readable tables:
 
 | table | role |
 |---|---|
@@ -207,7 +207,7 @@ Allowed `status` values:
 - `skipped`
 - `failed`
 
-Phase 6 must tolerate missing optional metrics and render available fields.
+Debug/replay-monitor readers should tolerate missing optional metrics and render available fields. The compact POST replay dashboard does not read these JSONL progress fields directly.
 
 Trace replay fields:
 
@@ -223,11 +223,9 @@ Trace replay fields:
 
 ## Replay Summary JSON
 
-`replay_summary.json` is the stable summary entrypoint for Phase 6.
+`replay_summary.json` is the stable summary entrypoint for replay runs and reports. The compact dashboard can use it only to locate `paths.dashboardCompactDb`; the dashboard display itself is driven by `dashboard_compact/dashboard_compact.sqlite`.
 
-For in-progress runs without `replay_summary.json`, dashboard may use `production/production.sqlite` or legacy `replay.sqlite` as the temporary entrypoint and derive run status, processed/input event counts, elapsed time, and aggregate totals from SQLite. The trace runner still owns the final `replay_summary.json` write at terminal status.
-
-When `paths.replayDb` or `paths.productionDb` exists, dashboard must prefer SQLite runtime store reads for replay monitor tables. JSONL files remain fallback/debug artifacts.
+For in-progress runs without compact output, the dashboard should render an unavailable state. It must not temporarily read `production/production.sqlite` or legacy `replay.sqlite`.
 
 Required fields:
 
@@ -286,7 +284,7 @@ Required fields:
 }
 ```
 
-Phase 6 should use `paths` from this file when present and fall back to the default paths above. `paths.onlineEmbeddings` may be `null` in the default post replay path.
+Tools should use `paths` from this file when present. `paths.onlineEmbeddings` may be `null` in the default post replay path. The compact dashboard uses `paths.dashboardCompactDb` when available and otherwise lets the user select a compact DB path manually.
 
 ## Stream Recommendations JSONL
 
@@ -313,23 +311,16 @@ Fields currently written per line:
 }
 ```
 
-Phase 6 should tolerate either `movieId` or `recommendedMovieId` as the recommended item field. If the file is absent, recommendation panels should render an empty state without failing the replay monitor.
+Legacy/debug readers should tolerate either `movieId` or `recommendedMovieId` as the recommended item field. The compact dashboard does not read this JSONL file; it reads the compact `recommendations` table.
 
-## Phase 6 Read Scope
+## Compact Dashboard Read Scope
 
-Phase 6 may read:
+The POST replay dashboard may read:
 
-- `production/production.sqlite` or legacy `replay.sqlite`
-- `replay_summary.json`
-- `ingress_events.jsonl`
-- `replay_events.jsonl`
-- `interest_assignments.jsonl`
-- `refit_requests.jsonl`
-- `refit_events.jsonl`
-- `interest_states/{user_id}.json`
-- `stream_recommendations.jsonl`
+- `dashboard_compact/dashboard_compact.sqlite`
+- optional `replay_summary.json` only for discovering `paths.dashboardCompactDb`
 
-Phase 6 must not mutate these files.
+The dashboard must not mutate these files. It must not read production/history/runtime/debug artifacts as display fallbacks.
 
 ## Non-Goals
 
