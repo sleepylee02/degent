@@ -111,6 +111,13 @@ export default function App() {
   const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
   const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 6), [frame]);
 
+  // Attach local sequential index (1-based) for chart X-axis
+  const chartTimeline = useMemo(
+    () => timeline.map((row, i) => ({ ...row, local_index: i + 1 })),
+    [timeline]
+  );
+  const selectedLocalIdx = sliderIdx + 1; // 1-based
+
   return (
     <div className="dashboard">
       <header className="dash-header">
@@ -152,7 +159,9 @@ export default function App() {
             onKeyUp={e => setAppliedIdx(Number(e.currentTarget.value))}
             disabled={!timeline.length}
           />
-          <span className="event-label">{eventData ? `#${eventData.event_id}` : '—'}</span>
+          <span className="event-label">
+            {timeline.length ? `${selectedLocalIdx} / ${timeline.length}` : '—'}
+          </span>
           {eventData && (
             <span className="event-meta">
               {new Date(eventData.timestamp).toLocaleDateString('ko-KR')}
@@ -165,11 +174,11 @@ export default function App() {
 
       <div className="grid-full">
         <MemoKTimeline
-          timeline={timeline}
-          selectedIdx={eventData?.event_id}
-          onSelect={id => {
+          timeline={chartTimeline}
+          selectedLocalIdx={selectedLocalIdx}
+          onSelect={localIdx => {
             setPlaying(false);
-            const i = timeline.findIndex(r => r.event_id === id);
+            const i = localIdx - 1;
             setSliderIdx(i);
             setAppliedIdx(i);
           }}

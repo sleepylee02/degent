@@ -16,7 +16,10 @@ function CustomTooltip({ active, payload }) {
   const d = payload[0].payload;
   return (
     <div className="tooltip">
-      <div className="tooltip-title">Event {d.event_id}</div>
+      <div className="tooltip-title">{d.local_index}번째 이벤트</div>
+      <div style={{ fontSize: 10, color: '#6b7280', marginBottom: 2 }}>
+        global id: {d.event_id}
+      </div>
       <div>K = <strong>{d.k_count}</strong> clusters</div>
       <div>Noise = {d.noise_count}</div>
       {d.is_refit_triggered ? (
@@ -26,7 +29,7 @@ function CustomTooltip({ active, payload }) {
   );
 }
 
-export default function KTimeline({ timeline, selectedIdx, onSelect }) {
+export default function KTimeline({ timeline, selectedLocalIdx, onSelect }) {
   const refitEvents = timeline.filter(d => d.is_refit_triggered);
 
   return (
@@ -34,15 +37,32 @@ export default function KTimeline({ timeline, selectedIdx, onSelect }) {
       <h2>K 변화 타임라인</h2>
       <p className="panel-sub">클릭하면 해당 시점으로 이동합니다</p>
       <ResponsiveContainer width="100%" height={220}>
-        <LineChart data={timeline} onClick={e => e?.activePayload && onSelect(e.activePayload[0].payload.event_id)}>
+        <LineChart
+          data={timeline}
+          onClick={e => e?.activePayload && onSelect(e.activePayload[0].payload.local_index)}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#2e303a" />
-          <XAxis dataKey="event_id" tick={{ fontSize: 11 }} label={{ value: 'Event', position: 'insideBottom', offset: -2, fontSize: 11 }} />
-          <YAxis domain={[0, 6]} tick={{ fontSize: 11 }} label={{ value: 'K', angle: -90, position: 'insideLeft', fontSize: 11 }} />
+          <XAxis
+            dataKey="local_index"
+            tick={{ fontSize: 11 }}
+            label={{ value: '이벤트 순서', position: 'insideBottom', offset: -2, fontSize: 11 }}
+          />
+          <YAxis
+            domain={[0, 6]}
+            tick={{ fontSize: 11 }}
+            label={{ value: 'K', angle: -90, position: 'insideLeft', fontSize: 11 }}
+          />
           <Tooltip content={<CustomTooltip />} />
           {refitEvents.map(d => (
-            <ReferenceLine key={d.event_id} x={d.event_id} stroke={REFIT_COLOR} strokeDasharray="4 2" strokeWidth={1.5} />
+            <ReferenceLine
+              key={d.event_id}
+              x={d.local_index}
+              stroke={REFIT_COLOR}
+              strokeDasharray="4 2"
+              strokeWidth={1.5}
+            />
           ))}
-          <ReferenceLine x={selectedIdx} stroke="#60a5fa" strokeWidth={2} />
+          <ReferenceLine x={selectedLocalIdx} stroke="#60a5fa" strokeWidth={2} />
           <Line
             type="stepAfter"
             dataKey="k_count"
