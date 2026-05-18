@@ -138,7 +138,7 @@ def load_points(db_path_text: str, user_id: int, event_id: int) -> pd.DataFrame:
         (int(user_id), int(event_id)),
     )
     if frame.empty:
-        return pd.DataFrame(columns=["raw_event_id", "movie_id", "x", "y", "cluster"])
+        return pd.DataFrame(columns=["raw_event_id", "x", "y", "cluster", "cluster_label"])
     try:
         points = json.loads(str(frame.iloc[0]["points_data"]))
     except json.JSONDecodeError:
@@ -151,8 +151,6 @@ def load_points(db_path_text: str, user_id: int, event_id: int) -> pd.DataFrame:
         rows.append(
             {
                 "raw_event_id": point.get("raw_event_id", point.get("event_id")),
-                "event_idx": point.get("event_idx"),
-                "movie_id": point.get("movie_id"),
                 "x": float(point["x"]),
                 "y": float(point["y"]),
                 "cluster": cluster,
@@ -398,7 +396,7 @@ def render_cluster_scatter(points: pd.DataFrame) -> None:
         y="y",
         color="cluster_label",
         category_orders={"cluster_label": category_order},
-        hover_data=["raw_event_id", "movie_id", "event_idx"],
+        hover_data=["raw_event_id"],
         height=420,
     )
     fig.update_traces(marker={"size": 7, "opacity": 0.82, "line": {"width": 0}})

@@ -234,14 +234,10 @@ def compact_history_to_dashboard(*, history_db: Path, output_db: Path, run_id: s
                 interest_id = None if row["interest_id"] is None else int(row["interest_id"])
                 points.append(
                     {
-                        "event_id": int(row["raw_event_id"]),
                         "raw_event_id": int(row["raw_event_id"]),
-                        "event_idx": None if row["event_idx"] is None else int(row["event_idx"]),
-                        "movie_id": None if row["movie_id"] is None else int(row["movie_id"]),
-                        "x": None if row["umap_x"] is None else float(row["umap_x"]),
-                        "y": None if row["umap_y"] is None else float(row["umap_y"]),
+                        "x": None if row["umap_x"] is None else round(float(row["umap_x"]), 3),
+                        "y": None if row["umap_y"] is None else round(float(row["umap_y"]), 3),
                         "c": cluster_label,
-                        "interest_id": interest_id,
                     }
                 )
                 if interest_id is not None:
