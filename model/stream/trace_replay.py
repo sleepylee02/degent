@@ -13,6 +13,8 @@ import time
 
 import numpy as np
 
+import model.stream.compact_dashboard as compact_dashboard
+import model.stream.history_store as history_store
 import model.stream.runtime_store as runtime_store
 from model.common.runtime import (
     DISABLE_FILE_LOG_ENV,
@@ -40,13 +42,32 @@ def parse_args() -> argparse.Namespace:
         description="Replay timestamp-sorted rating events with an N-speed trace clock."
     )
     parser.add_argument("--run-id", type=str, default=None)
-    parser.add_argument("--output-root", type=Path, default=Path("outputs/post/replay_demo"))
+    parser.add_argument("--output-root", type=Path, default=None)
     parser.add_argument("--input-events", type=Path, default=None)
+    parser.add_argument("--history-mode", choices=["off", "history"], default="off")
+    parser.add_argument(
+        "--production-db",
+        type=Path,
+        default=None,
+        help="SQLite production runtime/state store path. Defaults to <output-root>/production/production.sqlite.",
+    )
     parser.add_argument(
         "--runtime-db",
         type=Path,
         default=None,
-        help="SQLite runtime/state store path. Defaults to <output-root>/replay.sqlite.",
+        help="Deprecated alias for --production-db.",
+    )
+    parser.add_argument(
+        "--history-db",
+        type=Path,
+        default=None,
+        help="SQLite history store path. Used only with --history-mode history.",
+    )
+    parser.add_argument(
+        "--dashboard-compact-db",
+        type=Path,
+        default=None,
+        help="Dashboard compact SQLite output path. Used only with --history-mode history.",
     )
     parser.add_argument("--reset-output", action="store_true", help="Remove output-root before the trace replay run.")
     parser.add_argument("--max-events", type=int, default=None)
@@ -259,20 +280,28 @@ def run_command(
 
 
 def generated_paths(output_root: Path) -> dict[str, Path]:
+    production_root = output_root / "production"
+    history_root = output_root / "history"
+    dashboard_compact_root = output_root / "dashboard_compact"
     return {
-        "replay_input_events": output_root / "replay_input_events.jsonl",
-        "ingress_events": output_root / "ingress_events.jsonl",
-        "replay_events": output_root / "replay_events.jsonl",
+        "production_root": production_root,
+        "history_root": history_root,
+        "dashboard_compact_root": dashboard_compact_root,
+        "replay_input_events": production_root / "replay_input_events.jsonl",
+        "ingress_events": production_root / "ingress_events.jsonl",
+        "replay_events": production_root / "replay_events.jsonl",
         "replay_summary": output_root / "replay_summary.json",
-        "replay_db": output_root / "replay.sqlite",
-        "user_state_dir": output_root / "user_states",
-        "interest_state_dir": output_root / "interest_states",
-        "online_embeddings": output_root / "online_embeddings.npz",
-        "online_embedding_events": output_root / "online_embedding_events.jsonl",
-        "interest_assignments": output_root / "interest_assignments.jsonl",
-        "refit_requests": output_root / "refit_requests.jsonl",
-        "refit_events": output_root / "refit_events.jsonl",
-        "stream_recommendations": output_root / "stream_recommendations.jsonl",
+        "replay_db": production_root / "production.sqlite",
+        "history_db": history_root / "history.sqlite",
+        "dashboard_compact_db": dashboard_compact_root / "dashboard_compact.sqlite",
+        "user_state_dir": production_root / "user_states",
+        "interest_state_dir": production_root / "interest_states",
+        "online_embeddings": production_root / "online_embeddings.npz",
+        "online_embedding_events": production_root / "online_embedding_events.jsonl",
+        "interest_assignments": production_root / "interest_assignments.jsonl",
+        "refit_requests": production_root / "refit_requests.jsonl",
+        "refit_events": production_root / "refit_events.jsonl",
+        "stream_recommendations": production_root / "stream_recommendations.jsonl",
     }
 
 
@@ -339,6 +368,7 @@ def event_payload(event: dict[str, Any]) -> dict[str, Any]:
 def build_summary(
     *,
     run_id: str,
+    history_mode: str,
     status: str,
     started_at: str,
     ended_at: str,
@@ -355,6 +385,7 @@ def build_summary(
     paths: dict[str, Path],
     root: Path,
     seed_summary: dict[str, Any] | None = None,
+    compact_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     throughput = None if elapsed_sec <= 0 else processed_events / elapsed_sec
     trace_span_sec = max(0.0, trace_end_ts - trace_start_ts)
@@ -368,6 +399,7 @@ def build_summary(
     return {
         "version": TRACE_REPLAY_SUMMARY_VERSION,
         "runId": run_id,
+        "historyMode": history_mode,
         "status": status,
         "startedAt": started_at,
         "endedAt": ended_at,
@@ -387,11 +419,20 @@ def build_summary(
         "refitBackend": totals.get("refitBackend"),
         "totals": totals,
         "seed": seed_summary or {},
+        "dashboardCompact": compact_summary,
         "paths": {
+            "productionRoot": relative_or_absolute(root, paths["production_root"]),
+            "historyRoot": relative_or_absolute(root, paths["history_root"]),
+            "dashboardCompactRoot": relative_or_absolute(root, paths["dashboard_compact_root"]),
             "replayInputEvents": relative_or_absolute(root, paths["replay_input_events"]),
             "ingressEvents": relative_or_absolute(root, paths["ingress_events"]),
             "replayEvents": relative_or_absolute(root, paths["replay_events"]),
             "replayDb": relative_or_absolute(root, paths["replay_db"]),
+            "productionDb": relative_or_absolute(root, paths["replay_db"]),
+            "historyDb": None if history_mode == "off" else relative_or_absolute(root, paths["history_db"]),
+            "dashboardCompactDb": None
+            if history_mode == "off"
+            else relative_or_absolute(root, paths["dashboard_compact_db"]),
             "onlineEmbeddings": relative_or_absolute(root, online_embeddings_path) if online_embeddings_exported else None,
             "onlineEmbeddingEvents": relative_or_absolute(root, paths["online_embedding_events"]),
             "interestAssignments": relative_or_absolute(root, paths["interest_assignments"]),
@@ -420,9 +461,17 @@ def main() -> None:
     run_dir = ensure_experiment_run(root, run_id)
     logger, log_path = setup_run_logging("trace_replay", outputs_dir)
 
-    output_root = resolve_path(root, args.output_root)
+    if args.production_db is not None and args.runtime_db is not None:
+        production_db_arg = resolve_path(root, args.production_db)
+        runtime_db_arg = resolve_path(root, args.runtime_db)
+        if production_db_arg != runtime_db_arg:
+            raise ValueError("--production-db and deprecated --runtime-db disagree.")
+    output_suffix = "history" if args.history_mode == "history" else "production"
+    default_output_root = Path("outputs/post") / f"{run_id}_{output_suffix}"
+    output_root = resolve_path(root, args.output_root or default_output_root)
     assert output_root is not None
-    input_events_path = resolve_path(root, args.input_events) if args.input_events else output_root / "replay_input_events.jsonl"
+    paths = generated_paths(output_root)
+    input_events_path = resolve_path(root, args.input_events) if args.input_events else paths["replay_input_events"]
 
     if args.reset_output:
         if not args.generate_events and input_events_path.resolve().is_relative_to(output_root.resolve()):
@@ -431,12 +480,25 @@ def main() -> None:
             shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
 
-    paths = generated_paths(output_root)
     paths["replay_input_events"] = input_events_path
-    runtime_db_path = resolve_path(root, args.runtime_db) if args.runtime_db else paths["replay_db"]
+    production_db_input = args.production_db or args.runtime_db
+    runtime_db_path = resolve_path(root, production_db_input) if production_db_input else paths["replay_db"]
     assert runtime_db_path is not None
     paths["replay_db"] = runtime_db_path
     runtime_store.init_store(runtime_db_path)
+    history_db_path = None
+    if args.history_mode == "history":
+        history_db_path = resolve_path(root, args.history_db) if args.history_db else paths["history_db"]
+        assert history_db_path is not None
+        paths["history_db"] = history_db_path
+        dashboard_compact_db_path = (
+            resolve_path(root, args.dashboard_compact_db) if args.dashboard_compact_db else paths["dashboard_compact_db"]
+        )
+        assert dashboard_compact_db_path is not None
+        paths["dashboard_compact_db"] = dashboard_compact_db_path
+        history_store.init_store(history_db_path)
+    elif args.history_db is not None or args.dashboard_compact_db is not None:
+        raise ValueError("--history-db and --dashboard-compact-db require --history-mode history.")
 
     seed_state_db_path = resolve_path(root, args.seed_state_db) if args.seed_state_db else None
     if seed_state_db_path is not None and args.seed_run_id is None:
@@ -464,8 +526,12 @@ def main() -> None:
 
     logger.info("Experiment run id: %s", run_id)
     logger.info("Output root: %s", output_root)
+    logger.info("History mode: %s", args.history_mode)
     logger.info("Replay input events: %s", input_events_path)
-    logger.info("Runtime DB: %s", runtime_db_path)
+    logger.info("Production DB: %s", runtime_db_path)
+    if history_db_path is not None:
+        logger.info("History DB: %s", history_db_path)
+        logger.info("Dashboard compact DB: %s", paths["dashboard_compact_db"])
     logger.info("Trace replay speed: %.6g", speed)
     logger.info("Stage execution: in-process worker")
     logger.info("Seed summary: %s", seed_summary)
@@ -486,6 +552,7 @@ def main() -> None:
         paths=paths,
         args=args,
         runtime_db_path=runtime_db_path,
+        history_db_path=history_db_path,
         seed_state_db_path=seed_state_db_path,
         seed_run_id=seed_run_id,
         use_legacy_state_dirs=use_legacy_state_dirs,
@@ -534,6 +601,15 @@ def main() -> None:
         summary_path=relative_or_absolute(root, paths["replay_summary"]),
         started_at=started_at,
     )
+    if history_db_path is not None:
+        history_store.record_history_run(
+            history_db_path,
+            run_id=run_id,
+            status="running",
+            production_db_path=relative_or_absolute(root, runtime_db_path),
+            replay_root=relative_or_absolute(root, output_root),
+            started_at=started_at,
+        )
     runtime_store.record_artifact(
         runtime_db_path,
         run_id=run_id,
@@ -565,6 +641,7 @@ def main() -> None:
         for ordinal, event in enumerate(events):
             event_number = ordinal + 1
             current_event_id = int(event["eventId"])
+            replay_order = int(event.get("replayOrder", ordinal))
             event_trace_ts = float(event["ratedAtTs"])
             scheduled_offset_sec = max(0.0, (event_trace_ts - trace_start_ts) / speed)
             scheduled_monotonic = wall_start_mono + scheduled_offset_sec
@@ -580,7 +657,7 @@ def main() -> None:
                 "recordedAt": format_dt(emitted_dt),
                 "runId": run_id,
                 "eventId": int(event["eventId"]),
-                "replayOrder": int(event.get("replayOrder", ordinal)),
+                "replayOrder": replay_order,
                 "userId": int(event["userId"]),
                 "movieId": int(event["movieId"]),
                 "rating": float(event["rating"]),
@@ -595,6 +672,8 @@ def main() -> None:
             }
             append_jsonl(paths["ingress_events"], ingress_record)
             runtime_store.record_input_event(runtime_db_path, run_id=run_id, event=ingress_record)
+            if history_db_path is not None:
+                history_store.record_run_event(history_db_path, run_id=run_id, event=ingress_record)
             runtime_store.record_event_progress(
                 runtime_db_path,
                 run_id=run_id,
@@ -629,7 +708,7 @@ def main() -> None:
             before_refit_event_lines = count_jsonl(paths["refit_events"])
 
             payload = event_payload(event)
-            worker.run_extract_online(event_id=current_event_id, payload=payload)
+            worker.run_extract_online(event_id=current_event_id, replay_order=replay_order, payload=payload)
 
             changed_cache_rows = runtime_store.fetch_embedding_cache_changed_rows(
                 runtime_db_path,
@@ -637,7 +716,11 @@ def main() -> None:
                 event_id=current_event_id,
             )
             active_rows = len(changed_cache_rows)
-            worker.run_interest_assign(event_id=current_event_id)
+            worker.run_interest_assign(
+                event_id=current_event_id,
+                replay_order=replay_order,
+                user_id=int(event["userId"]),
+            )
 
             new_assignment_records = read_jsonl_slice(paths["interest_assignments"], before_assignment_lines)
             new_refit_requests = read_jsonl_slice(paths["refit_requests"], before_refit_request_lines)
@@ -645,11 +728,15 @@ def main() -> None:
 
             if not args.skip_refit:
                 for user_id in new_request_users:
-                    worker.run_cluster_refit(event_id=current_event_id, user_id=user_id)
+                    worker.run_cluster_refit(event_id=current_event_id, replay_order=replay_order, user_id=user_id)
 
             before_recommend_lines = count_jsonl(paths["stream_recommendations"])
             if args.recommend:
-                worker.run_recommend_online(event_id=current_event_id, user_id=int(event["userId"]))
+                worker.run_recommend_online(
+                    event_id=current_event_id,
+                    replay_order=replay_order,
+                    user_id=int(event["userId"]),
+                )
 
             processed_dt = datetime.now().astimezone()
             processed_mono = time.monotonic()
@@ -719,7 +806,7 @@ def main() -> None:
                     "status": "completed",
                     "eventOrdinal": ordinal,
                     "eventId": int(event["eventId"]),
-                    "replayOrder": int(event.get("replayOrder", ordinal)),
+                    "replayOrder": replay_order,
                     "userId": int(event["userId"]),
                     "movieId": int(event["movieId"]),
                     "ratedAt": str(event["ratedAt"]),
@@ -764,8 +851,24 @@ def main() -> None:
 
         ended_at = local_timestamp()
         elapsed_sec = time.time() - start_time
+        compact_summary = None
+        if history_db_path is not None:
+            history_store.record_history_run(
+                history_db_path,
+                run_id=run_id,
+                status="completed",
+                production_db_path=relative_or_absolute(root, runtime_db_path),
+                replay_root=relative_or_absolute(root, output_root),
+                ended_at=ended_at,
+            )
+            compact_summary = compact_dashboard.compact_history_to_dashboard(
+                history_db=history_db_path,
+                output_db=paths["dashboard_compact_db"],
+                run_id=run_id,
+            )
         summary = build_summary(
             run_id=run_id,
+            history_mode=args.history_mode,
             status="completed",
             started_at=started_at,
             ended_at=ended_at,
@@ -782,6 +885,7 @@ def main() -> None:
             paths=paths,
             root=root,
             seed_summary=seed_summary,
+            compact_summary=compact_summary,
         )
         write_json(paths["replay_summary"], summary)
         runtime_store.upsert_run(
@@ -794,6 +898,8 @@ def main() -> None:
             summary_path=relative_or_absolute(root, paths["replay_summary"]),
         )
         runtime_store.checkpoint(runtime_db_path)
+        if history_db_path is not None:
+            history_store.checkpoint(history_db_path)
         append_jsonl(
             paths["replay_events"],
             {
@@ -841,6 +947,13 @@ def main() -> None:
                             "replay_events": file_metadata(paths["replay_events"], root=root, include_sha256=True),
                             "ingress_events": file_metadata(paths["ingress_events"], root=root, include_sha256=True),
                             "replay_db": file_metadata(paths["replay_db"], root=root, include_sha256=True),
+                            "production_db": file_metadata(paths["replay_db"], root=root, include_sha256=True),
+                            "history_db": None
+                            if history_db_path is None
+                            else file_metadata(history_db_path, root=root, include_sha256=True),
+                            "dashboard_compact_db": None
+                            if history_db_path is None
+                            else file_metadata(paths["dashboard_compact_db"], root=root, include_sha256=True),
                         },
                         "summary_metrics": summary,
                     }
@@ -874,8 +987,18 @@ def main() -> None:
                 status="failed",
                 failed_attempts=1,
             )
+        if history_db_path is not None:
+            history_store.record_history_run(
+                history_db_path,
+                run_id=run_id,
+                status="failed",
+                production_db_path=relative_or_absolute(root, runtime_db_path),
+                replay_root=relative_or_absolute(root, output_root),
+                ended_at=ended_at,
+            )
         summary = build_summary(
             run_id=run_id,
+            history_mode=args.history_mode,
             status="failed",
             started_at=started_at,
             ended_at=ended_at,
@@ -892,6 +1015,7 @@ def main() -> None:
             paths=paths,
             root=root,
             seed_summary=seed_summary,
+            compact_summary=None,
         )
         summary["error"] = f"{exc.__class__.__name__}: {exc}"
         write_json(paths["replay_summary"], summary)
