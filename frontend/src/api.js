@@ -6,7 +6,7 @@ async function get(path, signal) {
   return res.json();
 }
 
-export const fetchUserIds      = (signal)                  => get('/api/users', signal).then(d => d.user_ids);
-export const fetchTimeline     = (userId, signal)          => get(`/api/users/${userId}/timeline`, signal).then(d => d.timeline);
-export const fetchFrame        = (userId, eventId, signal) => get(`/api/users/${userId}/events/${eventId}`, signal);
-export const fetchAllVizStates = (userId, signal)          => get(`/api/users/${userId}/visualization`, signal).then(d => d.visualization);
+export const fetchUserIds   = (signal)                        => get('/api/users', signal).then(d => d.user_ids);
+export const fetchTimeline  = (userId, signal)                => get(`/api/users/${userId}/timeline`, signal).then(d => d.timeline);
+export const fetchFrame     = (userId, eventId, signal)       => get(`/api/users/${userId}/events/${eventId}`, signal);
+export const fetchVizChunk  = (userId, checkpointId, signal)  => get(`/api/users/${userId}/visualization/${checkpointId}`, signal).then(d => d.chunk);

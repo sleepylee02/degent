@@ -85,4 +85,3 @@ create_dummy_data.py
 data/movies.db
 api/README.md
 create_movies_db.py
-migrate_to_optimized.py

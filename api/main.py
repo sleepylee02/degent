@@ -86,11 +86,11 @@ def get_dashboard_frame(user_id: int, event_id: int) -> dict[str, Any]:
 # Sub-endpoints
 # ---------------------------------------------------------------------------
 
-@app.get("/api/users/{user_id}/visualization")
-def get_all_visualization(user_id: int) -> dict[str, Any]:
+@app.get("/api/users/{user_id}/visualization/{checkpoint_id}")
+def get_viz_chunk(user_id: int, checkpoint_id: int) -> dict[str, Any]:
     with _dash() as conn:
-        data = database.get_all_viz_states(conn, user_id)
-    return {"user_id": user_id, "visualization": data}
+        data = database.get_viz_chunk(conn, user_id, checkpoint_id)
+    return {"user_id": user_id, "checkpoint_id": checkpoint_id, "chunk": data}
 
 
 @app.get("/api/users/{user_id}/events/{event_id}/visualization")

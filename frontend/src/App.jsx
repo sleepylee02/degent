@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { fetchUserIds, fetchTimeline, fetchFrame, fetchAllVizStates } from './api';
+import { fetchUserIds, fetchTimeline, fetchFrame, fetchVizChunk } from './api';
 import KTimeline from './components/KTimeline';
 import ClusterView from './components/ClusterView';
 import Recommendations from './components/Recommendations';
@@ -20,14 +20,15 @@ export default function App() {
   const [sliderIdx, setSliderIdx]         = useState(0);
   const [appliedIdx, setAppliedIdx]       = useState(0);
   const [frame, setFrame]                 = useState(null);
-  const [vizData, setVizData]             = useState({}); // event_id → {checkpoint_id, points_data}
   const [playing, setPlaying]             = useState(false);
   const [speed, setSpeed]                 = useState(600);
   const [perfVisible, setPerfVisible]     = useState(false);
+  const [chunkVersion, setChunkVersion]   = useState(0); // increments when a chunk loads → triggers points recompute
 
-  const intervalRef  = useRef(null);
-  const frameAbort   = useRef(null);
-  const cache        = useRef(new Map()); // event_id → frame
+  const intervalRef   = useRef(null);
+  const frameAbort    = useRef(null);
+  const cache         = useRef(new Map()); // event_id → frame
+  const vizChunkCache = useRef(new Map()); // checkpoint_id → {event_id: {checkpoint_id, points_data}}
 
   const { record, renderRef, stats } = usePerf();
 
@@ -40,27 +41,20 @@ export default function App() {
     return () => ac.abort();
   }, []);
 
-  // Load timeline + all viz states when user changes — clear cache
+  // Load timeline when user changes — clear all caches
   useEffect(() => {
     if (userId == null) return;
     cache.current.clear();
+    vizChunkCache.current.clear();
     setTimeline([]);
-    setVizData({});
     setSliderIdx(0);
     setAppliedIdx(0);
     setFrame(null);
+    setChunkVersion(0);
     setPlaying(false);
     const ac = new AbortController();
-    Promise.all([
-      fetchTimeline(userId, ac.signal),
-      fetchAllVizStates(userId, ac.signal),
-    ])
-      .then(([rows, viz]) => {
-        setTimeline(rows);
-        setVizData(viz);
-        setSliderIdx(0);
-        setAppliedIdx(0);
-      })
+    fetchTimeline(userId, ac.signal)
+      .then(rows => { setTimeline(rows); setSliderIdx(0); setAppliedIdx(0); })
       .catch(() => {});
     return () => ac.abort();
   }, [userId]);
@@ -99,6 +93,40 @@ export default function App() {
     }
   }, [appliedIdx, timeline, userId]);
 
+  // Derive current checkpoint_id from timeline (first event + refit events)
+  const currentCheckpointId = useMemo(() => {
+    if (!timeline.length) return null;
+    let cpId = timeline[0].event_id;
+    for (let i = 1; i <= appliedIdx; i++) {
+      if (timeline[i]?.is_refit_triggered) cpId = timeline[i].event_id;
+    }
+    return cpId;
+  }, [appliedIdx, timeline]);
+
+  // Next checkpoint_id — for prefetch
+  const nextCheckpointId = useMemo(() => {
+    for (let i = appliedIdx + 1; i < timeline.length; i++) {
+      if (timeline[i].is_refit_triggered) return timeline[i].event_id;
+    }
+    return null;
+  }, [appliedIdx, timeline]);
+
+  // Load current chunk; prefetch next chunk
+  useEffect(() => {
+    if (userId == null || currentCheckpointId == null) return;
+    const load = (cpId) => {
+      if (vizChunkCache.current.has(cpId)) return;
+      fetchVizChunk(userId, cpId)
+        .then(chunk => {
+          vizChunkCache.current.set(cpId, chunk);
+          setChunkVersion(v => v + 1);
+        })
+        .catch(() => {});
+    };
+    load(currentCheckpointId);
+    if (nextCheckpointId != null) load(nextCheckpointId);
+  }, [userId, currentCheckpointId, nextCheckpointId]);
+
   // Playback
   useEffect(() => {
     if (!playing) { clearInterval(intervalRef.current); return; }
@@ -117,28 +145,26 @@ export default function App() {
 
   const eventData = timeline[sliderIdx] ?? null;
 
-  // Accumulate viz points from checkpoint snapshot + deltas up to appliedIdx
+  // Accumulate viz points from checkpoint chunk + deltas up to appliedIdx
   const points = useMemo(() => {
-    if (!timeline.length || !Object.keys(vizData).length) return [];
+    if (!timeline.length || currentCheckpointId == null) return [];
+    const chunk = vizChunkCache.current.get(currentCheckpointId);
+    if (!chunk) return [];
+
+    const base = chunk[currentCheckpointId]?.points_data ?? [];
     const currentEventId = timeline[appliedIdx]?.event_id;
-    if (currentEventId == null) return [];
-    const currentEntry = vizData[currentEventId];
-    if (!currentEntry) return [];
+    if (currentEventId === currentCheckpointId) return base;
 
-    const { checkpoint_id, points_data } = currentEntry;
-    if (currentEventId === checkpoint_id) return points_data;
-
-    // Start from checkpoint snapshot and accumulate deltas forward
-    const base = vizData[checkpoint_id]?.points_data ?? [];
+    const cpIdx = timeline.findIndex(r => r.event_id === currentCheckpointId);
+    if (cpIdx === -1) return base;
     const acc = [...base];
-    const cpIdx = timeline.findIndex(r => r.event_id === checkpoint_id);
-    if (cpIdx === -1) return acc;
     for (let i = cpIdx + 1; i <= appliedIdx; i++) {
-      const delta = vizData[timeline[i]?.event_id]?.points_data;
+      const delta = chunk[timeline[i]?.event_id]?.points_data;
       if (delta) acc.push(...delta);
     }
     return acc;
-  }, [appliedIdx, timeline, vizData]);
+  // chunkVersion을 의존성에 포함해 chunk 로드 완료 시 재계산 트리거
+  }, [appliedIdx, timeline, currentCheckpointId, chunkVersion]); // eslint-disable-line
 
   const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
   const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 8), [frame]);
