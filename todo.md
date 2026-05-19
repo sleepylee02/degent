@@ -2,6 +2,7 @@
 
 ## Active
 
+
 - 모델 파트 현황 정리 및 별도 파이프라인 연동 준비
   - owner: sleepylee / LLM
   - files: `model/IMPLEMENTATION_STATUS.md`, `model/README.md`, `PROJECT_GUIDE.md`
@@ -20,6 +21,12 @@
   - status: 현재 작업 방향에서는 별도 train/canonical/cluster/state seed 재현 plan을 active로 유지하지 않는다. 이미 존재하는 `outputs/pre/temporal_2022` artifact를 사용해 POST replay history/dashboard 작업을 진행한다.
 
 ## Done
+
+- POST Replay Assignment Projection Dashboard
+  - owner: sleepylee / LLM
+  - plan: `plan/done/post_replay_assignment_projection_dashboard.md`
+  - files: `model/common/cluster.py`, `model/stream/history_store.py`, `model/stream/inprocess_worker.py`, `model/stream/cluster_refit.py`, `model/stream/compact_dashboard.py`, `dashboard/cluster_dashboard.py`, `dashboard/README.md`, `todo.md`
+  - status: Backend compact v2 기록/합성 검산 완료. REFIT projection context, assignment projection history, compact assigned/not_assigned/not_projected 합성을 구현했고 API/frontend 변경은 되돌렸다. Streamlit dashboard 디렉터리는 폐기했다. `py_compile`, synthetic compact smoke 2건, `git diff --check` 통과.
 
 - POST Replay Flow History
   - owner: sleepylee / LLM

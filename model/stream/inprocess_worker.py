@@ -87,6 +87,7 @@ class ReplayInProcessWorker:
         self._extract_ready = False
         self._cluster_ready = False
         self._recommend_ready = False
+        self.projection_context_by_user: dict[int, dict[str, Any]] = {}
 
     def run_extract_online(self, *, event_id: int, payload: dict[str, Any], replay_order: int | None = None) -> None:
         self._run_stage(
@@ -387,6 +388,85 @@ class ReplayInProcessWorker:
         append_metric(self.run_dir, metric_record)
         self.logger.info("Processed user state: %s", state_summary)
 
+    def _assignment_projection_rows(
+        self,
+        *,
+        user_id: int,
+        event_id: int,
+        replay_order: int | None,
+        assignment_records: list[dict[str, Any]],
+        embedding_rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        if not assignment_records:
+            return []
+
+        context = self.projection_context_by_user.get(int(user_id))
+        rows_by_raw_event_id = {int(row["rawEventId"]): row for row in embedding_rows}
+        output: list[dict[str, Any]] = []
+        for record in assignment_records:
+            raw_event_id = int(record["rawEventId"])
+            assignment_status = str(record.get("status", "unknown"))
+            assigned_interest_id = record.get("assignedInterestId")
+            visual_status = "assigned" if assignment_status == "assigned" else "not_assigned"
+            interest_id = assigned_interest_id if visual_status == "assigned" else None
+            candidate_interest_id = None if visual_status == "assigned" else assigned_interest_id
+            projection_source = "latest_refit"
+            umap_x = None
+            umap_y = None
+
+            embedding_row = rows_by_raw_event_id.get(raw_event_id)
+            if context is None:
+                visual_status = "not_projected"
+                projection_source = "no_projection_context"
+            elif embedding_row is None or embedding_row.get("embedding") is None:
+                visual_status = "not_projected"
+                projection_source = "missing_embedding_row"
+            else:
+                try:
+                    projected = refit_stage.project_with_refit_detail(
+                        np.asarray([embedding_row["embedding"]], dtype=np.float32),
+                        context["refitDetail"],
+                    )
+                    if projected.shape[1] >= 2:
+                        umap_x = float(projected[0, 0])
+                        umap_y = float(projected[0, 1])
+                    elif projected.shape[1] == 1:
+                        umap_x = float(projected[0, 0])
+                        umap_y = 0.0
+                    else:
+                        visual_status = "not_projected"
+                        projection_source = "empty_projection"
+                except Exception as exc:
+                    visual_status = "not_projected"
+                    projection_source = f"projection_failed:{exc.__class__.__name__}: {exc}"
+
+            output.append(
+                {
+                    "recordedAt": local_timestamp(),
+                    "runId": self.run_id,
+                    "eventId": int(event_id),
+                    "replayOrder": None if replay_order is None else int(replay_order),
+                    "userId": int(user_id),
+                    "rawEventId": raw_event_id,
+                    "eventIdx": record.get("eventIdx"),
+                    "movieId": record.get("movieId"),
+                    "assignmentStatus": assignment_status,
+                    "visualStatus": visual_status,
+                    "interestId": None if interest_id is None else int(interest_id),
+                    "candidateInterestId": None if candidate_interest_id is None else int(candidate_interest_id),
+                    "similarity": record.get("similarity"),
+                    "reason": record.get("reason"),
+                    "umapX": umap_x,
+                    "umapY": umap_y,
+                    "baseStateVersion": None if context is None else context.get("stateVersion"),
+                    "baseRefitEventId": None if context is None else context.get("eventId"),
+                    "baseRefitReplayOrder": None if context is None else context.get("replayOrder"),
+                    "projectionSource": projection_source,
+                }
+            )
+        return output
+
+
     def _interest_assign(self, *, event_id: int, replay_order: int | None) -> None:
         rows = runtime_store.fetch_embedding_cache_changed_rows(
             self.runtime_db_path,
@@ -404,7 +484,7 @@ class ReplayInProcessWorker:
 
         all_assignment_records: list[dict[str, Any]] = []
         refit_request_records: list[dict[str, Any]] = []
-        history_records: list[tuple[int, Any, list[dict[str, Any]], dict[str, Any] | None]] = []
+        history_records: list[tuple[int, Any, list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]] = []
         for user_id, user_rows in sorted(grouped_rows.items()):
             state_path = None if self.interest_state_dir is None else assign_stage.state_path_for_user(self.interest_state_dir, user_id)
             state = assign_stage.load_interest_state_with_seed(
@@ -444,7 +524,7 @@ class ReplayInProcessWorker:
             all_assignment_records.extend(assignment_records)
             if refit_request is not None:
                 refit_request_records.append(refit_request)
-            history_records.append((user_id, state, assignment_records, refit_request))
+            history_records.append((user_id, state, assignment_records, refit_request, user_rows))
 
             statuses: dict[str, int] = {}
             for record in assignment_records:
@@ -486,7 +566,7 @@ class ReplayInProcessWorker:
             for record, request_id in zip(refit_request_records, request_ids, strict=False)
         }
         if self.history_db_path is not None:
-            for history_user_id, state, assignment_records, _refit_request in history_records:
+            for history_user_id, state, assignment_records, _refit_request, user_rows in history_records:
                 state_version = history_store.record_user_interest_timeline(
                     self.history_db_path,
                     run_id=self.run_id,
@@ -503,6 +583,21 @@ class ReplayInProcessWorker:
                     event_id=event_id,
                     replay_order=replay_order,
                     records=assignment_records,
+                    state_version=state_version,
+                )
+                projection_rows = self._assignment_projection_rows(
+                    user_id=history_user_id,
+                    event_id=event_id,
+                    replay_order=replay_order,
+                    assignment_records=assignment_records,
+                    embedding_rows=user_rows,
+                )
+                history_store.record_assignment_projections(
+                    self.history_db_path,
+                    run_id=self.run_id,
+                    event_id=event_id,
+                    replay_order=replay_order,
+                    rows=projection_rows,
                     state_version=state_version,
                 )
 
@@ -797,6 +892,12 @@ class ReplayInProcessWorker:
                     state_version=state_version,
                     rows=membership_rows,
                 )
+                self.projection_context_by_user[request_user_id] = {
+                    "stateVersion": state_version,
+                    "eventId": event_id,
+                    "replayOrder": replay_order,
+                    "refitDetail": refit_detail,
+                }
             self.logger.info("Closed refit request: %s", event)
 
         if refit_events:
