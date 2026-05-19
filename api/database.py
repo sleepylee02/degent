@@ -76,6 +76,41 @@ def get_viz_state(
     return {"user_id": user_id, "event_id": event_id, "points_data": points}
 
 
+def get_all_viz_states(
+    conn: sqlite3.Connection, user_id: int
+) -> dict[int, dict[str, Any]]:
+    """Return all visualization states for a user keyed by event_id.
+
+    Each value is {"checkpoint_id": int, "points_data": list}.
+    Falls back gracefully when checkpoint_id column does not exist.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT event_id, checkpoint_id, points_data FROM visualization_states WHERE user_id=? ORDER BY event_id",
+            (user_id,),
+        ).fetchall()
+        return {
+            r["event_id"]: {
+                "checkpoint_id": r["checkpoint_id"],
+                "points_data": json.loads(r["points_data"]) if r["points_data"] else [],
+            }
+            for r in rows
+        }
+    except sqlite3.OperationalError:
+        # checkpoint_id column not yet present — treat every row as its own checkpoint
+        rows = conn.execute(
+            "SELECT event_id, points_data FROM visualization_states WHERE user_id=? ORDER BY event_id",
+            (user_id,),
+        ).fetchall()
+        return {
+            r["event_id"]: {
+                "checkpoint_id": r["event_id"],
+                "points_data": json.loads(r["points_data"]) if r["points_data"] else [],
+            }
+            for r in rows
+        }
+
+
 # ---------------------------------------------------------------------------
 # cluster_snapshots
 # ---------------------------------------------------------------------------

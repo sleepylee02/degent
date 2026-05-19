@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { fetchUserIds, fetchTimeline, fetchFrame } from './api';
+import { fetchUserIds, fetchTimeline, fetchFrame, fetchAllVizStates } from './api';
 import KTimeline from './components/KTimeline';
 import ClusterView from './components/ClusterView';
 import Recommendations from './components/Recommendations';
@@ -14,15 +14,16 @@ const MemoClusterView    = memo(ClusterView);
 const MemoRecommendations = memo(Recommendations);
 
 export default function App() {
-  const [userIds, setUserIds]       = useState([]);
-  const [userId, setUserId]         = useState(null);
-  const [timeline, setTimeline]     = useState([]);
-  const [sliderIdx, setSliderIdx]   = useState(0);
-  const [appliedIdx, setAppliedIdx] = useState(0);
-  const [frame, setFrame]           = useState(null);
-  const [playing, setPlaying]       = useState(false);
-  const [speed, setSpeed]           = useState(600);
-  const [perfVisible, setPerfVisible] = useState(false);
+  const [userIds, setUserIds]             = useState([]);
+  const [userId, setUserId]               = useState(null);
+  const [timeline, setTimeline]           = useState([]);
+  const [sliderIdx, setSliderIdx]         = useState(0);
+  const [appliedIdx, setAppliedIdx]       = useState(0);
+  const [frame, setFrame]                 = useState(null);
+  const [vizData, setVizData]             = useState({}); // event_id → {checkpoint_id, points_data}
+  const [playing, setPlaying]             = useState(false);
+  const [speed, setSpeed]                 = useState(600);
+  const [perfVisible, setPerfVisible]     = useState(false);
 
   const intervalRef  = useRef(null);
   const frameAbort   = useRef(null);
@@ -39,18 +40,27 @@ export default function App() {
     return () => ac.abort();
   }, []);
 
-  // Load timeline when user changes — clear cache
+  // Load timeline + all viz states when user changes — clear cache
   useEffect(() => {
     if (userId == null) return;
     cache.current.clear();
     setTimeline([]);
+    setVizData({});
     setSliderIdx(0);
     setAppliedIdx(0);
     setFrame(null);
     setPlaying(false);
     const ac = new AbortController();
-    fetchTimeline(userId, ac.signal)
-      .then(rows => { setTimeline(rows); setSliderIdx(0); setAppliedIdx(0); })
+    Promise.all([
+      fetchTimeline(userId, ac.signal),
+      fetchAllVizStates(userId, ac.signal),
+    ])
+      .then(([rows, viz]) => {
+        setTimeline(rows);
+        setVizData(viz);
+        setSliderIdx(0);
+        setAppliedIdx(0);
+      })
       .catch(() => {});
     return () => ac.abort();
   }, [userId]);
@@ -107,9 +117,31 @@ export default function App() {
 
   const eventData = timeline[sliderIdx] ?? null;
 
-  const points   = useMemo(() => frame?.visualization?.points_data ?? [], [frame]);
+  // Accumulate viz points from checkpoint snapshot + deltas up to appliedIdx
+  const points = useMemo(() => {
+    if (!timeline.length || !Object.keys(vizData).length) return [];
+    const currentEventId = timeline[appliedIdx]?.event_id;
+    if (currentEventId == null) return [];
+    const currentEntry = vizData[currentEventId];
+    if (!currentEntry) return [];
+
+    const { checkpoint_id, points_data } = currentEntry;
+    if (currentEventId === checkpoint_id) return points_data;
+
+    // Start from checkpoint snapshot and accumulate deltas forward
+    const base = vizData[checkpoint_id]?.points_data ?? [];
+    const acc = [...base];
+    const cpIdx = timeline.findIndex(r => r.event_id === checkpoint_id);
+    if (cpIdx === -1) return acc;
+    for (let i = cpIdx + 1; i <= appliedIdx; i++) {
+      const delta = vizData[timeline[i]?.event_id]?.points_data;
+      if (delta) acc.push(...delta);
+    }
+    return acc;
+  }, [appliedIdx, timeline, vizData]);
+
   const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
-  const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 6), [frame]);
+  const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 8), [frame]);
 
   // Attach local sequential index (1-based) for chart X-axis
   const chartTimeline = useMemo(
