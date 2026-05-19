@@ -1,6 +1,6 @@
 # Streaming Replay/Dashboard Contract
 
-이 문서는 trace-clock replay runner와 POST replay dashboard가 공유하는 replay artifact 인터페이스 계약이다. Production runtime store는 replay 실행/복구/리포트용 정본이고, dashboard는 history run에서 생성한 compact projection만 읽는다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다.
+이 문서는 trace-clock replay runner와 POST replay dashboard가 공유하는 replay artifact 인터페이스 계약이다. Production runtime store는 replay 실행/복구/리포트용 정본이고, Streamlit dashboard와 React dashboard API는 history run에서 생성한 compact projection만 읽는다. Post replay의 active online embedding은 SQLite cache가 정본이고, `online_embeddings.npz`는 명시적으로 export할 때만 생성하는 debug artifact다.
 
 ## Version
 
@@ -9,8 +9,8 @@
 ## Ownership
 
 - Trace replay owns writes under `outputs/post/<run_id>_production/` and `outputs/post/<run_id>_history/`.
-- Dashboard reads `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
-- Dashboard must not read `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, or JSONL debug artifacts as fallback inputs.
+- Streamlit dashboard and React dashboard API read `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` and must not depend on trace replay internal functions, process model, CLI implementation, or C++ code structure.
+- Dashboard/API/frontend must not read `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, or JSONL debug artifacts as fallback inputs.
 - While a replay is still running, `dashboard_compact/dashboard_compact.sqlite` may not exist yet. In that case the compact dashboard should show an unavailable/empty state rather than reading runtime stores directly.
 - Contract changes must be made here first, then reflected in runner and dashboard docs. Do not silently change dashboard expectations from dashboard code only.
 
@@ -315,7 +315,7 @@ Legacy/debug readers should tolerate either `movieId` or `recommendedMovieId` as
 
 ## Compact Dashboard Read Scope
 
-The POST replay dashboard may read:
+The POST replay dashboard/API may read:
 
 - `dashboard_compact/dashboard_compact.sqlite`
 - optional `replay_summary.json` only for discovering `paths.dashboardCompactDb`

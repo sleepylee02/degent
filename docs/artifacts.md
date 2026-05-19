@@ -21,6 +21,8 @@
 | `data/ml-32m/genre.csv` | auxiliary generated data | `(cd preprocess/preprocess_genre && python3 preprocess_genre.py)` | regenerate |
 | `data/genome_2021/raw/` | raw input | manual local placement | no |
 | `data/ml-32m-extension-main/raw/` | raw input | manual local placement | no |
+| `data/movies.db` | local dashboard movie metadata DB | local preparation for API/frontend dashboard | no |
+| `data/MLP-20M/` | local poster/static payload for API/frontend dashboard | manual local placement | no |
 | `data/movies_processed.csv` | generated data | `python3 preprocess/preprocess_movie/preprocess_movies.py` | no |
 | `data/movies_processed_drop.csv` | generated data | `python3 preprocess/drop_movie/drop_movies.py` | no |
 | `data/ratings_drop.csv` | generated data | `python3 preprocess/drop_rating/drop_ratings.py` | no |
@@ -72,7 +74,10 @@
 | `experiments/model/<run_id>/metrics.jsonl` | local experiment metrics, git ignored | model scripts | append |
 | `experiments/model/<run_id>/notes.md` | local experiment notes, git ignored | model scripts / manual note | edit |
 | `requirements.txt` | Python dependency lock | repo-local `.venv` / `.venv/bin/pip freeze` | edit/regenerate |
-| `data/clustering/user_clusters.parquet` | dashboard input | `python3 -m model.batch.export_clusters` | regenerate |
+| `api/requirements.txt` | React dashboard API dependency list | manual dependency update for `api/` | edit |
+| `frontend/package.json` | React dashboard dependency/scripts manifest | `npm install <package>` or manual update in `frontend/` | edit |
+| `frontend/package-lock.json` | React dashboard npm lockfile | `npm install` in `frontend/` | regenerate |
+| `data/clustering/user_clusters.parquet` | batch dashboard/export input | `python3 -m model.batch.export_clusters` | regenerate |
 | `eda/eda_outputs/` | raw EDA artifacts | `python3 -m eda.raw.eda_overview --source all` | regenerate |
 | `eda/raw/outputs/` | legacy raw EDA artifacts | previous raw EDA workflow | no new writes |
 | `eda/processed/outputs/` | processed EDA artifacts | `python3 eda/processed/eda_processed.py` | regenerate |
@@ -96,6 +101,8 @@ python3 -m model.stream.interest_assign
 python3 -m model.stream.cluster_refit
 python3 -m model.stream.recommend_online
 make -C replay
-python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommend
+python3 -m model.stream.replay_pipeline --generate-events --speed 100 --history-mode history --recommend
 streamlit run dashboard/cluster_dashboard.py
+.venv/bin/uvicorn api.main:app --reload
+(cd frontend && npm install && npm run dev)
 ```

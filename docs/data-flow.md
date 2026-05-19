@@ -64,8 +64,10 @@ data/**/raw/
         -> outputs/post/<run_id>_production/production/refit_events.jsonl
         -> outputs/post/<run_id>_production/production/stream_recommendations.jsonl  (when --recommend)
         -> outputs/post/<run_id>_history/history/history.sqlite  (when --history-mode history)
-        -> outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite  (when --history-mode history)
-        -> dashboard/cluster_dashboard.py Replay monitor
+        -> python3 -m model.stream.compact_dashboard  (after history replay)
+        -> outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite
+        -> dashboard/cluster_dashboard.py compact reader
+        -> api/main.py + frontend/ React compact reader
 ```
 
 보조 장르 산출물 흐름:
@@ -210,7 +212,7 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 - local `experiments/model/<run_id>/metrics.jsonl`
 - local `experiments/model/<run_id>/notes.md`
 
-세부 실행 옵션은 `model/README.md`를 따른다.
+세부 실행 옵션은 `model/README.md`를 따른다. Dashboard/API/frontend 실행 옵션은 `dashboard/README.md`, `api/README.md`, `frontend/README.md`를 따른다.
 
 모델 산출물과 run별 실험 기록은 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 로컬 `experiments/model/<run_id>/`에 남긴다.
 
@@ -226,11 +228,11 @@ Temporal cutoff run은 모델 관련 산출물을 `outputs/pre/<run_label>/` 아
 
 `model.stream.seed_pre_t_state`는 temporal cutoff 이전 rating history로 replay 시작용 SQLite user state를 생성한다. 같은 seed DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시해 post-T replay에서 과거 active event가 신규 assignment처럼 처리되지 않게 한다.
 
-Trace replay artifact는 기본적으로 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Production runtime state, payload, metadata, stage metric, refit lifecycle은 `production/production.sqlite`에 기록된다. `--history-mode history`를 사용하면 같은 history run 안에서 `history/history.sqlite` append-only side log와 `dashboard_compact/dashboard_compact.sqlite` projection을 추가로 만든다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고 DB에는 metadata와 row index를 남긴다. Dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths.replayDb` 또는 `paths.productionDb`가 있으면 SQLite를 우선 사용한다. 기존 JSONL/JSON artifact는 fallback/debug 경로다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+Trace replay artifact는 기본적으로 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Production runtime state, payload, metadata, stage metric, refit lifecycle은 `production/production.sqlite`에 기록된다. `--history-mode history`를 사용하면 같은 history run 안에서 `history/history.sqlite` append-only side log와 `dashboard_compact/dashboard_compact.sqlite` projection을 추가로 만든다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고 DB에는 metadata와 row index를 남긴다. 공식 POST replay dashboard/API/frontend는 compact DB를 display input으로 읽고, `replay_summary.json`은 `paths.dashboardCompactDb` discovery에만 선택적으로 사용한다. Production/history DB와 JSONL artifact는 replay/report/debug 경로이며 dashboard fallback input이 아니다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 7. Dashboard input
 
-현재 모델 클러스터링 산출물은 `outputs/user_interests.npz`이고, cluster explorer의 기본 입력은 테이블 파일이다.
+Batch cluster visualization/export 입력은 `outputs/user_interests.npz`에서 만든 테이블 파일이다.
 
 기본 입력 경로:
 
@@ -244,24 +246,41 @@ python3 -m model.batch.export_clusters \
   --output data/clustering/user_clusters.parquet
 ```
 
-Cluster explorer 입력 파일은 `dashboard/README.md`의 입력 스키마를 따른다. 실제 결과 파일이 없으면 대시보드에서 demo 데이터를 사용해 UI를 먼저 확인할 수 있다.
+POST replay dashboard 입력은 history run에서 만든 compact DB 하나다.
 
-Replay monitor 입력은 trace replay artifact다.
+- `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`
 
-- `outputs/post/<run_id>_production/replay_summary.json`
-- `outputs/post/<run_id>_production/production/production.sqlite`
-- `outputs/post/<run_id>_production/production/ingress_events.jsonl`
-- `outputs/post/<run_id>_production/production/replay_events.jsonl`
-- `outputs/post/<run_id>_production/production/interest_assignments.jsonl`
-- `outputs/post/<run_id>_production/production/refit_requests.jsonl`
-- `outputs/post/<run_id>_production/production/refit_events.jsonl`
-- `outputs/post/<run_id>_production/production/stream_recommendations.jsonl`
-- `outputs/post/<run_id>_history/history/history.sqlite` and `dashboard_compact/dashboard_compact.sqlite` for history/dashboard replay analysis
+Compact DB는 `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` table을 제공한다. Streamlit dashboard와 React API는 이 compact DB만 display input으로 읽는다. `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact는 replay/report/debug 용도이며 dashboard fallback input이 아니다.
 
-## 8. Dashboard
+React API는 recommendation 표시를 풍부하게 하기 위해 선택적으로 아래 로컬 보조 입력도 읽는다.
+
+- `data/movies.db`: `movies(movie_id, title, poster_url, genres, release_year)` metadata DB
+- `data/MLP-20M/`: poster static files. 있으면 `/posters`로 mount
+
+## 8. Dashboard/API/Frontend
+
+Streamlit compact reader:
 
 ```bash
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-세부 입력 계약은 `dashboard/README.md`와 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+FastAPI backend:
+
+```bash
+.venv/bin/pip install -r api/requirements.txt
+DASHBOARD_DB_PATH=outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite \
+MOVIES_DB_PATH=data/movies.db \
+POSTER_DIR=data/MLP-20M \
+.venv/bin/uvicorn api.main:app --reload
+```
+
+React frontend:
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE=http://localhost:8000 npm run dev
+```
+
+세부 입력 계약은 `docs/streaming-replay-dashboard-contract.md`, `docs/post-replay-output-areas.md`, `dashboard/README.md`, `api/README.md`, `frontend/README.md`를 따른다.

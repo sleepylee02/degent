@@ -38,4 +38,4 @@ Post-T trace replay 신규 산출물은 mode별 root를 분리한다.
 - `outputs/post/<run_id>_history/history/history.sqlite`: append-only event/state-version history store
 - `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`: history DB에서 만든 dashboard용 compact projection
 
-기존 `outputs/post/<run_label>_events_<N>/`, `outputs/post/<run_label>_full/`, root-level `replay.sqlite` 계약은 legacy/default 호환 경로로 유지한다. Replay dashboard는 `replay_summary.json`의 `paths.replayDb`/`paths.productionDb`가 있으면 SQLite를 우선 읽고, 기존 JSONL/JSON 파일은 fallback/debug 경로로 사용한다. 위 파일을 읽기만 하며 생성/수정/삭제하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+기존 `outputs/post/<run_label>_events_<N>/`, `outputs/post/<run_label>_full/`, root-level `replay.sqlite` 계약은 legacy/default 호환 경로로 유지한다. 공식 POST replay dashboard는 history root의 `dashboard_compact/dashboard_compact.sqlite`만 display input으로 읽는다. `replay_summary.json`은 `paths.dashboardCompactDb` discovery에만 선택적으로 쓰고, production/history DB나 JSONL debug artifact를 dashboard fallback으로 읽지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.

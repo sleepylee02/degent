@@ -36,7 +36,9 @@ degent/
 ├── schemas/                          # 데이터 계약 정본
 ├── preprocess/                       # 전처리 및 후처리 스크립트
 ├── replay/                           # C++ rating replay event generator
-├── dashboard/                        # 클러스터링 결과 시각화 대시보드
+├── dashboard/                        # compact SQLite 기반 Streamlit replay dashboard
+├── api/                              # React dashboard용 read-only FastAPI backend
+├── frontend/                         # React + Vite replay dashboard
 ├── model/                            # SASRec + Contrastive Loss 모델 파이프라인
 ├── outputs/                          # 모델 산출물과 실행 로그
 ├── experiments/                      # 로컬 실험 메타데이터 (git에는 구조 파일만 유지)
@@ -88,6 +90,8 @@ pip install -r requirements.txt
 패키지 설치와 제거는 프로젝트 루트의 repo-local `.venv`에서만 수행한다. 시스템 Python, `sudo pip`, OS package manager, 전역 CUDA/toolkit 설치는 프로젝트 작업 범위에서 사용하지 않는다.
 
 주요 의존성은 `torch==2.5.1+cu121`, RAPIDS/cuML `25.10.0`, `polars`, `matplotlib`, `numpy`, `PyYAML`, `pandas`, `umap-learn`, `hdbscan`, `streamlit`, `plotly`다. GPU dependency 버저닝 결정은 `docs/decisions/0003-pin-rapids-cuml-gpu-dependencies.md`를 따른다.
+
+React dashboard를 실행할 때는 Python API 의존성(`api/requirements.txt`)과 Node/Vite 의존성(`frontend/package.json`)도 별도로 설치한다.
 
 ## 전처리 파이프라인
 
@@ -234,46 +238,46 @@ python3 eda/processed/eda_processed.py
 
 ## 추천 대시보드
 
-사용자 상태 임베딩 cluster 결과, pre-T seed state, post-T replay 진행 상황, replay 이후 interest state를 인터랙티브하게 탐색할 수 있다.
+현재 공식 POST replay dashboard 계약은 compact-only reader다. 입력은 history run이 만든 compact projection 하나다.
+
+```text
+outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite
+```
+
+Streamlit reader:
 
 ```bash
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-사이드바의 `Dashboard view`에서 `PRE Cluster`, `PRE Seed State`, `POST Replay`, `POST Interest State`를 전환한다. 기본 post replay artifact가 있으면 `POST Replay`가 먼저 열리고, 없으면 `PRE Cluster`가 먼저 열린다.
+앱은 `outputs/post/**/dashboard_compact/dashboard_compact.sqlite`를 자동 탐색하고, 필요하면 sidebar에서 직접 경로를 입력한다. 읽는 table은 `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` 네 개다. `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact는 dashboard 입력 fallback으로 읽지 않는다.
 
-PRE Cluster는 기본적으로 아래 결과 파일을 기대한다.
-
-- `data/clustering/user_clusters.parquet`
-
-`outputs/user_interests.npz`를 `data/clustering/user_clusters.parquet`로 변환하는 export 스크립트는 `model/batch/export_clusters.py`다.
-
-사용법:
+React + FastAPI reader도 같은 compact DB 계약을 사용한다. API는 compact dashboard DB와 별도 movie metadata DB를 read-only로 열고, frontend는 timeline, cluster scatter, K 변화, recommendation panel을 표시한다.
 
 ```bash
-python3 -m model.batch.export_clusters \
-  --input outputs/user_interests.npz \
-  --output data/clustering/user_clusters.parquet
+.venv/bin/pip install -r api/requirements.txt
+DASHBOARD_DB_PATH=outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite \
+MOVIES_DB_PATH=data/movies.db \
+POSTER_DIR=data/MLP-20M \
+.venv/bin/uvicorn api.main:app --reload
 ```
 
-필수 컬럼:
+```bash
+cd frontend
+npm install
+VITE_API_BASE=http://localhost:8000 npm run dev
+```
 
-- `userId`
-- `clusterLabel`
-- `x`
-- `y`
+API endpoint 요약:
 
-선택 컬럼:
+- `GET /api/users`
+- `GET /api/users/{user_id}/timeline`
+- `GET /api/users/{user_id}/events/{event_id}`
+- `GET /api/users/{user_id}/events/{event_id}/visualization`
+- `GET /api/users/{user_id}/events/{event_id}/clusters`
+- `GET /api/users/{user_id}/events/{event_id}/recommendations`
 
-- `z`
-- `clusterProbability`
-- `outlierScore`
-- `sequenceLength`
-- `embeddingNorm`
-
-Dashboard는 네 view로 나뉜다. `PRE Cluster`는 `outputs/pre/**/user_interests.npz`를 자동 탐색해 pre-T batch cluster를 선택할 수 있게 하고, `PRE Seed State`는 `outputs/pre/**/pre_summary.json`과 `state.sqlite`를 읽어 replay 시작 상태를 요약한다. 실제 결과 파일이 아직 없으면 앱에서 demo 데이터를 사용해 cluster UI를 먼저 점검할 수 있다. 세부 입력 계약은 `dashboard/README.md`를 따른다.
-
-`POST Replay`는 `outputs/post/**/replay_summary.json`을 자동 탐색해 post-T replay artifact를 읽는 read-only view다. 선택한 summary의 `paths` 값이 있으면 그 경로를 우선 사용한다. `paths.replayDb`가 있으면 해당 `replay.sqlite`를 우선 읽고, 없으면 같은 post run root의 JSONL artifact를 fallback으로 읽는다. `POST Interest State`는 같은 `replay.sqlite`에서 replay 이후 final interest state와 interest vector projection을 표시한다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+`data/movies.db`와 `data/MLP-20M/` poster payload는 로컬 보조 입력이며 git으로 추적하지 않는다. 세부 파일 계약은 `docs/streaming-replay-dashboard-contract.md`, UI별 실행 안내는 `dashboard/README.md`, `api/README.md`, `frontend/README.md`를 따른다.
 
 ## 모델 실험 기록
 
@@ -281,19 +285,19 @@ Dashboard는 네 view로 나뉜다. `PRE Cluster`는 `outputs/pre/**/user_intere
 
 `python3 -m model.batch.extract_canonical`은 event 하나당 embedding 하나를 보장하는 `outputs/canonical_embeddings.npz`를 저장한다. 현재 `python3 -m model.batch.cluster`의 기본 입력도 이 canonical embedding이다. 과거 overlap-window 추출 산출물인 `outputs/embeddings.npz`는 legacy artifact로만 취급한다.
 
-`python3 -m model.batch.cluster`는 유저별 UMAP+HDBSCAN을 실행하고 `outputs/user_interests.npz`와 `outputs/batch/interest_states/{user_id}.json`을 만든다. `model.common.cluster`의 공통 backend를 사용하며 `--cluster-backend auto`는 가능한 경우 GPU, 불가능하면 CPU fallback을 사용한다. 장르 라벨링은 `data/movies_processed_drop.csv`가 있으면 자동으로 붙는다.
+`python3 -m model.batch.cluster`는 유저별 UMAP+HDBSCAN을 실행하고 `outputs/user_interests.npz`와 `outputs/batch/state.sqlite`를 만든다. `outputs/user_interests.npz`는 dashboard/export용 label/UMAP 배열이고, interest vector 정본은 SQLite state store다. `model.common.cluster`의 공통 backend를 사용하며 `--cluster-backend auto`는 가능한 경우 GPU, 불가능하면 CPU fallback을 사용한다. 장르 라벨링은 `data/movies_processed_drop.csv`가 있으면 자동으로 붙는다.
 
 `python3 -m model.batch.export_clusters`는 `outputs/user_interests.npz`를 dashboard용 `data/clustering/user_clusters.parquet` 등 테이블 포맷으로 변환한다.
 
-`python3 -m model.stream.extract_online`은 raw rating event를 user state에 모두 저장하고, 현재까지 관측된 history 기준 positive projection에서 active online embedding을 만든다. 기본 출력은 `outputs/stream/user_states/{user_id}.json`, `outputs/stream/online_embeddings.npz`, `outputs/stream/online_embedding_events.jsonl`이다.
+`python3 -m model.stream.extract_online`은 raw rating event를 SQLite user state에 저장하고, 현재까지 관측된 history 기준 positive projection에서 active online embedding을 만든다. Standalone/debug 실행은 `outputs/stream/online_embeddings.npz`와 `outputs/stream/online_embedding_events.jsonl`을 남기며, replay runtime 기본 경로에서는 `production/production.sqlite`의 active embedding cache가 정본이다.
 
-`python3 -m model.stream.interest_assign`은 active online embedding을 user별 interest state에 연결한다. interest vector가 없으면 pending buffer와 refit request를 남기고, interest vector가 있으면 cosine similarity로 assign한다. 기본 출력은 `outputs/stream/interest_states/{user_id}.json`, `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`이다.
+`python3 -m model.stream.interest_assign`은 active online embedding을 SQLite interest state에 연결한다. interest vector가 없으면 pending buffer와 refit request를 남기고, interest vector가 있으면 cosine similarity로 assign한다. Standalone/debug 로그는 `outputs/stream/interest_assignments.jsonl`, `outputs/stream/refit_requests.jsonl`이다.
 
 `python3 -m model.stream.cluster_refit`은 open refit request를 소비해 user별 active embedding 전체를 다시 clustering하고 interest state를 replace한다. 기본 backend는 `auto`이며 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다. refit 결과는 `outputs/stream/refit_events.jsonl`에 기록된다.
 
-`python3 -m model.stream.recommend_online`은 `outputs/stream/interest_states/{user_id}.json`의 interest vector와 SASRec item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산해 `outputs/stream/stream_recommendations.jsonl`에 top-K 추천을 append한다. seen positive item은 기본적으로 제외한다.
+`python3 -m model.stream.recommend_online`은 SQLite interest/user state와 SASRec item embedding으로 `score(u, i) = max_k(u_k^T v_i)`를 계산해 `outputs/stream/stream_recommendations.jsonl`에 top-K 추천을 append한다. seen positive item은 기본적으로 제외한다.
 
-`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출한다. 기본 replay root는 `outputs/post/replay_demo/`이고, temporal run은 `--output-root outputs/post/<run_label>_events_<N>[_recommend]`처럼 명시해 실행 범위를 드러낸다. 각 root 아래에는 `replay.sqlite`, `ingress_events.jsonl`, event-level `replay_events.jsonl`, `replay_summary.json`, replay-scoped state/log/embedding을 기록한다. SQLite는 payload/state/metadata/lifecycle/runtime metric을 기록하고, 대형 vector artifact는 기존 NPZ/checkpoint 파일로 유지한다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 output root의 `stream_recommendations.jsonl`도 남긴다.
+`make -C replay`는 `replay/bin/rating_replay`를 빌드한다. `python3 -m model.stream.replay_pipeline`은 replay input event를 timestamp trace로 소비해 `--speed N` 기준 schedule에 맞춰 event를 주입하고, 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 in-process로 호출한다. `--history-mode off` 기본 실행은 `outputs/post/<run_id>_production/production/production.sqlite`에 clean production current state를 남긴다. `--history-mode history` 실행은 `outputs/post/<run_id>_history/production/production.sqlite`, `history/history.sqlite`, `dashboard_compact/dashboard_compact.sqlite`를 만든다. `--recommend`를 추가하면 event 처리 후 `recommend_online`을 실행해 production artifact 영역의 `stream_recommendations.jsonl`도 남긴다.
 
 로컬 실험 기록:
 
@@ -354,7 +358,7 @@ Dashboard는 네 view로 나뉜다. `PRE Cluster`는 `outputs/pre/**/user_intere
 - `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.windsurfrules`: LLM 도구별 진입점
 - `todo.md`: 현재 작업 상태와 협업 메모
 - `docs/current-pipeline-snapshot.md`: 현재 batch / streaming 구현, streaming data flow, 문제 포인트
-- `docs/data-flow.md`: raw -> processed -> model -> dashboard 흐름
+- `docs/data-flow.md`: raw -> processed -> model -> compact dashboard/API/frontend 흐름
 - `docs/artifacts.md`: 원본 데이터와 생성물의 수정 가능 여부
 - `docs/decisions/`: 중요한 설계 결정 기록
 - `experiments/model/README.md`: 로컬 모델 실험 메타데이터 기록 규칙

@@ -80,3 +80,4 @@ outputs/logs/**
 !outputs/logs/.gitkeep
 
 data/MLP-20M/**
+data/movies.db
