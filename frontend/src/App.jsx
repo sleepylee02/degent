@@ -7,7 +7,8 @@ import PerfOverlay from './components/PerfOverlay';
 import { usePerf } from './hooks/usePerf';
 import './App.css';
 
-const PREFETCH_AHEAD = 3; // number of frames to prefetch during playback
+const PREFETCH_AHEAD = 3;  // frames to prefetch during playback
+const CACHE_MAX      = 150; // max frame cache entries before LRU eviction
 
 const MemoKTimeline      = memo(KTimeline);
 const MemoClusterView    = memo(ClusterView);
@@ -27,8 +28,9 @@ export default function App() {
 
   const intervalRef   = useRef(null);
   const frameAbort    = useRef(null);
-  const cache         = useRef(new Map()); // event_id → frame
-  const vizChunkCache = useRef(new Map()); // checkpoint_id → {event_id: {checkpoint_id, points_data}}
+  const cache         = useRef(new Map()); // event_id → frame  (LRU-evicted at CACHE_MAX)
+  const vizChunkCache = useRef(new Map()); // checkpoint_id → chunk
+  const pointsAccRef  = useRef({ cpId: null, idx: -1, pts: [], version: -1 }); // incremental acc cache
 
   const { record, renderRef, stats } = usePerf();
 
@@ -74,7 +76,13 @@ export default function App() {
         : fetchFrame(uid, row.event_id, sig),
       { cached }
     );
-    if (!cached) cache.current.set(row.event_id, result);
+    if (!cached) {
+      cache.current.set(row.event_id, result);
+      // LRU eviction: Map preserves insertion order — delete oldest entry
+      if (cache.current.size > CACHE_MAX) {
+        cache.current.delete(cache.current.keys().next().value);
+      }
+    }
     setFrame(result);
   }, [record]);
 
@@ -145,25 +153,38 @@ export default function App() {
 
   const eventData = timeline[sliderIdx] ?? null;
 
-  // Accumulate viz points from checkpoint chunk + deltas up to appliedIdx
+  // Incrementally accumulate viz points — forward playback appends only new deltas
   const points = useMemo(() => {
     if (!timeline.length || currentCheckpointId == null) return [];
     const chunk = vizChunkCache.current.get(currentCheckpointId);
     if (!chunk) return [];
 
-    const base = chunk[currentCheckpointId]?.points_data ?? [];
-    const currentEventId = timeline[appliedIdx]?.event_id;
-    if (currentEventId === currentCheckpointId) return base;
-
+    const prev = pointsAccRef.current;
     const cpIdx = timeline.findIndex(r => r.event_id === currentCheckpointId);
-    if (cpIdx === -1) return base;
-    const acc = [...base];
-    for (let i = cpIdx + 1; i <= appliedIdx; i++) {
-      const delta = chunk[timeline[i]?.event_id]?.points_data;
-      if (delta) acc.push(...delta);
+
+    let pts;
+    if (
+      prev.cpId === currentCheckpointId &&
+      prev.version === chunkVersion &&
+      appliedIdx >= prev.idx           // forward only — backward falls through to full rebuild
+    ) {
+      // Extend: copy prev array once, append only new deltas
+      pts = prev.idx === appliedIdx ? prev.pts : [...prev.pts];
+      for (let i = prev.idx + 1; i <= appliedIdx; i++) {
+        const delta = chunk[timeline[i]?.event_id]?.points_data;
+        if (delta) pts.push(...delta);
+      }
+    } else {
+      // Full rebuild: checkpoint changed, chunk reloaded, or backward seek
+      pts = [...(chunk[currentCheckpointId]?.points_data ?? [])];
+      for (let i = cpIdx + 1; i <= appliedIdx; i++) {
+        const delta = chunk[timeline[i]?.event_id]?.points_data;
+        if (delta) pts.push(...delta);
+      }
     }
-    return acc;
-  // chunkVersion을 의존성에 포함해 chunk 로드 완료 시 재계산 트리거
+
+    pointsAccRef.current = { cpId: currentCheckpointId, idx: appliedIdx, pts, version: chunkVersion };
+    return pts;
   }, [appliedIdx, timeline, currentCheckpointId, chunkVersion]); // eslint-disable-line
 
   const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
