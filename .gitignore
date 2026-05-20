@@ -80,4 +80,8 @@ outputs/logs/**
 !outputs/logs/.gitkeep
 
 data/MLP-20M/**
+create_dummy_data.py
+.gitignore
 data/movies.db
+api/README.md
+create_movies_db.py

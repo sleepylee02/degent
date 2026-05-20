@@ -20,7 +20,8 @@ app.add_middleware(
 )
 
 _REPO = Path(__file__).resolve().parent.parent
-DASHBOARD_DB = Path(os.environ.get("DASHBOARD_DB_PATH", str(_REPO / "outputs" / "post" / "temporal_2022_events_3000_new_versions_history" / "dashboard_compact" / "dashboard_compact.sqlite")))
+# DASHBOARD_DB = Path(os.environ.get("DASHBOARD_DB_PATH", str(_REPO / "outputs" / "post" / "temporal_2022_events_3000_new_versions_history" / "dashboard_compact" / "dashboard_compact.sqlite")))
+DASHBOARD_DB = Path(os.environ.get("DASHBOARD_DB_PATH", str(_REPO / "outputs" / "dashboard_optimized.sqlite")))
 MOVIES_DB    = Path(os.environ.get("MOVIES_DB_PATH",    str(_REPO / "data" / "movies.db")))
 POSTER_DIR = Path(os.environ.get("POSTER_DIR", str(Path(__file__).resolve().parent.parent / "data" / "MLP-20M")))
 
@@ -84,6 +85,13 @@ def get_dashboard_frame(user_id: int, event_id: int) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Sub-endpoints
 # ---------------------------------------------------------------------------
+
+@app.get("/api/users/{user_id}/visualization/{checkpoint_id}")
+def get_viz_chunk(user_id: int, checkpoint_id: int) -> dict[str, Any]:
+    with _dash() as conn:
+        data = database.get_viz_chunk(conn, user_id, checkpoint_id)
+    return {"user_id": user_id, "checkpoint_id": checkpoint_id, "chunk": data}
+
 
 @app.get("/api/users/{user_id}/events/{event_id}/visualization")
 def get_visualization(user_id: int, event_id: int) -> dict[str, Any]:
