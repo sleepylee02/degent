@@ -4,6 +4,8 @@
 
 2026-05-14 현재 `origin/main` 기준으로는 이후 merge에서 공통 clustering backend, batch cluster export, streaming online recommendation, replay recommendation artifact, dashboard recommendation view가 추가됐다. 또한 `model/batch/extract.py`와 `model/stream/drift_detector.py`는 현재 git 추적 대상에서 제거됐으므로 이 문서에서 해당 이름이 나오는 부분은 historical context로만 읽는다. 현재 실행 가능한 경로의 정본은 `PROJECT_GUIDE.md`, `model/README.md`, `docs/data-flow.md`, `docs/streaming-e2e-pipeline.md`다.
 
+2026-05-19 기준으로 POST replay 산출물은 `<run_id>_production`/`<run_id>_history` root로 분리됐고, 공식 dashboard/API/frontend 입력은 history run의 `dashboard_compact/dashboard_compact.sqlite`다. 이 문서 안의 `outputs/post/replay_demo/`, root-level `replay.sqlite`, JSONL dashboard fallback 설명은 전환 과정의 historical context로만 읽는다.
+
 핵심은 기존 batch를 버린 것이 아니다. 기존 batch가 잘하던 부분은 그대로 재사용하고, streaming에서 반드시 필요한 부분만 새로 정의했다.
 
 ```text

@@ -1247,6 +1247,37 @@ def fetch_embedding_cache_changed_rows(
     return [_cache_row_to_embedding_dict(row) for row in rows]
 
 
+def fetch_embedding_cache_change_rows(
+    db_path: Path,
+    *,
+    run_id: str,
+    event_id: int,
+    active_only: bool = False,
+) -> list[dict[str, Any]]:
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return []
+    init_store(db_path)
+    status_filter = "AND e.status='active'" if active_only else ""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                e.*, c.change_type
+            FROM embedding_cache_changes c
+            JOIN active_embedding_cache e
+              ON e.run_id=c.run_id
+             AND e.user_id=c.user_id
+             AND e.raw_event_id=c.raw_event_id
+            WHERE c.run_id=? AND c.event_id=?
+              {status_filter}
+            ORDER BY e.user_id, e.rated_at_ts, e.event_idx, e.raw_event_id
+            """,
+            (run_id, int(event_id)),
+        ).fetchall()
+    return [_cache_row_to_embedding_dict(row) for row in rows]
+
+
 def fetch_active_embedding_cache_rows(db_path: Path, *, run_id: str, user_id: int) -> list[dict[str, Any]]:
     db_path = Path(db_path)
     if not db_path.exists():

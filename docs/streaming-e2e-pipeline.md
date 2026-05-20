@@ -6,7 +6,7 @@
 
 ## Current Status
 
-2026-05-15 기준으로 replay 공식 경로는 N배속 trace-clock runner + SQLite runtime store다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. Runtime state, payload, metadata, stage attempt, refit lifecycle, post replay active online embedding cache는 `outputs/post/replay_demo/replay.sqlite`에 기록한다. JSONL/JSON artifact는 fallback/debug로 유지하고, post replay의 `online_embeddings.npz`는 `--export-online-embeddings-npz`를 줄 때만 생성하는 debug/export 산출물이다.
+2026-05-19 기준으로 replay 공식 경로는 N배속 trace-clock runner + mode별 SQLite output root다. `--speed N`은 trace timestamp를 wall-clock으로 압축하며, event별 `scheduledAt`, `emittedAt`, lag, throughput을 같은 replay scope에 기록한다. `--history-mode off` 기본 실행은 `outputs/post/<run_id>_production/production/production.sqlite`에 runtime state, payload, metadata, stage attempt, refit lifecycle, post replay active online embedding cache를 기록한다. `--history-mode history` 실행은 별도 `outputs/post/<run_id>_history/` root에 production current state, append-only history DB, dashboard compact DB를 만든다. JSONL/JSON artifact는 debug로 유지하고, post replay의 `online_embeddings.npz`는 `--export-online-embeddings-npz`를 줄 때만 생성하는 debug/export 산출물이다.
 
 검증 command:
 
@@ -17,6 +17,7 @@
   --replay-user-id 28 \
   --limit-events 5 \
   --speed 100 \
+  --history-mode off \
   --refit-min-events 3 \
   --assign-trigger-count 3 \
   --outlier-trigger-count 3 \
@@ -36,6 +37,7 @@
   --replay-user-id 28 \
   --limit-events 5 \
   --speed 100 \
+  --history-mode history \
   --refit-min-events 3 \
   --assign-trigger-count 3 \
   --outlier-trigger-count 3 \
@@ -80,7 +82,7 @@ pre-T:  ratedAt < T
 post-T: ratedAt >= T
 ```
 
-신규 temporal run의 모델 관련 산출물은 `outputs/pre/temporal_2022/` 아래에 모은다. Replay runtime 산출물은 실행 범위가 드러나도록 `outputs/post/temporal_2022_events_1000/`, `outputs/post/temporal_2022_events_100_recommend/`, `outputs/post/temporal_2022_full/`처럼 별도 root에 격리한다. 기존 `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz` 같은 루트 경로는 default/legacy 호환 경로로 유지한다.
+신규 temporal run의 모델 관련 산출물은 `outputs/pre/temporal_2022/` 아래에 모은다. Replay runtime 산출물은 mode가 드러나도록 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/` root에 격리한다. 기존 `outputs/post/temporal_2022_events_<N>/`, `outputs/post/temporal_2022_full/`, `outputs/sasrec_cl.pt`, `outputs/item2idx.json`, `outputs/canonical_embeddings.npz` 같은 경로는 default/legacy 호환 경로로 유지한다.
 
 Pre-T 모델과 state 생성:
 
@@ -116,8 +118,8 @@ Post-T seeded replay:
 
 ```bash
 .venv/bin/python -m model.stream.replay_pipeline \
-  --run-id temporal_2022_replay_events_1000 \
-  --output-root outputs/post/temporal_2022_events_1000 \
+  --run-id temporal_2022_events_1000 \
+  --history-mode history \
   --reset-output \
   --generate-events \
   --start-rated-at 2022-01-01T00:00:00Z \
@@ -131,9 +133,9 @@ Post-T seeded replay:
   --recommend
 ```
 
-`--limit-events`를 쓰는 replay는 output root 이름에 `events_<N>`을 넣는다. 추천을 함께 생성하는 run은 `events_<N>_recommend`를 붙인다. 전체 post-T replay는 `outputs/post/temporal_2022_full/`처럼 `full`을 붙여 smoke/partial run과 분리한다. `--reset-output`은 지정한 output root를 지우고 다시 만들기 때문에, 보존할 결과는 새 root 이름으로 실행한다.
+`--limit-events`를 쓰는 replay는 run id에 `events_<N>`을 넣는다. `--history-mode history`를 쓰면 기본 output root는 `outputs/post/<run_id>_history/`가 되고, `--history-mode off`를 쓰면 `outputs/post/<run_id>_production/`이 된다. 전체 post-T replay는 run id에 `full`을 넣어 smoke/partial run과 분리한다. `--reset-output`은 지정한 output root를 지우고 다시 만들기 때문에, 보존할 결과는 새 root 이름으로 실행한다.
 
-`seed_pre_t_state`는 `state.sqlite`의 compressed `user_states` payload를 T 직전 상태로 만들고, 같은 DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. pre seed DB는 replay 시작점 복원용이므로 `user_raw_events`, `user_positive_events` row를 펼쳐 저장하지 않는다. post-T replay는 이 DB를 복사하지 않는다. 각 stream stage가 post `replay.sqlite`에서 state를 먼저 찾고, 없으면 pre `state.sqlite`에서 lazy-load한 뒤 touched user만 post DB에 기록한다.
+`seed_pre_t_state`는 `state.sqlite`의 compressed `user_states` payload를 T 직전 상태로 만들고, 같은 DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시한다. pre seed DB는 replay 시작점 복원용이므로 `user_raw_events`, `user_positive_events` row를 펼쳐 저장하지 않는다. post-T replay는 이 DB를 복사하지 않는다. 각 stream stage가 post production DB에서 state를 먼저 찾고, 없으면 pre `state.sqlite`에서 lazy-load한 뒤 touched user만 post DB에 기록한다.
 
 ### Temporal Verification Boundary
 
@@ -160,7 +162,7 @@ make -C replay
 작은 smoke는 위 Current Status command를 그대로 실행한다. 모든 trace replay 산출물은 아래 경로로 격리된다.
 
 ```text
-outputs/post/replay_demo/
+outputs/post/trace_replay_smoke_production/
 ```
 
 기본 stream 산출물인 `outputs/stream/online_embeddings.npz`와 state DB/legacy state directory를 덮어쓰지 않는다.
@@ -169,35 +171,37 @@ Replay가 끝난 뒤 runtime/control-plane 상태는 SQLite report로 바로 요
 
 ```bash
 .venv/bin/python -m model.stream.runtime_report \
-  --db outputs/post/replay_demo/replay.sqlite \
+  --db outputs/post/trace_replay_smoke_production/production/production.sqlite \
   --top-events 10
 ```
 
-이 report는 dominant stage latency, event lag, refit lifecycle, already-processed/repeated embedding signal, user state progress를 `replay.sqlite`만 보고 출력한다.
+이 report는 dominant stage latency, event lag, refit lifecycle, already-processed/repeated embedding signal, user state progress를 production DB만 보고 출력한다.
 
 ## Mental Model
 
 ```text
 ratings_drop_processed.jsonl
   -> replay/bin/rating_replay
-  -> replay_input_events.jsonl
+  -> production/replay_input_events.jsonl
   -> replay_pipeline --speed N trace clock
-     -> replay.sqlite
-     -> ingress_events.jsonl
+     -> production/production.sqlite
+     -> production/ingress_events.jsonl
      -> extract_online
-        -> replay.sqlite user state + active_embedding_cache
-        -> online_embedding_events.jsonl
+        -> production DB user state + active_embedding_cache
+        -> production/online_embedding_events.jsonl
      -> interest_assign
-        -> replay.sqlite interest state (changed cache rows)
-        -> interest_assignments.jsonl
-        -> refit_requests.jsonl
+        -> production DB interest state (changed cache rows)
+        -> production/interest_assignments.jsonl
+        -> production/refit_requests.jsonl
      -> cluster_refit
-        -> updated replay.sqlite interest state (full active cache rows)
-        -> refit_events.jsonl
+        -> updated production DB interest state (full active cache rows)
+        -> production/refit_events.jsonl
      -> recommend_online (when --recommend)
-        -> stream_recommendations.jsonl
-  -> replay_events.jsonl
+        -> production/stream_recommendations.jsonl
+     -> history/history.sqlite (when --history-mode history)
+  -> production/replay_events.jsonl
   -> replay_summary.json
+  -> dashboard_compact/dashboard_compact.sqlite (history mode only)
 ```
 
 `replay_pipeline`은 새 모델링 로직을 직접 구현하지 않는다. replay input의 `ratedAtTs`를 기준으로 event별 scheduled wall-clock time을 계산하고, `ReplayInProcessWorker`로 stream stage helper를 같은 Python process 안에서 호출하는 trace replay runner다. Stage별 Python subprocess는 띄우지 않는다. Standalone `extract_online`, `interest_assign`, `cluster_refit`, `recommend_online` CLI는 수동 실행/디버그 경로로 유지한다.
@@ -217,7 +221,7 @@ Input:
 
 Output:
 
-- `outputs/post/replay_demo/replay_input_events.jsonl`
+- `outputs/post/<run_id>_production/production/replay_input_events.jsonl`
 
 한 줄은 replay할 rating event 하나다.
 
@@ -249,7 +253,7 @@ Input:
 
 Emit log:
 
-- `outputs/post/replay_demo/ingress_events.jsonl`
+- `outputs/post/<run_id>_production/production/ingress_events.jsonl`
 
 각 input event는 아래 schedule 기준으로 emitted 된다.
 
@@ -303,7 +307,7 @@ Input:
 Output:
 
 - SQLite user state in `--runtime-db`/`--state-db`
-- `replay.sqlite.active_embedding_cache` and `embedding_cache_changes` in replay runtime mode
+- `production/production.sqlite`의 `active_embedding_cache` and `embedding_cache_changes` in replay runtime mode
 - `online_embeddings.npz` only when explicitly exporting/debugging
 - `online_embedding_events.jsonl`
 
@@ -349,7 +353,7 @@ Consumer/producer:
 
 Input:
 
-- replay runtime 기본 경로: `replay.sqlite.active_embedding_cache`의 해당 event changed active rows
+- replay runtime 기본 경로: production DB `active_embedding_cache`의 해당 event changed active rows
 - legacy/debug 경로: `online_embeddings.npz`
 - 기존 SQLite interest state가 있으면 이어서 로드하고, 없으면 `--seed-state-db`에서 lazy-load
 
@@ -358,7 +362,7 @@ Output:
 - SQLite interest state in `--runtime-db`/`--state-db`
 - `interest_assignments.jsonl`
 - `refit_requests.jsonl`
-- `replay.sqlite`의 `interest_states`, `interest_vectors`, `assignments`, `refit_requests`
+- production DB의 `interest_states`, `interest_vectors`, `assignments`, `refit_requests`
 
 동작:
 
@@ -389,7 +393,7 @@ Consumer/producer:
 Input:
 
 - `refit_requests.jsonl`
-- replay runtime 기본 경로: `replay.sqlite.active_embedding_cache`의 request user full active rows
+- replay runtime 기본 경로: production DB `active_embedding_cache`의 request user full active rows
 - legacy/debug 경로: `online_embeddings.npz`
 - 기존 SQLite interest state
 
@@ -397,7 +401,7 @@ Output:
 
 - updated SQLite interest state
 - `refit_events.jsonl`
-- `replay.sqlite`의 `refit_requests`, `refit_attempts`, `interest_states`, `interest_vectors`
+- production DB의 `refit_requests`, `refit_attempts`, `interest_states`, `interest_vectors`
 
 동작:
 
@@ -433,7 +437,7 @@ Input:
 Output:
 
 - `stream_recommendations.jsonl`
-- `replay.sqlite`의 `recommendation_runs`, `recommendation_rows`
+- production DB의 `recommendation_runs`, `recommendation_rows`
 
 동작:
 
@@ -450,22 +454,24 @@ Output:
 Consumer/producer:
 
 - `model.stream.replay_pipeline`
-- dashboard는 read-only consumer
+- `model.stream.compact_dashboard` when `--history-mode history`
+- dashboard/API/frontend are read-only consumers
 
 Output:
 
-- `replay.sqlite`
-- `ingress_events.jsonl`
-- `replay_events.jsonl`
-- `replay_summary.json`
+- `outputs/post/<run_id>_production/replay_summary.json`
+- `outputs/post/<run_id>_production/production/production.sqlite`
+- `outputs/post/<run_id>_production/production/*.jsonl`
+- `outputs/post/<run_id>_history/replay_summary.json`
+- `outputs/post/<run_id>_history/production/production.sqlite`
+- `outputs/post/<run_id>_history/history/history.sqlite`
+- `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`
 
-`replay.sqlite`는 replay runtime/state/control-plane store다. `runs`, `input_events`, `event_progress`, `stage_attempts`, `runtime_metrics`, `user_states`, `interest_states`, `assignments`, `refit_requests`, `refit_attempts`, `active_embedding_cache`, `embedding_cache_changes`, `embedding_snapshots`, `embedding_rows`, `recommendation_runs`, `recommendation_rows`를 기록한다. Post replay active online embedding은 SQLite cache가 정본이다. 대형 batch vector/checkpoint artifact는 파일 정본으로 유지하고, SQLite에는 payload, lifecycle, metric, 작은 vector/cache BLOB, artifact metadata를 둔다.
+`production/production.sqlite`는 replay runtime/state/control-plane store다. `runs`, `input_events`, `event_progress`, `stage_attempts`, `runtime_metrics`, `user_states`, `interest_states`, `assignments`, `refit_requests`, `refit_attempts`, `active_embedding_cache`, `embedding_cache_changes`, `embedding_snapshots`, `embedding_rows`, `recommendation_runs`, `recommendation_rows`를 기록한다. Post replay active online embedding은 SQLite cache가 정본이다. 대형 batch vector/checkpoint artifact는 파일 정본으로 유지하고, SQLite에는 payload, lifecycle, metric, 작은 vector/cache BLOB, artifact metadata를 둔다.
 
-`ingress_events.jsonl`은 event 주입 시각과 trace clock 기준 schedule/lag를 append한다.
+`history/history.sqlite`는 history mode에서만 쓰는 append-only side log다. `dashboard_compact/dashboard_compact.sqlite`는 history DB를 입력으로 만든 dashboard 전용 projection이다.
 
-`replay_events.jsonl`은 progress log다. event별 processed count, active row count, assignment status count, refit close/skip count, injector/processing/end-to-end latency를 append한다.
-
-`replay_summary.json`은 dashboard가 읽는 stable entrypoint다.
+`replay_summary.json`은 replay/report용 stable entrypoint이며, compact dashboard는 `paths.dashboardCompactDb`를 찾을 때만 선택적으로 사용한다. Dashboard 화면 자체는 compact DB의 네 table을 읽는다.
 
 ```json
 {
@@ -476,52 +482,38 @@ Output:
   "processedEvents": 5,
   "uniqueUsers": 1,
   "speed": 100.0,
-  "traceSpanSec": 32.0,
-  "scheduledSpanSec": 0.32,
-  "targetEventsPerSec": 15.625,
-  "throughputEventsPerSec": 0.158,
-  "refitBackend": "auto",
+  "historyMode": "history",
   "paths": {
-    "replayDb": "outputs/post/replay_demo/replay.sqlite"
-  },
-  "totals": {
-    "activeEmbeddingRows": 10,
-    "assignmentRecords": 10,
-    "refitRequestsOpened": 1,
-    "refitClosed": 0,
-    "refitSkipped": 0,
-    "recommendationRows": 0,
-    "behindScheduleEvents": 4,
-    "maxInjectorLagSec": 25.26,
-    "maxProcessingLagSec": 6.94,
-    "maxEndToEndLagSec": 31.42
+    "productionDb": "outputs/post/trace_replay_smoke_history/production/production.sqlite",
+    "historyDb": "outputs/post/trace_replay_smoke_history/history/history.sqlite",
+    "dashboardCompactDb": "outputs/post/trace_replay_smoke_history/dashboard_compact/dashboard_compact.sqlite"
   }
 }
 ```
 
-주의: `totals.activeEmbeddingRows`는 event 처리 중 새로 insert/update된 active cache row 수의 누적 합이다. 최종 active row 수를 보려면 `runtime_report`의 `cacheActiveRows` 또는 `replay.sqlite.active_embedding_cache`에서 `status='active'` row 수를 확인한다.
+주의: `totals.activeEmbeddingRows`는 event 처리 중 새로 insert/update된 active cache row 수의 누적 합이다. 최종 active row 수를 보려면 `runtime_report`의 `cacheActiveRows` 또는 production DB의 `active_embedding_cache`에서 `status='active'` row 수를 확인한다.
 
 ## Artifact Map
 
 | artifact | written by | consumed by | role |
 |---|---|---|---|
-| `replay_input_events.jsonl` | replay generator | `replay_pipeline` | timestamp-sorted replay source |
-| `replay.sqlite` | `replay_pipeline`, stream stages | dashboard/humans | runtime state, payload, metadata, lifecycle, metric store |
+| `production/replay_input_events.jsonl` | replay generator | `replay_pipeline` | timestamp-sorted replay source |
+| `production/production.sqlite` | `replay_pipeline`, stream stages | `runtime_report`, humans/debug | runtime state, payload, metadata, lifecycle, metric store |
 | `pre/state.sqlite` | `model.batch.cluster`, `seed_pre_t_state` | `replay_pipeline` stream stages | pre-T user/interest seed state store |
-| `runtime_report` output | `model.stream.runtime_report` | humans/notes | optional markdown/json bottleneck report from `replay.sqlite` |
-| `ingress_events.jsonl` | `replay_pipeline` | dashboard/humans | trace-clock event emit log |
-| `replay.sqlite.user_states` | `extract_online` | `extract_online`, `recommend_online` | touched raw events + positive projection state |
-| `replay.sqlite.active_embedding_cache` | `extract_online` | `interest_assign`, `cluster_refit` | post replay latest active positive embedding cache |
-| `replay.sqlite.embedding_cache_changes` | `extract_online` | `interest_assign`, humans | per-event changed cache rows for delta assignment |
-| `online_embeddings.npz` | `extract_online` | legacy/debug consumers | optional debug/export active positive embedding snapshot |
-| `online_embedding_events.jsonl` | `extract_online` | humans/debugging | online extract run summary log |
-| `replay.sqlite.interest_states` | `interest_assign`, `cluster_refit` | `interest_assign`, `cluster_refit`, `recommend_online`, dashboard | touched interest vectors and trigger state |
-| `interest_assignments.jsonl` | `interest_assign` | `replay_pipeline`, dashboard | assignment/pending/outlier log |
-| `refit_requests.jsonl` | `interest_assign` | `cluster_refit`, dashboard fallback | fallback/debug refit request log |
-| `refit_events.jsonl` | `cluster_refit` | `replay_pipeline`, dashboard fallback | fallback/debug refit close/skip result log |
-| `stream_recommendations.jsonl` | `recommend_online` | dashboard | replay-scoped top-K recommendation log |
-| `replay_events.jsonl` | `replay_pipeline` | dashboard | replay progress log |
-| `replay_summary.json` | `replay_pipeline` | dashboard | stable replay entrypoint |
+| `runtime_report` output | `model.stream.runtime_report` | humans/notes | optional markdown/json bottleneck report from production DB |
+| `production/ingress_events.jsonl` | `replay_pipeline` | humans/debug | trace-clock event emit log |
+| `production/production.sqlite.user_states` | `extract_online` | `extract_online`, `recommend_online` | touched raw events + positive projection state |
+| `production/production.sqlite.active_embedding_cache` | `extract_online` | `interest_assign`, `cluster_refit` | post replay latest active positive embedding cache |
+| `production/production.sqlite.embedding_cache_changes` | `extract_online` | `interest_assign`, humans/debug | per-event changed cache rows for delta assignment |
+| `production/online_embeddings.npz` | `extract_online` | legacy/debug consumers | optional debug/export active positive embedding snapshot |
+| `production/interest_assignments.jsonl` | `interest_assign` | humans/debug | assignment/pending/outlier log |
+| `production/refit_requests.jsonl` | `interest_assign` | humans/debug | fallback/debug refit request log |
+| `production/refit_events.jsonl` | `cluster_refit` | humans/debug | fallback/debug refit close/skip result log |
+| `production/stream_recommendations.jsonl` | `recommend_online` | humans/debug | replay-scoped top-K recommendation log |
+| `production/replay_events.jsonl` | `replay_pipeline` | humans/debug | replay progress log |
+| `replay_summary.json` | `replay_pipeline` | reports/dashboard discovery | stable replay summary and compact DB path discovery |
+| `history/history.sqlite` | `history_store` via replay pipeline | `compact_dashboard`, humans/debug | append-only event/state-version history |
+| `dashboard_compact/dashboard_compact.sqlite` | `compact_dashboard` | Streamlit dashboard, FastAPI API | official POST replay dashboard display input |
 
 ## Extension Points
 
@@ -557,17 +549,18 @@ recommendation logic을 바꿀 때:
 - `stream_recommendations.jsonl`의 user/movie/rank/score 필드를 유지하거나 계약을 먼저 갱신한다.
 - seen item 제외 정책을 바꾸면 `stream/recommend_online.py`, `docs/streaming-replay-dashboard-contract.md`, dashboard README를 함께 갱신한다.
 
-dashboard를 바꿀 때:
+dashboard/API/frontend를 바꿀 때:
 
-- `replay_summary.json`의 `paths`를 우선 사용한다.
-- `paths.replayDb`가 있으면 SQLite를 우선 읽고, 기존 JSONL/JSON은 fallback으로 사용한다.
+- POST replay display input은 `dashboard_compact/dashboard_compact.sqlite`로 유지한다.
+- `replay_summary.json`은 `paths.dashboardCompactDb` discovery에만 선택적으로 사용한다.
+- `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact를 display fallback으로 직접 읽지 않는다.
 - replay/stream 내부 Python 함수에 직접 의존하지 않는다.
-- dashboard는 replay artifact를 수정하지 않는다.
+- dashboard/API/frontend는 replay artifact를 수정하지 않는다.
 
 ## Known Gaps
 
 - 현재 smoke는 user 28, 5 events 기준의 작은 trace-clock 검증이다.
 - `u_k` 기반 추천 scoring은 `stream/recommend_online.py`와 `replay_pipeline --recommend`로 가능하다. 다만 Recall@K/NDCG@K 같은 offline evaluation은 아직 없다.
 - replay는 event마다 full active snapshot을 다시 assign/refit 후보로 읽으므로 `already_processed` record가 정상적으로 생긴다.
-- `outputs/post/replay_demo/`는 demo root 하나를 재사용한다. 여러 사람이 동시에 다른 실험을 돌릴 때는 `--output-root outputs/post/replay_demo_<name>`처럼 별도 root를 쓰는 것이 안전하다.
+- 기본 output root는 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/`다. 여러 사람이 동시에 다른 실험을 돌릴 때는 고유한 `--run-id`나 `--output-root`를 쓰는 것이 안전하다.
 - GPU backend는 환경 의존적이다. `auto`를 쓰면 가능한 경우 GPU를 쓰고, 현재 로컬처럼 CUDA runtime이 맞지 않으면 CPU fallback으로 진행한다.

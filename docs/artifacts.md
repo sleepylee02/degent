@@ -21,6 +21,8 @@
 | `data/ml-32m/genre.csv` | auxiliary generated data | `(cd preprocess/preprocess_genre && python3 preprocess_genre.py)` | regenerate |
 | `data/genome_2021/raw/` | raw input | manual local placement | no |
 | `data/ml-32m-extension-main/raw/` | raw input | manual local placement | no |
+| `data/movies.db` | local dashboard movie metadata DB | local preparation for API/frontend dashboard | no |
+| `data/MLP-20M/` | local poster/static payload for API/frontend dashboard | manual local placement | no |
 | `data/movies_processed.csv` | generated data | `python3 preprocess/preprocess_movie/preprocess_movies.py` | no |
 | `data/movies_processed_drop.csv` | generated data | `python3 preprocess/drop_movie/drop_movies.py` | no |
 | `data/ratings_drop.csv` | generated data | `python3 preprocess/drop_rating/drop_ratings.py` | no |
@@ -56,20 +58,14 @@
 | `outputs/stream/refit_requests.jsonl` | streaming refit request log | `python3 -m model.stream.interest_assign` | append/regenerate |
 | `outputs/stream/refit_events.jsonl` | streaming refit event log | `python3 -m model.stream.cluster_refit` | append/regenerate |
 | `outputs/stream/stream_recommendations.jsonl` | streaming recommendation log | `python3 -m model.stream.recommend_online` | append/regenerate |
-| `outputs/post/replay_demo/replay_input_events.jsonl` | replay input event stream | `replay/bin/rating_replay` 또는 `python3 -m model.stream.replay_pipeline --generate-events` | regenerate |
-| `outputs/post/replay_demo/ingress_events.jsonl` | trace replay event emit log with schedule/lag | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
-| `outputs/post/replay_demo/replay.sqlite` | SQLite runtime/state store for trace replay run/event/stage/state/refit/active embedding cache | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
-| `outputs/post/replay_demo/replay_summary.json` | trace replay dashboard entrypoint | `python3 -m model.stream.replay_pipeline --speed N` | regenerate |
-| `outputs/post/replay_demo/replay_events.jsonl` | event-level trace replay progress and lag log | `python3 -m model.stream.replay_pipeline --speed N` | append/regenerate |
-| `outputs/post/replay_demo/online_embeddings.npz` | optional replay-scoped online embeddings debug/export | `python3 -m model.stream.replay_pipeline --export-online-embeddings-npz` | regenerate |
-| `outputs/post/replay_demo/interest_assignments.jsonl` | replay-scoped assignment log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
-| `outputs/post/replay_demo/refit_requests.jsonl` | replay-scoped refit request log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
-| `outputs/post/replay_demo/refit_events.jsonl` | replay-scoped refit event log | `python3 -m model.stream.replay_pipeline` | append/regenerate |
-| `outputs/post/replay_demo/stream_recommendations.jsonl` | replay-scoped recommendation log | `python3 -m model.stream.replay_pipeline --recommend` | append/regenerate |
-| `outputs/post/temporal_2022_events_<N>/` | temporal post-T replay artifact root | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N> --seed-state-db outputs/pre/temporal_2022/state.sqlite --seed-run-id temporal_2022 --start-rated-at 2022-01-01T00:00:00Z` | regenerate |
-| `outputs/post/temporal_2022_events_<N>/replay.sqlite` | temporal post-T SQLite runtime/state store with touched state | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N>` | regenerate |
-| `outputs/post/temporal_2022_events_<N>/replay_summary.json` | temporal post-T replay summary entrypoint | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N>` | regenerate |
-| `outputs/post/temporal_2022_events_<N>/online_embeddings.npz` | optional temporal post-T replay-scoped online embeddings debug/export | `python3 -m model.stream.replay_pipeline --output-root outputs/post/temporal_2022_events_<N> --export-online-embeddings-npz` | regenerate |
+| `outputs/post/<run_id>_production/replay_summary.json` | production-only trace replay summary entrypoint | `python3 -m model.stream.replay_pipeline --history-mode off` | regenerate |
+| `outputs/post/<run_id>_production/production/production.sqlite` | clean production runtime/current-state store | `python3 -m model.stream.replay_pipeline --history-mode off` | regenerate |
+| `outputs/post/<run_id>_production/production/*.jsonl` | production replay input/ingress/progress/assignment/refit/recommendation debug logs | `python3 -m model.stream.replay_pipeline --history-mode off` | append/regenerate |
+| `outputs/post/<run_id>_history/replay_summary.json` | history trace replay summary entrypoint | `python3 -m model.stream.replay_pipeline --history-mode history` | regenerate |
+| `outputs/post/<run_id>_history/production/production.sqlite` | history run 내부 production runtime/current-state store | `python3 -m model.stream.replay_pipeline --history-mode history` | regenerate |
+| `outputs/post/<run_id>_history/history/history.sqlite` | append-only event/state-version history store | `python3 -m model.stream.replay_pipeline --history-mode history` | regenerate |
+| `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` | compact dashboard projection generated from history DB | `python3 -m model.stream.compact_dashboard --history-db ...` 또는 history replay 종료 후 자동 생성 | regenerate |
+| `outputs/post/replay_demo/replay.sqlite` and `outputs/post/temporal_2022_events_<N>/replay.sqlite` | legacy/default replay runtime store paths | older `model.stream.replay_pipeline --output-root ...` usage | regenerate |
 | `outputs/embeddings.npy` | legacy model artifact | previous extract workflow | no new writes |
 | `outputs/viz/` | visualization artifact | `python3 -m model.batch.visualize_clusters` | regenerate |
 | `outputs/logs/` | local runtime logs, git ignored except `.gitkeep` | model scripts | append/regenerate |
@@ -78,7 +74,10 @@
 | `experiments/model/<run_id>/metrics.jsonl` | local experiment metrics, git ignored | model scripts | append |
 | `experiments/model/<run_id>/notes.md` | local experiment notes, git ignored | model scripts / manual note | edit |
 | `requirements.txt` | Python dependency lock | repo-local `.venv` / `.venv/bin/pip freeze` | edit/regenerate |
-| `data/clustering/user_clusters.parquet` | dashboard input | `python3 -m model.batch.export_clusters` | regenerate |
+| `api/requirements.txt` | React dashboard API dependency list | manual dependency update for `api/` | edit |
+| `frontend/package.json` | React dashboard dependency/scripts manifest | `npm install <package>` or manual update in `frontend/` | edit |
+| `frontend/package-lock.json` | React dashboard npm lockfile | `npm install` in `frontend/` | regenerate |
+| `data/clustering/user_clusters.parquet` | batch dashboard/export input | `python3 -m model.batch.export_clusters` | regenerate |
 | `eda/eda_outputs/` | raw EDA artifacts | `python3 -m eda.raw.eda_overview --source all` | regenerate |
 | `eda/raw/outputs/` | legacy raw EDA artifacts | previous raw EDA workflow | no new writes |
 | `eda/processed/outputs/` | processed EDA artifacts | `python3 eda/processed/eda_processed.py` | regenerate |
@@ -102,6 +101,8 @@ python3 -m model.stream.interest_assign
 python3 -m model.stream.cluster_refit
 python3 -m model.stream.recommend_online
 make -C replay
-python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommend
+python3 -m model.stream.replay_pipeline --generate-events --speed 100 --history-mode history --recommend
 streamlit run dashboard/cluster_dashboard.py
+.venv/bin/uvicorn api.main:app --reload
+(cd frontend && npm install && npm run dev)
 ```

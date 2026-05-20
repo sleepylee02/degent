@@ -52,18 +52,22 @@ data/**/raw/
         -> trace replay artifacts
         -> make -C replay
         -> replay/bin/rating_replay
-        -> outputs/post/replay_demo/replay_input_events.jsonl
+        -> outputs/post/<run_id>_production/production/replay_input_events.jsonl
         -> python3 -m model.stream.replay_pipeline --speed N
-        -> outputs/post/replay_demo/replay.sqlite
-        -> outputs/post/replay_demo/ingress_events.jsonl
-        -> outputs/post/replay_demo/replay_summary.json
-        -> outputs/post/replay_demo/replay_events.jsonl
-        -> outputs/post/replay_demo/online_embeddings.npz
-        -> outputs/post/replay_demo/interest_assignments.jsonl
-        -> outputs/post/replay_demo/refit_requests.jsonl
-        -> outputs/post/replay_demo/refit_events.jsonl
-        -> outputs/post/replay_demo/stream_recommendations.jsonl  (when --recommend)
-        -> dashboard/cluster_dashboard.py Replay monitor
+        -> outputs/post/<run_id>_production/production/production.sqlite
+        -> outputs/post/<run_id>_production/production/ingress_events.jsonl
+        -> outputs/post/<run_id>_production/replay_summary.json
+        -> outputs/post/<run_id>_production/production/replay_events.jsonl
+        -> outputs/post/<run_id>_production/production/online_embeddings.npz
+        -> outputs/post/<run_id>_production/production/interest_assignments.jsonl
+        -> outputs/post/<run_id>_production/production/refit_requests.jsonl
+        -> outputs/post/<run_id>_production/production/refit_events.jsonl
+        -> outputs/post/<run_id>_production/production/stream_recommendations.jsonl  (when --recommend)
+        -> outputs/post/<run_id>_history/history/history.sqlite  (when --history-mode history)
+        -> python3 -m model.stream.compact_dashboard  (after history replay)
+        -> outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite
+        -> dashboard/cluster_dashboard.py compact reader
+        -> api/main.py + frontend/ React compact reader
 ```
 
 보조 장르 산출물 흐름:
@@ -190,27 +194,29 @@ python3 -m model.stream.replay_pipeline --generate-events --speed 100 --recommen
 - `outputs/stream/refit_requests.jsonl`
 - `outputs/stream/refit_events.jsonl`
 - `outputs/stream/stream_recommendations.jsonl`
-- `outputs/post/replay_demo/replay_input_events.jsonl`
-- `outputs/post/replay_demo/replay.sqlite`
-- `outputs/post/replay_demo/ingress_events.jsonl`
-- `outputs/post/replay_demo/replay_summary.json`
-- `outputs/post/replay_demo/replay_events.jsonl`
-- `outputs/post/replay_demo/online_embeddings.npz`
-- `outputs/post/replay_demo/interest_assignments.jsonl`
-- `outputs/post/replay_demo/refit_requests.jsonl`
-- `outputs/post/replay_demo/refit_events.jsonl`
-- `outputs/post/replay_demo/stream_recommendations.jsonl`
+- `outputs/post/<run_id>_production/replay_summary.json`
+- `outputs/post/<run_id>_production/production/production.sqlite`
+- `outputs/post/<run_id>_production/production/replay_input_events.jsonl`
+- `outputs/post/<run_id>_production/production/ingress_events.jsonl`
+- `outputs/post/<run_id>_production/production/replay_events.jsonl`
+- `outputs/post/<run_id>_production/production/online_embeddings.npz`
+- `outputs/post/<run_id>_production/production/interest_assignments.jsonl`
+- `outputs/post/<run_id>_production/production/refit_requests.jsonl`
+- `outputs/post/<run_id>_production/production/refit_events.jsonl`
+- `outputs/post/<run_id>_production/production/stream_recommendations.jsonl`
+- `outputs/post/<run_id>_history/history/history.sqlite`
+- `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`
 - `outputs/viz/`
 - `outputs/logs/`
 - local `experiments/model/<run_id>/manifest.json`
 - local `experiments/model/<run_id>/metrics.jsonl`
 - local `experiments/model/<run_id>/notes.md`
 
-세부 실행 옵션은 `model/README.md`를 따른다.
+세부 실행 옵션은 `model/README.md`를 따른다. Dashboard/API/frontend 실행 옵션은 `dashboard/README.md`, `api/README.md`, `frontend/README.md`를 따른다.
 
 모델 산출물과 run별 실험 기록은 git으로 추적하지 않는다. run별 비교에 필요한 command, git 상태, 입력/출력 metadata, config, metric은 로컬 `experiments/model/<run_id>/`에 남긴다.
 
-Temporal cutoff run은 모델 관련 산출물을 `outputs/pre/<run_label>/` 아래에 모은다. 예: `T=2022-01-01T00:00:00Z` run은 `outputs/pre/temporal_2022/`에 pre-T checkpoint/item2idx/canonical과 `state.sqlite` user/interest seed store를 저장하고, post-T replay runtime은 `outputs/post/temporal_2022_events_<N>/` 또는 `outputs/post/temporal_2022_full/`에 격리한다.
+Temporal cutoff run은 모델 관련 산출물을 `outputs/pre/<run_label>/` 아래에 모은다. 예: `T=2022-01-01T00:00:00Z` run은 `outputs/pre/temporal_2022/`에 pre-T checkpoint/item2idx/canonical과 `state.sqlite` user/interest seed store를 저장하고, post-T replay runtime은 기본적으로 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/`에 격리한다. 기존 `outputs/post/temporal_2022_events_<N>/` 또는 `outputs/post/temporal_2022_full/` root는 legacy/default 호환 경로다.
 
 `outputs/canonical_embeddings.npz`는 event 하나당 embedding 하나를 보장하는 batch 산출물이고 현재 `batch/cluster.py`의 기본 입력이다. 과거 overlap-window 추출 산출물인 `outputs/embeddings.npz`는 legacy artifact로만 취급한다. `outputs/stream/online_embeddings.npz`는 raw rating을 모두 user state에 저장한 뒤 현재까지 관측된 positive projection에서 생성한 active online embedding이다.
 
@@ -218,15 +224,15 @@ Temporal cutoff run은 모델 관련 산출물을 `outputs/pre/<run_label>/` 아
 
 `outputs/stream/refit_events.jsonl`은 Phase 4-1 triggered refit backend의 close/skip 로그다. refit backend는 request user의 active embedding 전체를 다시 clustering하고 SQLite interest state의 interest vectors를 replace한다. `--cluster-backend auto`는 cuML import와 CUDA runtime probe가 통과하면 GPU를 사용한다. GPU가 불가하거나 `auto` GPU refit 실행이 실패하면 CPU `umap-learn + hdbscan`으로 fallback한다.
 
-`outputs/stream/stream_recommendations.jsonl`은 current streaming interest state에서 생성한 top-K 추천 결과다. Trace replay에서 `--recommend`를 사용하면 같은 추천 결과가 `outputs/post/replay_demo/stream_recommendations.jsonl`에 격리된다.
+`outputs/stream/stream_recommendations.jsonl`은 current streaming interest state에서 생성한 top-K 추천 결과다. Trace replay에서 `--recommend`를 사용하면 같은 추천 결과가 post replay output root의 `production/stream_recommendations.jsonl`에 격리된다.
 
 `model.stream.seed_pre_t_state`는 temporal cutoff 이전 rating history로 replay 시작용 SQLite user state를 생성한다. 같은 seed DB에 batch cluster interest state가 있으면 pre-T active `rawEventId`를 `processedRawEventIds`에 표시해 post-T replay에서 과거 active event가 신규 assignment처럼 처리되지 않게 한다.
 
-Trace replay artifact는 `outputs/post/replay_demo/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Replay runtime state, payload, metadata, stage metric, refit lifecycle은 `replay.sqlite`에 기록된다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고 DB에는 metadata와 row index를 남긴다. Dashboard는 `replay_summary.json`을 stable entrypoint로 읽고, summary의 `paths.replayDb`가 있으면 SQLite를 우선 사용한다. 기존 JSONL/JSON artifact는 fallback/debug 경로다. Replay dashboard는 reader이며 replay artifact를 생성하거나 수정하지 않는다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+Trace replay artifact는 기본적으로 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/` 아래에 저장된다. `replay/bin/rating_replay`은 `ratings_drop_processed.jsonl`을 timestamp-sorted event stream으로 변환하고, `python3 -m model.stream.replay_pipeline --speed N`은 이 입력을 `scheduledAt = wallStart + (ratedAtTs - firstRatedAtTs) / N` 기준으로 event 단위 주입한다. 각 event 처리 후 `extract_online -> interest_assign -> cluster_refit`을 호출하고, `--recommend` 사용 시 `recommend_online`도 호출한다. Production runtime state, payload, metadata, stage metric, refit lifecycle은 `production/production.sqlite`에 기록된다. `--history-mode history`를 사용하면 같은 history run 안에서 `history/history.sqlite` append-only side log와 `dashboard_compact/dashboard_compact.sqlite` projection을 추가로 만든다. 대형 vector/checkpoint/NPZ artifact는 파일 정본으로 유지하고 DB에는 metadata와 row index를 남긴다. 공식 POST replay dashboard/API/frontend는 compact DB를 display input으로 읽고, `replay_summary.json`은 `paths.dashboardCompactDb` discovery에만 선택적으로 사용한다. Production/history DB와 JSONL artifact는 replay/report/debug 경로이며 dashboard fallback input이 아니다. 세부 계약은 `docs/streaming-replay-dashboard-contract.md`를 따른다.
 
 ## 7. Dashboard input
 
-현재 모델 클러스터링 산출물은 `outputs/user_interests.npz`이고, cluster explorer의 기본 입력은 테이블 파일이다.
+Batch cluster visualization/export 입력은 `outputs/user_interests.npz`에서 만든 테이블 파일이다.
 
 기본 입력 경로:
 
@@ -240,23 +246,41 @@ python3 -m model.batch.export_clusters \
   --output data/clustering/user_clusters.parquet
 ```
 
-Cluster explorer 입력 파일은 `dashboard/README.md`의 입력 스키마를 따른다. 실제 결과 파일이 없으면 대시보드에서 demo 데이터를 사용해 UI를 먼저 확인할 수 있다.
+POST replay dashboard 입력은 history run에서 만든 compact DB 하나다.
 
-Replay monitor 입력은 trace replay artifact다.
+- `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`
 
-- `outputs/post/replay_demo/replay_summary.json`
-- `outputs/post/replay_demo/replay.sqlite`
-- `outputs/post/replay_demo/ingress_events.jsonl`
-- `outputs/post/replay_demo/replay_events.jsonl`
-- `outputs/post/replay_demo/interest_assignments.jsonl`
-- `outputs/post/replay_demo/refit_requests.jsonl`
-- `outputs/post/replay_demo/refit_events.jsonl`
-- `outputs/post/replay_demo/stream_recommendations.jsonl`
+Compact DB는 `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` table을 제공한다. Streamlit dashboard와 React API는 이 compact DB만 display input으로 읽는다. `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact는 replay/report/debug 용도이며 dashboard fallback input이 아니다.
 
-## 8. Dashboard
+React API는 recommendation 표시를 풍부하게 하기 위해 선택적으로 아래 로컬 보조 입력도 읽는다.
+
+- `data/movies.db`: `movies(movie_id, title, poster_url, genres, release_year)` metadata DB
+- `data/MLP-20M/`: poster static files. 있으면 `/posters`로 mount
+
+## 8. Dashboard/API/Frontend
+
+Streamlit compact reader:
 
 ```bash
 streamlit run dashboard/cluster_dashboard.py
 ```
 
-세부 입력 계약은 `dashboard/README.md`와 `docs/streaming-replay-dashboard-contract.md`를 따른다.
+FastAPI backend:
+
+```bash
+.venv/bin/pip install -r api/requirements.txt
+DASHBOARD_DB_PATH=outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite \
+MOVIES_DB_PATH=data/movies.db \
+POSTER_DIR=data/MLP-20M \
+.venv/bin/uvicorn api.main:app --reload
+```
+
+React frontend:
+
+```bash
+cd frontend
+npm install
+VITE_API_BASE=http://localhost:8000 npm run dev
+```
+
+세부 입력 계약은 `docs/streaming-replay-dashboard-contract.md`, `docs/post-replay-output-areas.md`, `dashboard/README.md`, `api/README.md`, `frontend/README.md`를 따른다.
