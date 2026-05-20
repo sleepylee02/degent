@@ -141,49 +141,61 @@ rating event를 online user state로 반영하고, active positive embedding을 
 
 | 항목 | 내용 |
 |---|---|
-| 담당 파일 | `replay/`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `docs/streaming-replay-dashboard-contract.md`, `replay/README.md` |
+| 담당 파일 | `replay/`, `model/stream/trace_replay.py`, `model/stream/replay_pipeline.py`, `model/stream/compact_dashboard.py`, `docs/streaming-replay-dashboard-contract.md`, `replay/README.md` |
 | Input | `data/ratings_drop_processed.jsonl`, C 파트 model artifact, optional D 파트 pre-T seed state |
-| Output | `outputs/post/replay_demo/replay_input_events.jsonl`, `replay.sqlite`, `ingress_events.jsonl`, `replay_summary.json`, `replay_events.jsonl`, replay-scoped stream artifacts, optional `stream_recommendations.jsonl`. Temporal run은 별도 root 예: `outputs/post/temporal_2022_events_1000/` |
+| Output | production-only root 또는 history root. History run은 compact dashboard DB까지 생성 |
 | Endpoint | `make -C replay`, `replay/bin/rating_replay`, `python3 -m model.stream.replay_pipeline --speed N` |
-| 넘기는 기준 | 모든 replay artifact는 지정된 `--output-root` 아래에 격리되어야 함 |
+| 넘기는 기준 | 모든 replay artifact는 mode가 드러나는 output root 아래에 격리되어야 함 |
 
 ### E 파트 endpoint
 
 | step | 파일 | Input | Output |
 |---|---|---|---|
 | build replay binary | `replay/Makefile`, `replay/cpp/` | C++ source | `replay/bin/rating_replay` |
-| generate replay input | `replay/bin/rating_replay` | `data/ratings_drop_processed.jsonl` | `outputs/post/replay_demo/replay_input_events.jsonl` |
-| trace replay runner | `model/stream/replay_pipeline.py` | replay input events, model artifact, `--speed N` | `outputs/post/replay_demo/replay_summary.json`, `replay.sqlite`, `ingress_events.jsonl`, `replay_events.jsonl`, replay-scoped states/logs, optional `stream_recommendations.jsonl` |
+| generate replay input | `replay/bin/rating_replay` 또는 `replay_pipeline --generate-events` | `data/ratings_drop_processed.jsonl` | `production/replay_input_events.jsonl` |
+| trace replay runner | `model/stream/replay_pipeline.py` | replay input events, model artifact, `--speed N` | `replay_summary.json`, `production/production.sqlite`, debug JSONL logs, optional recommendation log |
+| compact dashboard projection | `model/stream/compact_dashboard.py` | `history/history.sqlite` | `dashboard_compact/dashboard_compact.sqlite` |
+
+### E 파트 output roots
+
+| mode | Output | Consumer |
+|---|---|---|
+| production-only, `--history-mode off` | `outputs/post/<run_id>_production/replay_summary.json`, `production/production.sqlite`, production debug JSONL | `runtime_report`, humans/debug |
+| history, `--history-mode history` | `outputs/post/<run_id>_history/replay_summary.json`, `production/production.sqlite`, `history/history.sqlite`, `dashboard_compact/dashboard_compact.sqlite` | dashboard/API/frontend, humans/debug |
+| legacy/default | `outputs/post/<run_label>_events_<N>/replay.sqlite` 등 | compatibility/debug only |
 
 ### E 파트가 F 파트에 넘기는 것
 
-- 필수 entrypoint: `outputs/post/replay_demo/replay_summary.json`
-- 추가 read files: `replay.sqlite` 우선, 없으면 `ingress_events.jsonl`, `replay_events.jsonl`, `interest_assignments.jsonl`, `refit_requests.jsonl`, `refit_events.jsonl`, `stream_recommendations.jsonl`
-- 세부 파일 계약: `docs/streaming-replay-dashboard-contract.md`
+- 필수 dashboard input: `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite`
+- Optional discovery entrypoint: `outputs/post/<run_id>_history/replay_summary.json`의 `paths.dashboardCompactDb`
+- 세부 파일 계약: `docs/streaming-replay-dashboard-contract.md`, `docs/post-replay-output-areas.md`
 
-## F. Dashboard
+## F. Dashboard/API/Frontend
 
-batch cluster 결과나 replay 진행 상황을 사람이 탐색하는 read-only UI 파트다.
+POST replay 결과를 사람이 탐색하는 read-only UI/API 파트다. 현재 공식 POST replay dashboard 계약은 compact-only reader다.
 
 | 항목 | 내용 |
 |---|---|
-| 담당 파일 | `dashboard/`, `dashboard/README.md` |
-| Input | batch cluster table 또는 E 파트 replay artifact |
-| Output | Streamlit UI. 데이터 artifact를 생성하거나 수정하지 않음 |
-| Endpoint | `streamlit run dashboard/cluster_dashboard.py` |
-| 넘기는 기준 | dashboard는 입력 artifact를 read-only로 읽고, 없는 경우 demo data로 UI만 확인 가능해야 함 |
+| 담당 파일 | `dashboard/`, `dashboard/README.md`, `api/`, `api/README.md`, `frontend/`, `frontend/README.md` |
+| Input | E 파트 history run의 `dashboard_compact/dashboard_compact.sqlite`, optional `data/movies.db`, optional `data/MLP-20M/` |
+| Output | Streamlit UI, FastAPI JSON response, React UI. Replay/stream artifact를 생성하거나 수정하지 않음 |
+| Endpoint | `streamlit run dashboard/cluster_dashboard.py`, `.venv/bin/uvicorn api.main:app --reload`, `cd frontend && npm run dev` |
+| 넘기는 기준 | dashboard/API/frontend는 compact DB를 read-only로 읽고 runtime/history/debug artifact fallback을 사용하지 않아야 함 |
 
 ### F 파트 input
 
-| view | Input | Contract |
+| reader | Input | Contract |
 |---|---|---|
-| Cluster explorer | `data/clustering/user_clusters.parquet` 또는 `.csv/.jsonl/.ndjson` | `dashboard/README.md`의 필수 컬럼: `userId`, `clusterLabel`, `x`, `y` |
-| Replay monitor | `outputs/post/replay_demo/replay_summary.json` | `docs/streaming-replay-dashboard-contract.md` |
+| Streamlit compact dashboard | `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` | `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` |
+| FastAPI backend | compact DB + `data/movies.db` + optional `data/MLP-20M/` | `api/README.md`; movie metadata는 recommendation enrichment 전용 |
+| React frontend | FastAPI HTTP endpoints | `frontend/src/api.js`; 기본 API base `http://localhost:8000`, `VITE_API_BASE`로 변경 |
+| Batch cluster export/debug | `data/clustering/user_clusters.parquet` 또는 `.csv/.jsonl/.ndjson` | `model.batch.export_clusters`로 재생성. 현재 POST replay dashboard 입력은 아님 |
 
 ### F 파트 연결 기준
 
-- Cluster explorer 입력은 `model/batch/export_clusters.py`로 생성한다.
-- Replay monitor는 summary `paths`가 있으면 이를 우선 사용하며, `stream_recommendations.jsonl`이 있으면 recommendation view도 표시한다.
+- POST replay UI는 compact DB의 user/event grain을 따른다. Timeline key는 `(user_id, event_id)`다.
+- `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact는 dashboard display fallback으로 읽지 않는다.
+- React API의 `/api/users/{user_id}/events/{event_id}`는 visualization, cluster snapshot, recommendation을 한 frame으로 묶어 반환한다.
 
 ## G. Local Run Records / Docs Tracking
 
@@ -219,4 +231,4 @@ Known issue:
 - output을 새로 만들면 누가 소비하는지 명시한다.
 - 기존 output을 대체하면 이전 consumer가 깨지지 않게 migration 기준을 남긴다.
 - dashboard는 replay/stream 내부 함수에 의존하지 않고 artifact만 읽는다.
-- replay demo output은 `outputs/post/replay_demo/` 아래에만 쓴다.
+- 신규 replay output은 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/`처럼 mode가 드러나는 root 아래에 쓴다.

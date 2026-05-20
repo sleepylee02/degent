@@ -11,6 +11,8 @@ class ClusterOutput(NamedTuple):
     labels: np.ndarray      # (N,)  -1 = noise
     reduced_dim: int
     n_neighbors: int
+    reducer: Any | None = None
+    projection_mode: str = "umap"
 
 
 def probe_gpu_backend() -> None:
@@ -52,6 +54,31 @@ def _safe_umap_params(n_samples: int, cluster_dim: int) -> tuple[int, int]:
     return reduced_dim, n_neighbors
 
 
+def project_embeddings(
+    embeddings: np.ndarray,
+    *,
+    reducer: Any | None,
+    reduced_dim: int,
+    projection_mode: str,
+) -> np.ndarray:
+    embeddings = np.asarray(embeddings, dtype=np.float32)
+    if embeddings.ndim != 2:
+        raise ValueError(f"embeddings must be 2D, got {embeddings.shape}")
+    if embeddings.shape[0] == 0:
+        width = min(max(1, int(reduced_dim)), embeddings.shape[1] if embeddings.shape[1] else 1)
+        return np.zeros((0, width), dtype=np.float32)
+
+    if projection_mode == "slice" or reducer is None:
+        width = min(max(1, int(reduced_dim)), embeddings.shape[1])
+        return embeddings[:, :width].astype(np.float32, copy=False)
+
+    projected = to_numpy(reducer.transform(embeddings))
+    projected = np.asarray(projected, dtype=np.float32)
+    if projected.ndim != 2:
+        raise ValueError(f"projected embeddings must be 2D, got {projected.shape}")
+    return projected
+
+
 def cluster_cpu(
     embeddings: np.ndarray,
     *,
@@ -79,8 +106,14 @@ def cluster_cpu(
         hdbscan.HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster),
         dtype=np.int64,
     )
-    return ClusterOutput(z_cluster=z_cluster, labels=labels,
-                         reduced_dim=reduced_dim, n_neighbors=n_neighbors)
+    return ClusterOutput(
+        z_cluster=z_cluster,
+        labels=labels,
+        reduced_dim=reduced_dim,
+        n_neighbors=n_neighbors,
+        reducer=reducer,
+        projection_mode="umap",
+    )
 
 
 def cluster_gpu(
@@ -106,8 +139,14 @@ def cluster_gpu(
     labels = to_numpy(
         HDBSCAN(min_cluster_size=min_cluster_size).fit_predict(z_cluster)
     ).astype(np.int64)
-    return ClusterOutput(z_cluster=z_cluster, labels=labels,
-                         reduced_dim=reduced_dim, n_neighbors=n_neighbors)
+    return ClusterOutput(
+        z_cluster=z_cluster,
+        labels=labels,
+        reduced_dim=reduced_dim,
+        n_neighbors=n_neighbors,
+        reducer=reducer,
+        projection_mode="umap",
+    )
 
 
 def cluster_embeddings(
@@ -123,8 +162,14 @@ def cluster_embeddings(
         reduced_dim, n_neighbors = _safe_umap_params(n_samples, cluster_dim)
         labels = np.full(n_samples, -1, dtype=np.int64)
         z_dummy = embeddings[:, :min(reduced_dim, embeddings.shape[1])]
-        return ClusterOutput(z_cluster=z_dummy, labels=labels,
-                             reduced_dim=reduced_dim, n_neighbors=n_neighbors)
+        return ClusterOutput(
+            z_cluster=z_dummy,
+            labels=labels,
+            reduced_dim=reduced_dim,
+            n_neighbors=n_neighbors,
+            reducer=None,
+            projection_mode="slice",
+        )
 
     if backend == "gpu":
         return cluster_gpu(embeddings, min_cluster_size=min_cluster_size,

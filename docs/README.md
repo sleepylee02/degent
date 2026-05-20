@@ -11,8 +11,9 @@
 5. `docs/artifacts.md`: artifact 소유권, 생성 명령, edit/regenerate 정책.
 6. `docs/streaming-e2e-pipeline.md`: streaming/replay e2e 실행과 인계 절차.
 7. `docs/streaming-replay-dashboard-contract.md`: replay writer와 dashboard reader 사이 artifact 계약.
-8. `docs/part-contracts.md`: schema, preprocessing, model, streaming, replay, dashboard, docs 작업 경계.
-9. `docs/decisions/`: 장기적으로 남길 설계/운영 결정.
+8. `docs/part-contracts.md`: schema, preprocessing, model, streaming, replay, dashboard/API/frontend, docs 작업 경계.
+9. `dashboard/README.md`, `api/README.md`, `frontend/README.md`: compact dashboard reader별 실행 안내.
+10. `docs/decisions/`: 장기적으로 남길 설계/운영 결정.
 
 ## 로컬 전용 기록
 
@@ -49,6 +50,6 @@
 
 - 디렉터리 구조, git 추적 정책, local-only artifact 정책.
 - 데이터 스키마, 파일 계약, 전처리 output.
-- model/replay/dashboard 실행 명령.
+- model/replay/dashboard/API/frontend 실행 명령.
 - runtime artifact 이름, stable entrypoint, dashboard reader 계약.
 - dependency pin이나 환경 전제.

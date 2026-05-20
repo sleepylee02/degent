@@ -11,6 +11,7 @@ import model.stream.runtime_store as runtime_store
 from model.common.cluster import (
     choose_backend,
     cluster_with_fallback,
+    project_embeddings,
     top_genres_for_cluster,
 )
 from model.common.runtime import (
@@ -222,8 +223,20 @@ def run_refit(
         "labels": result.labels,
         "zCluster": result.z_cluster,
         "labelToInterestId": label_to_interest_id,
+        "reducer": result.reducer,
+        "projectionMode": result.projection_mode,
+        "reducedDim": result.reduced_dim,
     }
     return interests, summary, actual_backend, actual_fallback, detail
+
+
+def project_with_refit_detail(embeddings: np.ndarray, refit_detail: dict[str, Any]) -> np.ndarray:
+    return project_embeddings(
+        embeddings,
+        reducer=refit_detail.get("reducer"),
+        reduced_dim=int(refit_detail.get("reducedDim", 2)),
+        projection_mode=str(refit_detail.get("projectionMode", "slice")),
+    )
 
 
 def update_state_after_refit(

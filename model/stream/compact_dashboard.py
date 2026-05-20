@@ -10,7 +10,8 @@ import model.stream.history_store as history_store
 from model.common.runtime import local_timestamp
 
 
-DASHBOARD_COMPACT_SCHEMA_VERSION = 1
+DASHBOARD_COMPACT_SCHEMA_VERSION = 2
+NOISE_CLUSTER_ID = -1
 
 
 def _json(value: Any) -> str:
@@ -24,6 +25,15 @@ def _loads(value: str | None, default: Any) -> Any:
         return json.loads(value)
     except json.JSONDecodeError:
         return default
+
+
+def _table_columns(conn: Any, table: str) -> set[str]:
+    return {str(row["name"]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _ensure_column(conn: Any, table: str, column: str, definition: str) -> None:
+    if column not in _table_columns(conn, table):
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def init_store(db_path: Path) -> None:
@@ -45,6 +55,10 @@ def init_store(db_path: Path) -> None:
                 refit_reason TEXT,
                 k_count INTEGER NOT NULL DEFAULT 0,
                 noise_count INTEGER NOT NULL DEFAULT 0,
+                assigned_since_refit INTEGER NOT NULL DEFAULT 0,
+                not_assigned_since_refit INTEGER NOT NULL DEFAULT 0,
+                not_projected_since_refit INTEGER NOT NULL DEFAULT 0,
+                last_refit_event_id INTEGER,
                 PRIMARY KEY (user_id, event_id)
             );
 
@@ -60,6 +74,9 @@ def init_store(db_path: Path) -> None:
                 event_id INTEGER NOT NULL,
                 cluster_id INTEGER NOT NULL,
                 size INTEGER NOT NULL,
+                base_size INTEGER NOT NULL DEFAULT 0,
+                assigned_size INTEGER NOT NULL DEFAULT 0,
+                total_size INTEGER NOT NULL DEFAULT 0,
                 top_genres TEXT,
                 PRIMARY KEY (user_id, event_id, cluster_id)
             );
@@ -75,6 +92,13 @@ def init_store(db_path: Path) -> None:
             );
             """
         )
+        _ensure_column(conn, "event_timeline", "assigned_since_refit", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "event_timeline", "not_assigned_since_refit", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "event_timeline", "not_projected_since_refit", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "event_timeline", "last_refit_event_id", "INTEGER")
+        _ensure_column(conn, "cluster_snapshots", "base_size", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "cluster_snapshots", "assigned_size", "INTEGER NOT NULL DEFAULT 0")
+        _ensure_column(conn, "cluster_snapshots", "total_size", "INTEGER NOT NULL DEFAULT 0")
         now = local_timestamp()
         conn.execute(
             """
@@ -103,10 +127,10 @@ def _resolve_run_id(history_db: Path, run_id: str | None) -> str:
     return str(row["run_id"])
 
 
-def _latest_membership_rows(conn: Any, *, run_id: str, user_id: int, replay_order: int) -> list[Any]:
+def _latest_membership_context(conn: Any, *, run_id: str, user_id: int, replay_order: int) -> dict[str, Any]:
     row = conn.execute(
         """
-        SELECT state_version
+        SELECT state_version, event_id, replay_order
         FROM interest_membership_history
         WHERE run_id=? AND user_id=? AND replay_order<=?
         ORDER BY replay_order DESC, history_id DESC
@@ -115,9 +139,9 @@ def _latest_membership_rows(conn: Any, *, run_id: str, user_id: int, replay_orde
         (run_id, int(user_id), int(replay_order)),
     ).fetchone()
     if row is None:
-        return []
+        return {"state_version": None, "event_id": None, "replay_order": -1, "rows": []}
     state_version = str(row["state_version"])
-    return conn.execute(
+    rows = conn.execute(
         """
         SELECT *
         FROM interest_membership_history
@@ -126,6 +150,12 @@ def _latest_membership_rows(conn: Any, *, run_id: str, user_id: int, replay_orde
         """,
         (run_id, int(user_id), state_version),
     ).fetchall()
+    return {
+        "state_version": state_version,
+        "event_id": None if row["event_id"] is None else int(row["event_id"]),
+        "replay_order": -1 if row["replay_order"] is None else int(row["replay_order"]),
+        "rows": rows,
+    }
 
 
 def _interest_top_genres(conn: Any, *, run_id: str, user_id: int, state_version: str) -> dict[int, Any]:
@@ -144,6 +174,56 @@ def _interest_top_genres(conn: Any, *, run_id: str, user_id: int, state_version:
             genres = [str(item.get("genre")) for item in genres if item.get("genre") is not None]
         output[int(row["interest_id"])] = genres
     return output
+
+
+def _projection_delta_events(
+    conn: Any,
+    *,
+    run_id: str,
+    user_id: int,
+    after_replay_order: int,
+    replay_order: int,
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    projections = conn.execute(
+        """
+        SELECT *
+        FROM assignment_projection_history
+        WHERE run_id=? AND user_id=? AND replay_order>? AND replay_order<=?
+        ORDER BY replay_order, history_id
+        """,
+        (run_id, int(user_id), int(after_replay_order), int(replay_order)),
+    ).fetchall()
+    for row in projections:
+        events.append(
+            {
+                "kind": "projection",
+                "replay_order": -1 if row["replay_order"] is None else int(row["replay_order"]),
+                "history_id": int(row["history_id"]),
+                "row": row,
+            }
+        )
+
+    inactivations = conn.execute(
+        """
+        SELECT *
+        FROM embedding_change_history
+        WHERE run_id=? AND user_id=? AND replay_order>? AND replay_order<=? AND change_type IN ('inactive', 'inactivate')
+        ORDER BY replay_order, history_id
+        """,
+        (run_id, int(user_id), int(after_replay_order), int(replay_order)),
+    ).fetchall()
+    for row in inactivations:
+        events.append(
+            {
+                "kind": "inactivate",
+                "replay_order": -1 if row["replay_order"] is None else int(row["replay_order"]),
+                "history_id": int(row["history_id"]),
+                "row": row,
+            }
+        )
+    priority = {"inactivate": 0, "projection": 1}
+    return sorted(events, key=lambda item: (item["replay_order"], priority[item["kind"]], item["history_id"]))
 
 
 def _latest_recommendation_rows(conn: Any, *, run_id: str, user_id: int, replay_order: int) -> list[Any]:
@@ -183,6 +263,56 @@ def _refit_event(conn: Any, *, run_id: str, user_id: int, event_id: int) -> Any 
     ).fetchone()
 
 
+def _membership_point(row: Any) -> dict[str, Any] | None:
+    if row["umap_x"] is None or row["umap_y"] is None:
+        return None
+    interest_id = None if row["interest_id"] is None else int(row["interest_id"])
+    cluster_label = int(row["cluster_label"])
+    visual_status = "noise" if interest_id is None else "base"
+    cluster_id = NOISE_CLUSTER_ID if interest_id is None else interest_id
+    return {
+        "raw_event_id": int(row["raw_event_id"]),
+        "event_idx": None if row["event_idx"] is None else int(row["event_idx"]),
+        "movie_id": None if row["movie_id"] is None else int(row["movie_id"]),
+        "x": round(float(row["umap_x"]), 3),
+        "y": round(float(row["umap_y"]), 3),
+        "c": cluster_id,
+        "cluster_id": None if interest_id is None else interest_id,
+        "cluster_label": cluster_label,
+        "visual_status": visual_status,
+        "point_source": "refit",
+    }
+
+
+def _projection_point(row: Any) -> dict[str, Any] | None:
+    if row["umap_x"] is None or row["umap_y"] is None:
+        return None
+    visual_status = str(row["visual_status"])
+    if visual_status == "assigned" and row["interest_id"] is not None:
+        cluster_id = int(row["interest_id"])
+        c_value = cluster_id
+    else:
+        cluster_id = None
+        c_value = NOISE_CLUSTER_ID
+    return {
+        "raw_event_id": int(row["raw_event_id"]),
+        "event_idx": None if row["event_idx"] is None else int(row["event_idx"]),
+        "movie_id": None if row["movie_id"] is None else int(row["movie_id"]),
+        "x": round(float(row["umap_x"]), 3),
+        "y": round(float(row["umap_y"]), 3),
+        "c": c_value,
+        "cluster_id": cluster_id,
+        "candidate_cluster_id": None if row["candidate_interest_id"] is None else int(row["candidate_interest_id"]),
+        "visual_status": visual_status,
+        "assignment_status": str(row["assignment_status"]),
+        "point_source": "assignment",
+        "similarity": None if row["similarity"] is None else round(float(row["similarity"]), 6),
+        "reason": row["reason"],
+        "base_state_version": row["base_state_version"],
+        "base_refit_event_id": row["base_refit_event_id"],
+    }
+
+
 def compact_history_to_dashboard(*, history_db: Path, output_db: Path, run_id: str | None = None) -> dict[str, Any]:
     history_db = Path(history_db)
     output_db = Path(output_db)
@@ -219,31 +349,69 @@ def compact_history_to_dashboard(*, history_db: Path, output_db: Path, run_id: s
                 reasons = _loads(refit["reasons_json"], [])
                 refit_reason = _json(reasons) if reasons else str(refit["status"])
 
-            membership = _latest_membership_rows(
+            context = _latest_membership_context(
                 source,
                 run_id=resolved_run_id,
                 user_id=user_id,
                 replay_order=replay_order,
             )
-            points: list[dict[str, Any]] = []
-            cluster_counts: Counter[int] = Counter()
-            state_version = None
-            for row in membership:
-                state_version = str(row["state_version"])
-                cluster_label = int(row["cluster_label"])
-                interest_id = None if row["interest_id"] is None else int(row["interest_id"])
-                points.append(
-                    {
-                        "raw_event_id": int(row["raw_event_id"]),
-                        "x": None if row["umap_x"] is None else round(float(row["umap_x"]), 3),
-                        "y": None if row["umap_y"] is None else round(float(row["umap_y"]), 3),
-                        "c": cluster_label,
-                    }
-                )
-                if interest_id is not None:
-                    cluster_counts[interest_id] += 1
+            state_version = context["state_version"]
+            base_replay_order = int(context["replay_order"])
+            points_by_raw_event_id: dict[int, dict[str, Any]] = {}
+            for row in context["rows"]:
+                point = _membership_point(row)
+                if point is not None:
+                    points_by_raw_event_id[int(point["raw_event_id"])] = point
 
-            noise_count = sum(1 for row in membership if int(row["cluster_label"]) == -1)
+            not_projected_since_refit = 0
+            for delta in _projection_delta_events(
+                source,
+                run_id=resolved_run_id,
+                user_id=user_id,
+                after_replay_order=base_replay_order,
+                replay_order=replay_order,
+            ):
+                row = delta["row"]
+                raw_event_id = int(row["raw_event_id"])
+                if delta["kind"] == "inactivate":
+                    points_by_raw_event_id.pop(raw_event_id, None)
+                    continue
+                if str(row["visual_status"]) == "not_projected":
+                    not_projected_since_refit += 1
+                    continue
+                point = _projection_point(row)
+                if point is None:
+                    not_projected_since_refit += 1
+                    continue
+                points_by_raw_event_id[raw_event_id] = point
+
+            points = sorted(
+                points_by_raw_event_id.values(),
+                key=lambda item: (int(item.get("event_idx") or 0), int(item["raw_event_id"])),
+            )
+            cluster_counts: Counter[int] = Counter()
+            base_cluster_counts: Counter[int] = Counter()
+            assigned_cluster_counts: Counter[int] = Counter()
+            noise_count = 0
+            not_assigned_since_refit = 0
+            assigned_since_refit = 0
+            for point in points:
+                visual_status = str(point.get("visual_status", "base"))
+                cluster_id = point.get("cluster_id")
+                if visual_status == "not_assigned":
+                    not_assigned_since_refit += 1
+                    continue
+                if cluster_id is None:
+                    noise_count += 1
+                    continue
+                cluster_id_int = int(cluster_id)
+                cluster_counts[cluster_id_int] += 1
+                if point.get("point_source") == "assignment":
+                    assigned_cluster_counts[cluster_id_int] += 1
+                    assigned_since_refit += 1
+                else:
+                    base_cluster_counts[cluster_id_int] += 1
+
             top_genres_by_interest = (
                 {}
                 if state_version is None
@@ -259,9 +427,10 @@ def compact_history_to_dashboard(*, history_db: Path, output_db: Path, run_id: s
                 """
                 INSERT OR REPLACE INTO event_timeline(
                     user_id, event_id, timestamp, movie_id, is_refit_triggered,
-                    refit_reason, k_count, noise_count
+                    refit_reason, k_count, noise_count, assigned_since_refit,
+                    not_assigned_since_refit, not_projected_since_refit, last_refit_event_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -272,6 +441,10 @@ def compact_history_to_dashboard(*, history_db: Path, output_db: Path, run_id: s
                     refit_reason,
                     len(cluster_counts),
                     noise_count,
+                    assigned_since_refit,
+                    not_assigned_since_refit,
+                    not_projected_since_refit,
+                    context["event_id"],
                 ),
             )
             target.execute(
@@ -284,15 +457,22 @@ def compact_history_to_dashboard(*, history_db: Path, output_db: Path, run_id: s
             point_rows += len(points)
 
             for interest_id, size in sorted(cluster_counts.items()):
+                base_size = int(base_cluster_counts.get(interest_id, 0))
+                assigned_size = int(assigned_cluster_counts.get(interest_id, 0))
                 target.execute(
                     """
-                    INSERT OR REPLACE INTO cluster_snapshots(user_id, event_id, cluster_id, size, top_genres)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT OR REPLACE INTO cluster_snapshots(
+                        user_id, event_id, cluster_id, size, base_size, assigned_size, total_size, top_genres
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         user_id,
                         event_id,
                         interest_id,
+                        int(size),
+                        base_size,
+                        assigned_size,
                         int(size),
                         _json(top_genres_by_interest.get(interest_id, [])),
                     ),

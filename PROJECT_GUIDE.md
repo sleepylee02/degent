@@ -37,7 +37,18 @@ degent/
 │   ├── cpp/                 #   replay source
 │   ├── Makefile             #   replay binary build
 │   └── README.md            #   replay generator/orchestrator usage
-├── dashboard/               # 클러스터링 결과 시각화 대시보드
+├── dashboard/               # POST replay compact SQLite를 읽는 Streamlit dashboard
+├── api/                     # React dashboard용 read-only FastAPI backend
+│   ├── __init__.py          #   package marker for api.main import
+│   ├── main.py              #   API route, CORS, static poster mount
+│   ├── database.py          #   compact dashboard DB + movie metadata DB read helpers
+│   ├── requirements.txt     #   FastAPI/uvicorn 의존성
+│   └── README.md            #   API 실행/입력 계약
+├── frontend/                # React + Vite replay dashboard
+│   ├── src/                 #   dashboard UI, API client, timeline/cluster/recommendation components
+│   ├── public/              #   favicon/icons
+│   ├── package.json         #   npm scripts/dependencies
+│   └── README.md            #   frontend 실행 안내
 ├── model/                   # SASRec + Contrastive Loss 추천 모델
 │   ├── batch/               #   batch 모델 파이프라인 실행 entrypoint
 │   │   ├── train.py         #     학습 실행 → sasrec_cl.pt + sasrec_cl_best.pt + item2idx.json
@@ -131,13 +142,17 @@ degent/
 - 기존 계획이 있으면 그것을 따르고, 변경이 필요하면 계획서를 먼저 수정한다.
 - 현황 점검, 문서 인벤토리, 짧은 정리처럼 별도 실행 계획보다 추적 문서가 적합한 작업은 active plan을 생략할 수 있다. 이 경우 `todo.md`에 기준 문서와 생략 사유를 명시한다.
 
-### 대시보드
-- 대시보드 코드는 `dashboard/` 아래에 둔다.
+### 대시보드/API/프론트엔드
+- Streamlit dashboard 코드는 `dashboard/` 아래에 둔다.
+- React dashboard backend 코드는 `api/` 아래에 두며, compact dashboard DB와 movie metadata DB를 read-only로 연다.
+- React/Vite frontend 코드는 `frontend/` 아래에 둔다.
 - 시각화용 입력 산출물은 스크립트로 재생성 가능해야 하며, 원본 데이터처럼 수동 편집하지 않는다.
-- 현재 공식 POST replay dashboard는 compact-only reader다. 입력은 `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` 하나이며, `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` table만 읽는다.
-- Dashboard는 `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact를 직접 읽지 않는다. Replay/stream state를 생성하거나 수정하지도 않는다.
+- 현재 공식 POST replay dashboard 계약은 compact-only reader다. 입력은 `outputs/post/<run_id>_history/dashboard_compact/dashboard_compact.sqlite` 하나이며, `event_timeline`, `visualization_states`, `cluster_snapshots`, `recommendations` table만 읽는다.
+- Streamlit dashboard와 React API 모두 `production/production.sqlite`, `history/history.sqlite`, legacy `replay.sqlite`, JSONL debug artifact를 display fallback으로 직접 읽지 않는다. Replay/stream state를 생성하거나 수정하지도 않는다.
+- `api/main.py`는 `DASHBOARD_DB_PATH`, `MOVIES_DB_PATH`, `POSTER_DIR` 환경변수로 입력을 바꿀 수 있다. 기본 movie metadata DB(`data/movies.db`)와 poster directory(`data/MLP-20M/`)는 로컬 보조 입력이며 git 추적 대상이 아니다.
+- `frontend/src/api.js`의 기본 API base는 `http://localhost:8000`이고, `VITE_API_BASE`로 바꿀 수 있다.
 - Temporal post-T 신규 run은 `outputs/post/<run_id>_production/` 또는 `outputs/post/<run_id>_history/`처럼 mode가 드러나는 root를 사용하며, 기존 `outputs/post/<run_label>_events_<N>/` 계열은 legacy/default 호환 root로 유지한다.
-- 인터랙티브 시각화를 위한 새 패키지를 추가하면 반드시 `requirements.txt`에 반영한다.
+- 인터랙티브 시각화를 위한 새 패키지를 추가하면 Python 쪽은 `requirements.txt` 또는 `api/requirements.txt`, frontend 쪽은 `frontend/package.json`과 `frontend/package-lock.json`에 반영한다.
 
 ### 모델 실험
 - 모델 가중치, 임베딩, 클러스터링 결과 같은 대형 산출물은 `outputs/`에 두고 git으로 추적하지 않는다.

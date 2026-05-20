@@ -10,7 +10,7 @@ import model.stream.runtime_store as runtime_store
 from model.common.runtime import local_timestamp
 
 
-HISTORY_SCHEMA_VERSION = 1
+HISTORY_SCHEMA_VERSION = 2
 
 
 def _json(value: Any) -> str:
@@ -154,6 +154,32 @@ def init_store(db_path: Path) -> None:
                 payload_json TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS assignment_projection_history (
+                history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                event_id INTEGER NOT NULL,
+                replay_order INTEGER,
+                user_id INTEGER NOT NULL,
+                raw_event_id INTEGER NOT NULL,
+                event_idx INTEGER,
+                movie_id INTEGER,
+                assignment_status TEXT NOT NULL,
+                visual_status TEXT NOT NULL,
+                interest_id INTEGER,
+                candidate_interest_id INTEGER,
+                similarity REAL,
+                reason TEXT,
+                umap_x REAL,
+                umap_y REAL,
+                base_state_version TEXT,
+                base_refit_event_id INTEGER,
+                base_refit_replay_order INTEGER,
+                projection_source TEXT,
+                state_version TEXT,
+                recorded_at TEXT NOT NULL,
+                payload_json TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS user_interest_timeline (
                 history_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id TEXT NOT NULL,
@@ -278,6 +304,8 @@ def init_store(db_path: Path) -> None:
                 ON user_interest_timeline(run_id, user_id, replay_order, history_id);
             CREATE INDEX IF NOT EXISTS idx_refit_lifecycle_user_order
                 ON refit_lifecycle_history(run_id, user_id, replay_order, history_id);
+            CREATE INDEX IF NOT EXISTS idx_assignment_projection_user_order
+                ON assignment_projection_history(run_id, user_id, replay_order, history_id);
             CREATE INDEX IF NOT EXISTS idx_interest_membership_state
                 ON interest_membership_history(run_id, user_id, state_version);
             CREATE INDEX IF NOT EXISTS idx_interest_vector_state
@@ -634,6 +662,58 @@ def record_assignment_decisions(
                     state_version,
                     str(record.get("recordedAt", local_timestamp())),
                     _json(record),
+                ),
+            )
+
+
+def record_assignment_projections(
+    db_path: Path,
+    *,
+    run_id: str,
+    event_id: int,
+    replay_order: int | None,
+    rows: list[dict[str, Any]],
+    state_version: str | None = None,
+) -> None:
+    if not rows:
+        return
+    init_store(db_path)
+    with connect(db_path) as conn:
+        for row in rows:
+            conn.execute(
+                """
+                INSERT INTO assignment_projection_history(
+                    run_id, event_id, replay_order, user_id, raw_event_id, event_idx, movie_id,
+                    assignment_status, visual_status, interest_id, candidate_interest_id,
+                    similarity, reason, umap_x, umap_y, base_state_version,
+                    base_refit_event_id, base_refit_replay_order, projection_source,
+                    state_version, recorded_at, payload_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    int(event_id),
+                    _none_or_int(replay_order),
+                    int(row["userId"]),
+                    int(row["rawEventId"]),
+                    _none_or_int(row.get("eventIdx")),
+                    _none_or_int(row.get("movieId")),
+                    str(row.get("assignmentStatus", "unknown")),
+                    str(row.get("visualStatus", "not_projected")),
+                    _none_or_int(row.get("interestId")),
+                    _none_or_int(row.get("candidateInterestId")),
+                    _none_or_float(row.get("similarity")),
+                    row.get("reason"),
+                    _none_or_float(row.get("umapX")),
+                    _none_or_float(row.get("umapY")),
+                    row.get("baseStateVersion"),
+                    _none_or_int(row.get("baseRefitEventId")),
+                    _none_or_int(row.get("baseRefitReplayOrder")),
+                    row.get("projectionSource"),
+                    state_version,
+                    str(row.get("recordedAt", local_timestamp())),
+                    _json(row),
                 ),
             )
 
