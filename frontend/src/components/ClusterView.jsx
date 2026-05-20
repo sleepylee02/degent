@@ -1,29 +1,64 @@
 import { useMemo } from 'react';
-import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import {
+  Chart as ChartJS,
+  LinearScale, PointElement, Tooltip, Legend,
+} from 'chart.js';
+import { Scatter } from 'react-chartjs-2';
 
-const DOT_R = 3; // px — change this to resize all dots
-const Dot = ({ cx, cy, fill, opacity }) => <circle cx={cx} cy={cy} r={DOT_R} fill={fill} opacity={opacity ?? 1} />;
+ChartJS.register(LinearScale, PointElement, Tooltip, Legend);
 
 const PALETTE = ['#a78bfa', '#34d399', '#fb923c', '#60a5fa', '#f472b6', '#facc15'];
 const NOISE_COLOR = '#4b5563';
 
-function CustomTooltip({ active, payload }) {
-  if (!active || !payload?.length) return null;
-  const { x, y, c } = payload[0].payload;
-  return (
-    <div className="tooltip">
-      <div>x: {x}, y: {y}</div>
-      <div>{c === -1 ? 'Noise' : `Cluster ${c}`}</div>
-    </div>
-  );
-}
+const OPTIONS = {
+  animation: false,
+  responsive: true,
+  maintainAspectRatio: false,
+  parsing: false, // points already {x, y} — skip internal parsing
+  plugins: {
+    legend: {
+      position: 'top',
+      labels: { color: '#e2e8f0', boxWidth: 10, font: { size: 11 } },
+    },
+    tooltip: {
+      callbacks: {
+        label: ctx => {
+          const { x, y, c } = ctx.raw;
+          return `(${x?.toFixed(2)}, ${y?.toFixed(2)})  ${c === -1 ? 'Noise' : `C${c}`}`;
+        },
+      },
+    },
+  },
+  scales: {
+    x: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { color: '#2e303a' } },
+    y: { ticks: { color: '#6b7280', font: { size: 10 } }, grid: { color: '#2e303a' } },
+  },
+};
 
 export default function ClusterView({ points, clusterInfo, eventData }) {
-  const grouped = useMemo(() => {
-    const g = { [-1]: [] };
-    clusterInfo.forEach(c => { g[c.cluster_id] = []; });
-    points.forEach(p => (g[p.c] !== undefined ? g[p.c] : g[-1]).push(p));
-    return g;
+  const data = useMemo(() => {
+    const grouped = { [-1]: [] };
+    clusterInfo.forEach(c => { grouped[c.cluster_id] = []; });
+    points.forEach(p => (grouped[p.c] !== undefined ? grouped[p.c] : grouped[-1]).push(p));
+
+    return {
+      datasets: [
+        {
+          label: `Noise (${grouped[-1].length})`,
+          data: grouped[-1],
+          backgroundColor: NOISE_COLOR + '66',
+          pointRadius: 3,
+          pointHoverRadius: 5,
+        },
+        ...clusterInfo.map((c, i) => ({
+          label: `C${c.cluster_id} (${c.size})`,
+          data: grouped[c.cluster_id] ?? [],
+          backgroundColor: PALETTE[i % PALETTE.length] + 'cc',
+          pointRadius: 3,
+          pointHoverRadius: 5,
+        })),
+      ],
+    };
   }, [points, clusterInfo]);
 
   return (
@@ -37,25 +72,9 @@ export default function ClusterView({ points, clusterInfo, eventData }) {
         <div className="panel-sub">이 시점에서 refit 없음</div>
       )}
 
-      <ResponsiveContainer width="100%" height={300}>
-        <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#2e303a" />
-          <XAxis type="number" dataKey="x" name="x" tick={{ fontSize: 10 }} />
-          <YAxis type="number" dataKey="y" name="y" tick={{ fontSize: 10 }} />
-          <Tooltip content={<CustomTooltip />} />
-          <Legend />
-          <Scatter name={`Noise (${grouped[-1].length})`} data={grouped[-1]} fill={NOISE_COLOR} opacity={0.4} shape={<Dot />} />
-          {clusterInfo.map((c, i) => (
-            <Scatter
-              key={c.cluster_id}
-              name={`C${c.cluster_id} (${c.size})`}
-              data={grouped[c.cluster_id] || []}
-              fill={PALETTE[i % PALETTE.length]}
-              shape={<Dot />}
-            />
-          ))}
-        </ScatterChart>
-      </ResponsiveContainer>
+      <div style={{ height: 300 }}>
+        <Scatter data={data} options={OPTIONS} />
+      </div>
 
       <div className="cluster-table-wrap">
         <table className="cluster-table">

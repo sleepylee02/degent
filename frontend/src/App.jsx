@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { fetchUserIds, fetchTimeline, fetchFrame } from './api';
+import { fetchUserIds, fetchTimeline, fetchFrame, fetchVizChunk } from './api';
 import KTimeline from './components/KTimeline';
 import ClusterView from './components/ClusterView';
 import Recommendations from './components/Recommendations';
@@ -7,26 +7,30 @@ import PerfOverlay from './components/PerfOverlay';
 import { usePerf } from './hooks/usePerf';
 import './App.css';
 
-const PREFETCH_AHEAD = 3; // number of frames to prefetch during playback
+const PREFETCH_AHEAD = 3;  // frames to prefetch during playback
+const CACHE_MAX      = 150; // max frame cache entries before LRU eviction
 
 const MemoKTimeline      = memo(KTimeline);
 const MemoClusterView    = memo(ClusterView);
 const MemoRecommendations = memo(Recommendations);
 
 export default function App() {
-  const [userIds, setUserIds]       = useState([]);
-  const [userId, setUserId]         = useState(null);
-  const [timeline, setTimeline]     = useState([]);
-  const [sliderIdx, setSliderIdx]   = useState(0);
-  const [appliedIdx, setAppliedIdx] = useState(0);
-  const [frame, setFrame]           = useState(null);
-  const [playing, setPlaying]       = useState(false);
-  const [speed, setSpeed]           = useState(600);
-  const [perfVisible, setPerfVisible] = useState(false);
+  const [userIds, setUserIds]             = useState([]);
+  const [userId, setUserId]               = useState(null);
+  const [timeline, setTimeline]           = useState([]);
+  const [sliderIdx, setSliderIdx]         = useState(0);
+  const [appliedIdx, setAppliedIdx]       = useState(0);
+  const [frame, setFrame]                 = useState(null);
+  const [playing, setPlaying]             = useState(false);
+  const [speed, setSpeed]                 = useState(600);
+  const [perfVisible, setPerfVisible]     = useState(false);
+  const [chunkVersion, setChunkVersion]   = useState(0); // increments when a chunk loads → triggers points recompute
 
-  const intervalRef  = useRef(null);
-  const frameAbort   = useRef(null);
-  const cache        = useRef(new Map()); // event_id → frame
+  const intervalRef   = useRef(null);
+  const frameAbort    = useRef(null);
+  const cache         = useRef(new Map()); // event_id → frame  (LRU-evicted at CACHE_MAX)
+  const vizChunkCache = useRef(new Map()); // checkpoint_id → chunk
+  const pointsAccRef  = useRef({ cpId: null, idx: -1, pts: [], version: -1 }); // incremental acc cache
 
   const { record, renderRef, stats } = usePerf();
 
@@ -39,14 +43,16 @@ export default function App() {
     return () => ac.abort();
   }, []);
 
-  // Load timeline when user changes — clear cache
+  // Load timeline when user changes — clear all caches
   useEffect(() => {
     if (userId == null) return;
     cache.current.clear();
+    vizChunkCache.current.clear();
     setTimeline([]);
     setSliderIdx(0);
     setAppliedIdx(0);
     setFrame(null);
+    setChunkVersion(0);
     setPlaying(false);
     const ac = new AbortController();
     fetchTimeline(userId, ac.signal)
@@ -70,7 +76,13 @@ export default function App() {
         : fetchFrame(uid, row.event_id, sig),
       { cached }
     );
-    if (!cached) cache.current.set(row.event_id, result);
+    if (!cached) {
+      cache.current.set(row.event_id, result);
+      // LRU eviction: Map preserves insertion order — delete oldest entry
+      if (cache.current.size > CACHE_MAX) {
+        cache.current.delete(cache.current.keys().next().value);
+      }
+    }
     setFrame(result);
   }, [record]);
 
@@ -88,6 +100,40 @@ export default function App() {
         .catch(() => {});
     }
   }, [appliedIdx, timeline, userId]);
+
+  // Derive current checkpoint_id from timeline (first event + refit events)
+  const currentCheckpointId = useMemo(() => {
+    if (!timeline.length) return null;
+    let cpId = timeline[0].event_id;
+    for (let i = 1; i <= appliedIdx; i++) {
+      if (timeline[i]?.is_refit_triggered) cpId = timeline[i].event_id;
+    }
+    return cpId;
+  }, [appliedIdx, timeline]);
+
+  // Next checkpoint_id — for prefetch
+  const nextCheckpointId = useMemo(() => {
+    for (let i = appliedIdx + 1; i < timeline.length; i++) {
+      if (timeline[i].is_refit_triggered) return timeline[i].event_id;
+    }
+    return null;
+  }, [appliedIdx, timeline]);
+
+  // Load current chunk; prefetch next chunk
+  useEffect(() => {
+    if (userId == null || currentCheckpointId == null) return;
+    const load = (cpId) => {
+      if (vizChunkCache.current.has(cpId)) return;
+      fetchVizChunk(userId, cpId)
+        .then(chunk => {
+          vizChunkCache.current.set(cpId, chunk);
+          setChunkVersion(v => v + 1);
+        })
+        .catch(() => {});
+    };
+    load(currentCheckpointId);
+    if (nextCheckpointId != null) load(nextCheckpointId);
+  }, [userId, currentCheckpointId, nextCheckpointId]);
 
   // Playback
   useEffect(() => {
@@ -107,9 +153,42 @@ export default function App() {
 
   const eventData = timeline[sliderIdx] ?? null;
 
-  const points   = useMemo(() => frame?.visualization?.points_data ?? [], [frame]);
+  // Incrementally accumulate viz points — forward playback appends only new deltas
+  const points = useMemo(() => {
+    if (!timeline.length || currentCheckpointId == null) return [];
+    const chunk = vizChunkCache.current.get(currentCheckpointId);
+    if (!chunk) return [];
+
+    const prev = pointsAccRef.current;
+    const cpIdx = timeline.findIndex(r => r.event_id === currentCheckpointId);
+
+    let pts;
+    if (
+      prev.cpId === currentCheckpointId &&
+      prev.version === chunkVersion &&
+      appliedIdx >= prev.idx           // forward only — backward falls through to full rebuild
+    ) {
+      // Extend: copy prev array once, append only new deltas
+      pts = prev.idx === appliedIdx ? prev.pts : [...prev.pts];
+      for (let i = prev.idx + 1; i <= appliedIdx; i++) {
+        const delta = chunk[timeline[i]?.event_id]?.points_data;
+        if (delta) pts.push(...delta);
+      }
+    } else {
+      // Full rebuild: checkpoint changed, chunk reloaded, or backward seek
+      pts = [...(chunk[currentCheckpointId]?.points_data ?? [])];
+      for (let i = cpIdx + 1; i <= appliedIdx; i++) {
+        const delta = chunk[timeline[i]?.event_id]?.points_data;
+        if (delta) pts.push(...delta);
+      }
+    }
+
+    pointsAccRef.current = { cpId: currentCheckpointId, idx: appliedIdx, pts, version: chunkVersion };
+    return pts;
+  }, [appliedIdx, timeline, currentCheckpointId, chunkVersion]); // eslint-disable-line
+
   const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
-  const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 6), [frame]);
+  const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 8), [frame]);
 
   // Attach local sequential index (1-based) for chart X-axis
   const chartTimeline = useMemo(
