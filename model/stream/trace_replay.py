@@ -118,6 +118,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--refit-min-events", type=int, default=20)
     parser.add_argument("--assign-trigger-count", type=int, default=50)
     parser.add_argument("--outlier-trigger-count", type=int, default=10)
+    parser.add_argument(
+        "--force-refit-every-user-events",
+        type=int,
+        default=0,
+        help=(
+            "Testing override: open a refit request every N raw replay events seen for the same user, "
+            "independent of active-positive assignment trigger state. Use 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--disable-assignment-refit-triggers",
+        action="store_true",
+        help=(
+            "Testing override: prevent interest_assign from opening its normal refit requests. "
+            "Use with --force-refit-every-user-events to isolate raw-event cadence; "
+            "--refit-min-events still controls cluster_refit's minimum active embedding rows."
+        ),
+    )
     parser.add_argument("--cluster-backend", choices=["auto", "gpu", "cpu"], default="auto")
     parser.add_argument("--min-cluster-size", type=int, default=10)
     parser.add_argument("--cluster-dim", type=int, default=10)
@@ -365,6 +383,36 @@ def event_payload(event: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_forced_refit_request(
+    *,
+    run_id: str,
+    event: dict[str, Any],
+    replay_order: int,
+    raw_user_event_count: int,
+    force_interval: int,
+    refit_min_events: int,
+    assign_trigger_count: int,
+    outlier_trigger_count: int,
+) -> dict[str, Any]:
+    return {
+        "recordedAt": local_timestamp(),
+        "runId": run_id,
+        "userId": int(event["userId"]),
+        "status": "open",
+        "reasons": ["forced_raw_user_event_interval"],
+        "pendingRawEventCount": None,
+        "assignedSinceLastRefit": None,
+        "outlierSinceLastRefit": None,
+        "refitMinEvents": refit_min_events,
+        "assignTriggerCount": assign_trigger_count,
+        "outlierTriggerCount": outlier_trigger_count,
+        "triggerEventId": int(event["eventId"]),
+        "triggerReplayOrder": replay_order,
+        "rawUserEventCount": raw_user_event_count,
+        "forceRefitEveryUserEvents": force_interval,
+    }
+
+
 def build_summary(
     *,
     run_id: str,
@@ -455,6 +503,8 @@ def latency_summary(values: list[float]) -> dict[str, float]:
 def main() -> None:
     args = parse_args()
     speed = resolve_speed(args)
+    if args.force_refit_every_user_events < 0:
+        raise ValueError("--force-refit-every-user-events must be >= 0.")
     root = Path(__file__).resolve().parents[2]
     outputs_dir = root / "outputs"
     run_id = sanitize_run_id(args.run_id) if args.run_id else make_run_id("trace_replay")
@@ -533,6 +583,8 @@ def main() -> None:
         logger.info("History DB: %s", history_db_path)
         logger.info("Dashboard compact DB: %s", paths["dashboard_compact_db"])
     logger.info("Trace replay speed: %.6g", speed)
+    logger.info("Force refit every user raw events: %d", args.force_refit_every_user_events)
+    logger.info("Disable assignment refit triggers: %s", args.disable_assignment_refit_triggers)
     logger.info("Stage execution: in-process worker")
     logger.info("Seed summary: %s", seed_summary)
 
@@ -572,11 +624,14 @@ def main() -> None:
         "activeEmbeddingRows": 0,
         "assignmentRecords": 0,
         "refitRequestsOpened": 0,
+        "forcedRefitRequestsOpened": 0,
         "refitClosed": 0,
         "refitSkipped": 0,
         "recommendationRows": 0,
         "behindScheduleEvents": 0,
         "refitBackend": args.cluster_backend,
+        "forceRefitEveryUserEvents": args.force_refit_every_user_events,
+        "assignmentRefitTriggersDisabled": bool(args.disable_assignment_refit_triggers),
         "maxInjectorLagSec": 0.0,
         "meanInjectorLagSec": 0.0,
         "maxProcessingLagSec": 0.0,
@@ -589,6 +644,7 @@ def main() -> None:
     processing_lags: list[float] = []
     end_to_end_lags: list[float] = []
     unique_users_seen: set[int] = set()
+    raw_events_seen_by_user: Counter[int] = Counter()
     processed_events = 0
     current_event_id: int | None = None
 
@@ -627,6 +683,8 @@ def main() -> None:
             "stage": "start",
             "status": "started",
             "speed": speed,
+            "forceRefitEveryUserEvents": args.force_refit_every_user_events,
+            "assignmentRefitTriggersDisabled": bool(args.disable_assignment_refit_triggers),
             "traceStartTs": trace_start_ts,
             "traceEndTs": trace_end_ts,
             "traceStartRatedAt": trace_start_rated_at,
@@ -642,6 +700,9 @@ def main() -> None:
             event_number = ordinal + 1
             current_event_id = int(event["eventId"])
             replay_order = int(event.get("replayOrder", ordinal))
+            event_user_id = int(event["userId"])
+            raw_events_seen_by_user[event_user_id] += 1
+            raw_user_event_count = raw_events_seen_by_user[event_user_id]
             event_trace_ts = float(event["ratedAtTs"])
             scheduled_offset_sec = max(0.0, (event_trace_ts - trace_start_ts) / speed)
             scheduled_monotonic = wall_start_mono + scheduled_offset_sec
@@ -658,7 +719,8 @@ def main() -> None:
                 "runId": run_id,
                 "eventId": int(event["eventId"]),
                 "replayOrder": replay_order,
-                "userId": int(event["userId"]),
+                "userId": event_user_id,
+                "rawUserEventCount": raw_user_event_count,
                 "movieId": int(event["movieId"]),
                 "rating": float(event["rating"]),
                 "ratedAt": str(event["ratedAt"]),
@@ -699,7 +761,7 @@ def main() -> None:
                 event_number,
                 total_events,
                 current_event_id,
-                int(event["userId"]),
+                event_user_id,
                 int(event["movieId"]),
                 str(event["ratedAt"]),
             )
@@ -719,12 +781,35 @@ def main() -> None:
             worker.run_interest_assign(
                 event_id=current_event_id,
                 replay_order=replay_order,
-                user_id=int(event["userId"]),
+                user_id=event_user_id,
             )
 
             new_assignment_records = read_jsonl_slice(paths["interest_assignments"], before_assignment_lines)
             new_refit_requests = read_jsonl_slice(paths["refit_requests"], before_refit_request_lines)
+            forced_refit_requests = 0
             new_request_users = sorted({int(item["userId"]) for item in new_refit_requests if item.get("status") == "open"})
+            if (
+                args.force_refit_every_user_events > 0
+                and raw_user_event_count % args.force_refit_every_user_events == 0
+                and event_user_id not in new_request_users
+            ):
+                forced_request = build_forced_refit_request(
+                    run_id=run_id,
+                    event=event,
+                    replay_order=replay_order,
+                    raw_user_event_count=raw_user_event_count,
+                    force_interval=args.force_refit_every_user_events,
+                    refit_min_events=args.refit_min_events,
+                    assign_trigger_count=args.assign_trigger_count,
+                    outlier_trigger_count=args.outlier_trigger_count,
+                )
+                append_jsonl(paths["refit_requests"], forced_request)
+                runtime_store.open_refit_requests(runtime_db_path, run_id=run_id, records=[forced_request])
+                new_refit_requests.append(forced_request)
+                forced_refit_requests = 1
+                new_request_users = sorted(
+                    {int(item["userId"]) for item in new_refit_requests if item.get("status") == "open"}
+                )
 
             if not args.skip_refit:
                 for user_id in new_request_users:
@@ -735,7 +820,7 @@ def main() -> None:
                 worker.run_recommend_online(
                     event_id=current_event_id,
                     replay_order=replay_order,
-                    user_id=int(event["userId"]),
+                    user_id=event_user_id,
                 )
 
             processed_dt = datetime.now().astimezone()
@@ -749,7 +834,7 @@ def main() -> None:
             refit_closed = sum(1 for item in new_refit_events if item.get("status") == "closed")
             refit_skipped = sum(1 for item in new_refit_events if item.get("status") == "skipped")
 
-            unique_users_seen.add(int(event["userId"]))
+            unique_users_seen.add(event_user_id)
             processed_events += 1
             injector_lags.append(injector_lag_sec)
             processing_lags.append(processing_lag_sec)
@@ -758,6 +843,7 @@ def main() -> None:
             totals["activeEmbeddingRows"] += active_rows
             totals["assignmentRecords"] += len(new_assignment_records)
             totals["refitRequestsOpened"] += len(new_refit_requests)
+            totals["forcedRefitRequestsOpened"] += forced_refit_requests
             totals["refitClosed"] += refit_closed
             totals["refitSkipped"] += refit_skipped
             totals["recommendationRows"] += new_recommend_rows
@@ -792,6 +878,7 @@ def main() -> None:
                 notes={
                     "activeEmbeddingRows": active_rows,
                     "assignmentStatusCounts": dict(assignment_status_counts),
+                    "forcedRefitRequestsOpened": forced_refit_requests,
                     "recommendationRows": new_recommend_rows,
                 },
             )
@@ -807,7 +894,8 @@ def main() -> None:
                     "eventOrdinal": ordinal,
                     "eventId": int(event["eventId"]),
                     "replayOrder": replay_order,
-                    "userId": int(event["userId"]),
+                    "userId": event_user_id,
+                    "rawUserEventCount": raw_user_event_count,
                     "movieId": int(event["movieId"]),
                     "ratedAt": str(event["ratedAt"]),
                     "ratedAtTs": event_trace_ts,
@@ -827,6 +915,7 @@ def main() -> None:
                     "activeEmbeddingRows": active_rows,
                     "assignmentStatusCounts": dict(assignment_status_counts),
                     "refitRequestsOpened": len(new_refit_requests),
+                    "forcedRefitRequestsOpened": forced_refit_requests,
                     "refitClosed": refit_closed,
                     "refitSkipped": refit_skipped,
                     "recommendationRows": new_recommend_rows,

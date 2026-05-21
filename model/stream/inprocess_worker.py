@@ -18,6 +18,9 @@ from model.stream import interest_assign as assign_stage
 from model.stream import recommend_online as recommend_stage
 
 
+DISABLED_ASSIGNMENT_REFIT_TRIGGER_COUNT = 10**12
+
+
 def _resolve_path(root: Path, path: Path) -> Path:
     return path if path.is_absolute() else root / path
 
@@ -485,6 +488,14 @@ class ReplayInProcessWorker:
         all_assignment_records: list[dict[str, Any]] = []
         refit_request_records: list[dict[str, Any]] = []
         history_records: list[tuple[int, Any, list[dict[str, Any]], dict[str, Any] | None, list[dict[str, Any]]]] = []
+        if getattr(self.args, "disable_assignment_refit_triggers", False):
+            refit_min_events = DISABLED_ASSIGNMENT_REFIT_TRIGGER_COUNT
+            assign_trigger_count = DISABLED_ASSIGNMENT_REFIT_TRIGGER_COUNT
+            outlier_trigger_count = DISABLED_ASSIGNMENT_REFIT_TRIGGER_COUNT
+        else:
+            refit_min_events = self.args.refit_min_events
+            assign_trigger_count = self.args.assign_trigger_count
+            outlier_trigger_count = self.args.outlier_trigger_count
         for user_id, user_rows in sorted(grouped_rows.items()):
             state_path = None if self.interest_state_dir is None else assign_stage.state_path_for_user(self.interest_state_dir, user_id)
             state = assign_stage.load_interest_state_with_seed(
@@ -506,9 +517,9 @@ class ReplayInProcessWorker:
                 state,
                 user_rows,
                 similarity_threshold=self.args.similarity_threshold,
-                refit_min_events=self.args.refit_min_events,
-                assign_trigger_count=self.args.assign_trigger_count,
-                outlier_trigger_count=self.args.outlier_trigger_count,
+                refit_min_events=refit_min_events,
+                assign_trigger_count=assign_trigger_count,
+                outlier_trigger_count=outlier_trigger_count,
                 run_id=self.run_id,
                 skip_processed_records=True,
             )
