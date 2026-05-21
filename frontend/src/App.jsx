@@ -187,6 +187,15 @@ export default function App() {
     return pts;
   }, [appliedIdx, timeline, currentCheckpointId, chunkVersion]); // eslint-disable-line
 
+  // Current event의 delta 포인트 — checkpoint면 빈 배열 (전체가 새 점이라 구분 불필요)
+  const newPoints = useMemo(() => {
+    if (!timeline.length || currentCheckpointId == null) return [];
+    const currentEventId = timeline[appliedIdx]?.event_id;
+    if (!currentEventId || currentEventId === currentCheckpointId) return [];
+    const chunk = vizChunkCache.current.get(currentCheckpointId);
+    return chunk?.[currentEventId]?.points_data ?? [];
+  }, [appliedIdx, timeline, currentCheckpointId, chunkVersion]); // eslint-disable-line
+
   const clusters = useMemo(() => frame?.clusters ?? [], [frame]);
   const recs     = useMemo(() => (frame?.recommendations ?? []).slice(0, 8), [frame]);
 
@@ -265,7 +274,7 @@ export default function App() {
       </div>
 
       <div className="grid-main" ref={renderRef}>
-        <MemoClusterView points={points} clusterInfo={clusters} eventData={eventData} />
+        <MemoClusterView points={points} newPoints={newPoints} clusterInfo={clusters} eventData={eventData} />
         <MemoRecommendations recs={recs} />
       </div>
     </div>
