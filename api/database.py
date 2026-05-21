@@ -1,7 +1,7 @@
 """Read-only database helpers for the replay dashboard API.
 
 dashboard.db  — event_timeline, visualization_states, cluster_snapshots, recommendations
-movies.db     — movies (title, poster_url, genres, release_year)
+movies.db     — movies (title, poster_url, genres, release_year)  (ATTACHed as 'movies')
 """
 
 from __future__ import annotations
@@ -13,8 +13,29 @@ from typing import Any
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
+    """One-shot connection (used by legacy callers / tests)."""
     conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
+    return conn
+
+
+def open_persistent(
+    dashboard_db: str | Path,
+    movies_db: str | Path,
+) -> sqlite3.Connection:
+    """Open dashboard DB once and ATTACH movies DB.
+
+    Returns a long-lived connection meant to be reused across requests.
+    SQLite read-only shared-cache mode keeps the page cache warm between calls.
+    """
+    conn = sqlite3.connect(
+        f"file:{dashboard_db}?mode=ro&cache=shared", uri=True, check_same_thread=False
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA cache_size = -32768")   # 32 MB page cache
+    conn.execute("PRAGMA temp_store  = MEMORY")
+    if Path(movies_db).exists():
+        conn.execute(f"ATTACH DATABASE 'file:{movies_db}?mode=ro' AS movies")
     return conn
 
 
@@ -33,9 +54,7 @@ def list_user_ids(conn: sqlite3.Connection) -> list[int]:
 # event_timeline
 # ---------------------------------------------------------------------------
 
-def get_timeline(
-    conn: sqlite3.Connection, user_id: int
-) -> list[dict[str, Any]]:
+def get_timeline(conn: sqlite3.Connection, user_id: int) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT event_id, timestamp, movie_id,
@@ -65,9 +84,7 @@ def get_timeline(
 # visualization_states
 # ---------------------------------------------------------------------------
 
-def get_viz_state(
-    conn: sqlite3.Connection, user_id: int, event_id: int
-) -> dict[str, Any]:
+def get_viz_state(conn: sqlite3.Connection, user_id: int, event_id: int) -> dict[str, Any]:
     row = conn.execute(
         "SELECT points_data FROM visualization_states WHERE user_id=? AND event_id=?",
         (user_id, event_id),
@@ -79,10 +96,7 @@ def get_viz_state(
 def get_viz_chunk(
     conn: sqlite3.Connection, user_id: int, checkpoint_id: int
 ) -> dict[int, dict[str, Any]]:
-    """Return all viz rows in one checkpoint segment, keyed by event_id.
-
-    Falls back gracefully when checkpoint_id column does not exist.
-    """
+    """Return all viz rows in one checkpoint segment, keyed by event_id."""
     try:
         rows = conn.execute(
             """SELECT event_id, checkpoint_id, points_data
@@ -142,49 +156,37 @@ def get_cluster_info(
 
 
 # ---------------------------------------------------------------------------
-# recommendations  (joined with movies metadata)
+# recommendations — movies joined via ATTACH (single connection)
 # ---------------------------------------------------------------------------
 
 def get_recommendations(
     conn: sqlite3.Connection,
-    movies_conn: sqlite3.Connection,
     user_id: int,
     event_id: int,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT rank, movie_id, score, src_cluster
-        FROM recommendations
-        WHERE user_id=? AND event_id=?
-        ORDER BY rank
+        SELECT r.rank, r.movie_id, r.score, r.src_cluster,
+               m.title, m.poster_url, m.genres, m.release_year
+        FROM recommendations r
+        LEFT JOIN movies.movies m USING (movie_id)
+        WHERE r.user_id=? AND r.event_id=?
+        ORDER BY r.rank
         """,
         (user_id, event_id),
     ).fetchall()
-
-    if not rows:
-        return []
-
-    movie_ids = [r["movie_id"] for r in rows]
-    placeholders = ",".join("?" * len(movie_ids))
-    movie_rows = movies_conn.execute(
-        f"SELECT movie_id, title, poster_url, genres, release_year FROM movies WHERE movie_id IN ({placeholders})",
-        movie_ids,
-    ).fetchall()
-    movie_map = {m["movie_id"]: m for m in movie_rows}
-
-    result = []
-    for r in rows:
-        m = movie_map.get(r["movie_id"])
-        result.append({
+    return [
+        {
             "user_id": user_id,
             "event_id": event_id,
             "rank": r["rank"],
             "movie_id": r["movie_id"],
             "score": r["score"],
             "src_cluster": r["src_cluster"],
-            "title": m["title"] if m else None,
-            "poster_url": m["poster_url"] if m else None,
-            "genres": json.loads(m["genres"]) if m and m["genres"] else [],
-            "release_year": m["release_year"] if m else None,
-        })
-    return result
+            "title": r["title"],
+            "poster_url": r["poster_url"],
+            "genres": json.loads(r["genres"]) if r["genres"] else [],
+            "release_year": r["release_year"],
+        }
+        for r in rows
+    ]
