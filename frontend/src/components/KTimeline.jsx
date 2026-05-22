@@ -48,22 +48,33 @@ export default function KTimeline({ timeline, selectedLocalIdx, onSelect }) {
             label={{ value: '이벤트 순서', position: 'insideBottom', offset: -2, fontSize: 11 }}
           />
           <YAxis
+            yAxisId="k"
             domain={[0, 6]}
-            tick={{ fontSize: 11 }}
-            label={{ value: 'K', angle: -90, position: 'insideLeft', fontSize: 11 }}
+            tick={{ fontSize: 11, fill: '#a78bfa' }}
+            label={{ value: 'K', angle: -90, position: 'insideLeft', fontSize: 11, fill: '#a78bfa' }}
+            allowDecimals={false}
+          />
+          <YAxis
+            yAxisId="noise"
+            orientation="right"
+            tick={{ fontSize: 11, fill: '#6b7280' }}
+            label={{ value: 'Noise', angle: 90, position: 'insideRight', fontSize: 11, fill: '#6b7280' }}
+            allowDecimals={false}
           />
           <Tooltip content={<CustomTooltip />} />
           {refitEvents.map(d => (
             <ReferenceLine
               key={d.event_id}
+              yAxisId="k"
               x={d.local_index}
               stroke={REFIT_COLOR}
               strokeDasharray="4 2"
               strokeWidth={1.5}
             />
           ))}
-          <ReferenceLine x={selectedLocalIdx} stroke="#60a5fa" strokeWidth={2} />
+          <ReferenceLine yAxisId="k" x={selectedLocalIdx} stroke="#60a5fa" strokeWidth={2} />
           <Line
+            yAxisId="k"
             type="stepAfter"
             dataKey="k_count"
             stroke="#a78bfa"
@@ -73,6 +84,7 @@ export default function KTimeline({ timeline, selectedLocalIdx, onSelect }) {
             name="K (clusters)"
           />
           <Line
+            yAxisId="noise"
             type="monotone"
             dataKey="noise_count"
             stroke="#6b7280"

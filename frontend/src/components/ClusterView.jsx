@@ -35,31 +35,49 @@ const OPTIONS = {
   },
 };
 
-export default function ClusterView({ points, clusterInfo, eventData }) {
+export default function ClusterView({ points, newPoints = [], clusterInfo, eventData }) {
   const data = useMemo(() => {
     const grouped = { [-1]: [] };
     clusterInfo.forEach(c => { grouped[c.cluster_id] = []; });
     points.forEach(p => (grouped[p.c] !== undefined ? grouped[p.c] : grouped[-1]).push(p));
 
+    const newSet = new Set(newPoints.map(p => `${p.x},${p.y}`));
+
+    // 기존 포인트에서 new 포인트는 제외 (중복 렌더 방지)
+    const filterNew = arr => arr.filter(p => !newSet.has(`${p.x},${p.y}`));
+
     return {
       datasets: [
         {
           label: `Noise (${grouped[-1].length})`,
-          data: grouped[-1],
+          data: filterNew(grouped[-1]),
           backgroundColor: NOISE_COLOR + '66',
           pointRadius: 3,
           pointHoverRadius: 5,
+          order: 2,
         },
         ...clusterInfo.map((c, i) => ({
           label: `C${c.cluster_id} (${c.size})`,
-          data: grouped[c.cluster_id] ?? [],
+          data: filterNew(grouped[c.cluster_id] ?? []),
           backgroundColor: PALETTE[i % PALETTE.length] + 'cc',
           pointRadius: 3,
           pointHoverRadius: 5,
+          order: 2,
         })),
+        // 현재 이벤트의 새 포인트 — 흰색 테두리 + 큰 반지름으로 강조
+        ...(newPoints.length > 0 ? [{
+          label: `New (${newPoints.length})`,
+          data: newPoints,
+          backgroundColor: 'rgba(255, 255, 255, 0.92)',
+          borderColor: 'rgba(255, 255, 255, 0.5)',
+          borderWidth: 2,
+          pointRadius: 6,
+          pointHoverRadius: 8,
+          order: 1, // 다른 점 위에 렌더
+        }] : []),
       ],
     };
-  }, [points, clusterInfo]);
+  }, [points, newPoints, clusterInfo]);
 
   return (
     <div className="panel">
